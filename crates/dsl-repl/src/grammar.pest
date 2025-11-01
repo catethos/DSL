@@ -1,0 +1,330 @@
+// DSL Grammar for Pest Parser
+// Based on DESIGN.md EBNF specification
+
+// ============================================
+// Program Structure
+// ============================================
+
+program = _{ SOI ~ declaration* ~ EOI }
+
+declaration = {
+    type_decl
+    | enum_decl
+    | function_decl
+    | workflow_decl
+}
+
+// ============================================
+// Type Definitions
+// ============================================
+
+type_decl = {
+    "type" ~ identifier ~ "{" ~ (field ~ ","?)* ~ "}"
+}
+
+field = {
+    identifier ~ optional? ~ ":" ~ field_type ~ description?
+}
+
+optional = { "?" }
+
+field_type = {
+    list_type
+    | primitive_type
+    | custom_type
+}
+
+primitive_type = {
+    "String" | "string"
+    | "Int" | "int"
+    | "Float" | "float"
+    | "Bool" | "bool"
+    | "Table" | "table"
+    | "Any" | "any"
+}
+
+list_type = { "[" ~ field_type ~ "]" }
+
+custom_type = { identifier }
+
+enum_decl = {
+    "enum" ~ identifier ~ "{" ~ enum_variant ~ ("," ~ enum_variant)* ~ ","? ~ "}"
+}
+
+enum_variant = { identifier }
+
+// ============================================
+// Function Definitions
+// ============================================
+
+function_decl = {
+    "def" ~ identifier ~ "(" ~ def_parameters ~ ")" ~ ("->" ~ field_type)? ~ "{" ~ function_body ~ "}"
+}
+
+def_parameters = { (def_parameter ~ ("," ~ def_parameter)*)? }
+
+def_parameter = { identifier ~ (":" ~ field_type)? }
+
+function_body = { (prompt_block | sql_block | http_block | property)* }
+
+property = { identifier ~ ":" ~ property_value }
+
+property_value = _{
+    template_string
+    | string_literal
+    | float
+    | integer
+    | boolean
+    | identifier
+    | map_literal
+    | list_literal
+}
+
+prompt_block = { "prompt" ~ ":" ~ (template_string | triple_quoted_string | string_literal) }
+
+sql_block = { "sql" ~ ":" ~ (template_string | triple_quoted_string | string_literal) }
+
+http_block = {
+    "http" ~ ":" ~ string_literal ~
+    ("url" ~ ":" ~ string_literal)? ~
+    ("params" ~ ":" ~ map_literal)? ~
+    ("body" ~ ":" ~ map_literal)? ~
+    ("headers" ~ ":" ~ map_literal)?
+}
+
+// Template strings with ${} interpolation - must contain at least one ${
+template_string = ${
+    "\"" ~ template_inner ~ "\""
+}
+
+template_inner = {
+    template_segment*
+}
+
+template_segment = {
+    template_expr | template_text
+}
+
+template_text = @{
+    template_char+
+}
+
+template_char = {
+    !("${" | "\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "$")
+}
+
+template_expr = {
+    "${" ~ template_expr_inner ~ "}"
+}
+
+template_expr_inner = @{
+    (!"}" ~ ANY)+
+}
+
+// ============================================
+// Workflow Definitions (for future use)
+// ============================================
+
+workflow_decl = {
+    "workflow" ~ identifier ~ "(" ~ def_parameters ~ ")" ~ ("->" ~ field_type)? ~ ":=" ~ expr
+}
+
+// ============================================
+// Expressions (Runtime Constructs)
+// ============================================
+
+expr = { conditional }
+
+conditional = {
+    sequential ~ ("?" ~ sequential ~ ":" ~ sequential)?
+}
+
+sequential = {
+    parallel ~ (binding)? ~ (">>" ~ parallel ~ (binding)?)*
+}
+
+parallel = {
+    additive ~ ("||" ~ additive)* ~ (binding)?
+}
+
+binding = {
+    "as" ~ (list_binding | identifier)
+}
+
+list_binding = {
+    "[" ~ identifier ~ ("," ~ identifier)* ~ "]"
+}
+
+// Arithmetic expressions with operator precedence
+additive = {
+    multiplicative ~ (add_op ~ multiplicative)*
+}
+
+add_op = { "+" | "-" }
+
+multiplicative = {
+    primary ~ (mul_op ~ primary)*
+}
+
+mul_op = { "*" | "/" }
+
+primary = _{
+    paren_expr
+    | function_call
+    | access_chain
+    | block
+    | literal
+    | identifier
+}
+
+paren_expr = { "(" ~ expr ~ ")" }
+
+// Function calls
+function_call = {
+    identifier ~ "(" ~ arguments ~ ")"
+}
+
+arguments = {
+    (expr ~ ("," ~ expr)*)?
+}
+
+// Method calls (not yet supported - will use pratt parser later)
+method_call = {
+    identifier ~ "." ~ method ~ "(" ~ method_args ~ ")"
+}
+
+method = {
+    "map" | "filter" | "reduce" | "sort" | "take"
+    | "skip" | "find" | "any" | "all"
+}
+
+method_args = {
+    (lambda | expr) ~ ("," ~ expr)*
+}
+
+lambda = {
+    identifier ~ "=>" ~ expr
+}
+
+// Field/index access - simplified to handle chained access
+access_chain = {
+    identifier ~ access_op+
+}
+
+access_op = _{
+    field_access | index_access
+}
+
+field_access = { "." ~ identifier }
+
+index_access = { "[" ~ expr ~ "]" }
+
+// Inline anonymous block
+block = {
+    "{" ~ property* ~ (sql_block | prompt_block)? ~ "}"
+}
+
+// ============================================
+// Literals
+// ============================================
+
+literal = _{
+    boolean
+    | float
+    | integer
+    | template_string
+    | string_literal
+    | list_literal
+    | map_literal
+}
+
+string_literal = ${
+    "\"" ~ plain_string_inner ~ "\""
+    | "'" ~ single_string_inner ~ "'"
+}
+
+// Plain string without interpolation - doesn't allow ${
+plain_string_inner = @{ plain_char* }
+plain_char = {
+    !("\"" | "\\" | "${") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "$")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+single_string_inner = @{ single_char* }
+single_char = {
+    !("'" | "\\") ~ ANY
+    | "\\" ~ ("'" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+}
+
+triple_quoted_string = ${
+    "\"\"\"" ~ triple_string_inner ~ "\"\"\""
+}
+
+triple_string_inner = @{ (!"\"\"\"" ~ ANY)* }
+
+integer = @{
+    "-"? ~ ASCII_DIGIT+
+}
+
+float = @{
+    "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+
+}
+
+boolean = { "true" | "false" }
+
+list_literal = {
+    "[" ~ (expr ~ ("," ~ expr)*)? ~ ","? ~ "]"
+}
+
+map_literal = {
+    "{" ~ (map_entry ~ ("," ~ map_entry)*)? ~ ","? ~ "}"
+}
+
+map_entry = {
+    (identifier | string_literal) ~ ":" ~ value
+}
+
+value = _{
+    string_literal
+    | float
+    | integer
+    | boolean
+    | identifier
+    | map_literal
+    | list_literal
+}
+
+description = { string_literal }
+
+// ============================================
+// Basic Tokens
+// ============================================
+
+identifier = @{
+    (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
+}
+
+// ============================================
+// Commands (for REPL)
+// ============================================
+
+command = {
+    ":" ~ command_name
+}
+
+command_name = @{
+    ASCII_ALPHA+
+}
+
+// ============================================
+// Whitespace & Comments
+// ============================================
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+COMMENT = _{
+    "#" ~ (!"\n" ~ ANY)* ~ "\n"
+    | "/*" ~ (!"*/" ~ ANY)* ~ "*/"
+}
