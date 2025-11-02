@@ -21,17 +21,55 @@ This project provides a complete DSL for orchestrating AI-powered workflows, fea
 - Rust (latest stable version)
 - Optional: OpenAI API key for LLM features
 
-### Installation
+### Installation & Running
 
 ```bash
 # Clone the repository
-cd /Users/catethos/workspace/DSL
+cd DSL
 
-# Build the project
-cargo build --release
+# Build the entire workspace
+cargo build --workspace
 
-# Run the DSL REPL
+# Or build just the TUI app (faster)
+cargo build -p dsl-repl
+
+# Run the DSL TUI
 cargo run --bin dsl
+
+# Or run in release mode for better performance
+cargo run --release --bin dsl
+```
+
+### Building Individual Crates
+
+```bash
+# Build only the core engine (no UI)
+cargo build -p dsl-core
+
+# Build only the TUI library
+cargo build -p dsl-tui
+
+# Build the main application
+cargo build -p dsl-repl
+```
+
+### Quick Build & Run Guide
+
+```bash
+# Development build (faster compilation, slower runtime)
+cargo run --bin dsl
+
+# Release build (slower compilation, faster runtime)
+cargo run --release --bin dsl
+
+# Build without running
+cargo build --workspace
+
+# Run tests (when available)
+cargo test --workspace
+
+# Check all crates compile
+cargo check --workspace
 ```
 
 ### First Steps
@@ -144,6 +182,61 @@ def greet(name: String) {
 greet("Alice")
 ```
 
+### Multi-Provider LLM Support
+
+Use OpenRouter to access 100+ models from multiple providers with separate API keys:
+
+```javascript
+// Claude via OpenRouter
+def AnalyzeWithClaude(text: String) {
+  base_url: "https://openrouter.ai/api/v1"
+  model: "anthropic/claude-3.5-sonnet"
+  api_key_env: "OPENROUTER_API_KEY"
+  prompt: "Analyze: ${text}"
+}
+
+// GPT-4 via OpenRouter
+def AnalyzeWithGPT4(text: String) {
+  base_url: "https://openrouter.ai/api/v1"
+  model: "openai/gpt-4-turbo"
+  api_key_env: "OPENROUTER_API_KEY"
+  prompt: "Analyze: ${text}"
+}
+
+// Native OpenAI (no base_url needed)
+def AnalyzeWithOpenAI(text: String) {
+  model: "gpt-4o-mini"
+  // api_key_env defaults to "OPENAI_API_KEY"
+  prompt: "Analyze: ${text}"
+}
+
+// Native Anthropic API
+def AnalyzeWithAnthropic(text: String) {
+  base_url: "https://api.anthropic.com/v1"
+  model: "claude-3-5-sonnet-20241022"
+  api_key_env: "ANTHROPIC_API_KEY"
+  prompt: "Analyze: ${text}"
+}
+```
+
+**Setup Multiple Providers:**
+```bash
+# OpenRouter (access to 100+ models)
+export OPENROUTER_API_KEY="sk-or-v1-..."
+
+# Native OpenAI (default)
+export OPENAI_API_KEY="sk-..."
+
+# Native Anthropic
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+**Benefits:**
+- ✅ Use different API keys for different providers
+- ✅ Switch between providers without changing environment variables
+- ✅ Mix OpenRouter, native OpenAI, and native Anthropic in same project
+- ✅ Better cost control and provider management
+
 ### SQL/DuckDB Integration
 
 ```javascript
@@ -177,34 +270,88 @@ SQL("SELECT COUNT(*) FROM table")
 | **Enter** | New line |
 | **Backspace** | Delete character |
 
+## 🏗️ Architecture
+
+The project is organized into three separate crates for modularity and reusability:
+
+### **dsl-core** (Library)
+Core language engine with no UI dependencies. Can be used in:
+- CLI tools
+- Language servers (LSP)
+- Web backends
+- Testing frameworks
+
+**Modules:**
+- `parser/` - Pest-based parser with AST definitions
+- `eval/` - Expression evaluator and built-in functions
+- `types/` - Type system and value representation
+
+### **dsl-tui** (Library)
+Terminal user interface built with Ratatui. Provides:
+- Interactive REPL mode
+- Multi-line editor with syntax highlighting
+- Type explorer
+- Workflow preview
+
+**Modules:**
+- `app.rs` - Application state management
+- `ui/` - Rendering, highlighting, and UI components
+- `editor.rs` - Text editor integration
+
+### **dsl-repl** (Binary)
+Thin application wrapper that combines `dsl-core` + `dsl-tui`. Just 5 lines of code!
+
 ## 📁 Project Structure
 
 ```
 DSL/
+├── Cargo.toml                 # Workspace configuration
 ├── crates/
-│   └── dsl-repl/          # Main REPL/TUI application
-│       ├── src/
-│       │   ├── app.rs      # Application state
-│       │   ├── editor.rs   # Editor component
-│       │   ├── preview.rs  # Preview component
-│       │   ├── ui.rs       # UI rendering
-│       │   ├── eval.rs     # Expression evaluator
-│       │   ├── parser.rs   # Pest-based parser
-│       │   ├── builtin.rs  # Built-in functions
-│       │   ├── types.rs    # Type system
-│       │   ├── value.rs    # Value representation
-│       │   └── sql.rs      # DuckDB integration
-│       └── Cargo.toml
-├── examples/               # Example workflows
+│   ├── dsl-core/             # Core execution engine (library)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs        # Public API
+│   │       ├── parser/       # AST, grammar, parsing
+│   │       │   ├── mod.rs
+│   │       │   └── grammar.pest
+│   │       ├── eval/         # Evaluator, builtins, SQL
+│   │       │   ├── mod.rs
+│   │       │   ├── evaluator.rs
+│   │       │   ├── builtin.rs
+│   │       │   └── sql.rs
+│   │       └── types/        # Value, TypeRegistry
+│   │           ├── mod.rs
+│   │           ├── value.rs
+│   │           └── registry.rs
+│   │
+│   ├── dsl-tui/              # Terminal UI (library)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs        # TUI entry point
+│   │       ├── app.rs        # Application state
+│   │       ├── editor.rs     # Editor component
+│   │       └── ui/           # UI rendering
+│   │           ├── mod.rs
+│   │           ├── render.rs
+│   │           ├── banner.rs
+│   │           ├── preview.rs
+│   │           └── highlight.rs
+│   │
+│   └── dsl-repl/             # Main application (binary)
+│       ├── Cargo.toml
+│       └── src/
+│           └── main.rs       # Entry point (5 lines!)
+│
+├── tree-sitter-dsl/          # Syntax highlighting grammar
+├── examples/                 # Example workflows
 │   ├── basic_workflow.dsl
 │   ├── types_example.dsl
 │   ├── sequential_workflow.dsl
-│   ├── parallel_workflow.dsl
-│   └── README.md
-├── DESIGN.md              # Complete design specification
-├── REPL_FIRST_PLAN.md     # Development roadmap
-├── PROGRESS.md            # Development progress tracker
-└── README.md              # This file
+│   └── parallel_workflow.dsl
+├── DESIGN.md
+├── REPL_FIRST_PLAN.md
+├── PROGRESS.md
+└── README.md
 ```
 
 ## 🔧 Development Status
@@ -238,6 +385,7 @@ DSL/
 
 ## 📖 Documentation
 
+- **[BUILD.md](BUILD.md)** - Comprehensive build and compilation guide
 - **[DESIGN.md](DESIGN.md)** - Complete language specification
 - **[REPL_FIRST_PLAN.md](REPL_FIRST_PLAN.md)** - Incremental development plan
 - **[PROGRESS.md](PROGRESS.md)** - Detailed progress tracking
@@ -258,8 +406,39 @@ See the `examples/` directory for complete workflow examples:
 # For LLM features
 export OPENAI_API_KEY="sk-..."
 
-# Run the DSL
+# Run the DSL TUI
 cargo run --bin dsl
+
+# Or with release optimizations
+cargo run --release --bin dsl
+```
+
+## 🧩 Using dsl-core as a Library
+
+The core engine can be used independently in your own projects:
+
+```rust
+use dsl_core::{Evaluator, Value};
+
+#[tokio::main]
+async fn main() {
+    let mut eval = Evaluator::new();
+
+    // Execute DSL code
+    let (value, binding) = eval.eval("42 * 2").await.unwrap();
+    println!("Result: {}", value.display());  // "84"
+
+    // With LLM (requires OPENAI_API_KEY)
+    let (response, _) = eval.eval(r#"Ask("What is Rust?")"#).await.unwrap();
+    println!("{}", response.display());
+}
+```
+
+**Add to your Cargo.toml:**
+```toml
+[dependencies]
+dsl-core = { path = "../DSL/crates/dsl-core" }
+tokio = { version = "1.0", features = ["full"] }
 ```
 
 ## 🎨 Features Showcase
@@ -301,7 +480,15 @@ enum Status
 
 ## 🚧 Roadmap
 
+**Completed:**
+- ✅ Multi-crate architecture (core/tui/repl separation)
+- ✅ Reusable core library
+- ✅ Clean API boundaries
+
 **Next Features:**
+- CLI tool (`dsl-cli`) for non-interactive use
+- Language server (`dsl-lsp`) for IDE integration
+- WASM compilation for web use
 - File picker for Ctrl+O
 - Auto-save functionality
 - Configuration file (`~/.dsl-config.toml`)

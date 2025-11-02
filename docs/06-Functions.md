@@ -109,11 +109,83 @@ ExtractPerson("Alice is a 28 year old engineer")
 // { name: "Alice", age: 28, occupation: "engineer" }
 ```
 
+**Using OpenRouter for Multiple Providers:**
+```javascript
+// Use Claude via OpenRouter with custom API key env var
+def AnalyzeWithClaude(text: String) {
+  base_url: "https://openrouter.ai/api/v1"
+  model: "anthropic/claude-3.5-sonnet"
+  api_key_env: "OPENROUTER_API_KEY"
+  temperature: 0.7
+  prompt: "Analyze the following text: ${text}"
+}
+
+// Use Gemini via OpenRouter
+def AnalyzeWithGemini(text: String) {
+  base_url: "https://openrouter.ai/api/v1"
+  model: "google/gemini-pro"
+  api_key_env: "OPENROUTER_API_KEY"
+  prompt: "Analyze: ${text}"
+}
+
+// Use Llama via OpenRouter
+def AnalyzeWithLlama(text: String) {
+  base_url: "https://openrouter.ai/api/v1"
+  model: "meta-llama/llama-3.1-70b-instruct"
+  api_key_env: "OPENROUTER_API_KEY"
+  prompt: "Analyze: ${text}"
+}
+
+// Use direct OpenAI (no base_url, defaults to OPENAI_API_KEY)
+def AnalyzeWithGPT(text: String) {
+  model: "gpt-4o-mini"
+  prompt: "Analyze: ${text}"
+}
+
+// Use native Anthropic API with separate key
+def AnalyzeWithNativeAnthropic(text: String) {
+  base_url: "https://api.anthropic.com/v1"
+  model: "claude-3-5-sonnet-20241022"
+  api_key_env: "ANTHROPIC_API_KEY"
+  prompt: "Analyze: ${text}"
+}
+```
+
 **Properties:**
-- `model` - LLM model name (e.g., "gpt-4o-mini")
+- `model` - LLM model name (e.g., "gpt-4o-mini", "anthropic/claude-3.5-sonnet")
+- `base_url` - Optional API base URL (for OpenRouter or custom endpoints)
+- `api_key_env` - Optional environment variable name for API key (defaults to "OPENAI_API_KEY")
 - `temperature` - Randomness (0.0-2.0, default 0.7)
 - `max_tokens` - Max response length
 - `prompt` - Jinja2 template with `${variable}` interpolation
+
+**Supported Providers:**
+- **OpenAI** (default) - Requires `OPENAI_API_KEY` (or custom env var via `api_key_env`)
+- **OpenRouter** - Recommended to use `OPENROUTER_API_KEY` with `api_key_env: "OPENROUTER_API_KEY"`
+  - Access to 100+ models from Anthropic, Google, Meta, and more
+  - Single API key for all providers
+  - Get your key at: https://openrouter.ai/keys
+  - Use `base_url: "https://openrouter.ai/api/v1"`
+- **Anthropic** - Use `ANTHROPIC_API_KEY` with `api_key_env: "ANTHROPIC_API_KEY"`
+  - Use `base_url: "https://api.anthropic.com/v1"`
+- **Custom** - Any OpenAI-compatible endpoint
+
+**Environment Variable Setup:**
+```bash
+# For OpenAI (default)
+export OPENAI_API_KEY="sk-..."
+
+# For OpenRouter
+export OPENROUTER_API_KEY="sk-or-v1-..."
+
+# For Anthropic
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Or use all three simultaneously
+export OPENAI_API_KEY="sk-..."
+export OPENROUTER_API_KEY="sk-or-v1-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
 
 ### SQL Functions
 
@@ -146,14 +218,14 @@ SQL("SELECT * FROM 'data.csv'") as raw
 
 **GET Example:**
 ```javascript
-def GetUser(userId: Int) {
+def GetUser(id: Int) {
   http: "GET"
-  url: "https://api.example.com/users/${userId}"
+  url: "https://api.artic.edu/api/v1/artworks/${id}"
 }
 
-GetUser(123) as user
-user.name
-user.email
+GetUser(129884) as user
+user.config
+user.config.website_url
 ```
 
 **POST Example:**
@@ -201,6 +273,24 @@ def AnalyzeUserProfile(userId: Int) -> Analysis {
 
 // Fetches user data, then sends to LLM for analysis
 AnalyzeUserProfile(123)
+```
+
+**With OpenRouter:**
+```javascript
+def AnalyzeArtwork(artworkId: Int) -> Analysis {
+  http: "GET"
+  url: "https://api.artic.edu/api/v1/artworks/${artworkId}"
+
+  base_url: "https://openrouter.ai/api/v1"
+  model: "anthropic/claude-3.5-sonnet"
+  api_key_env: "OPENROUTER_API_KEY"
+  temperature: 0.8
+  prompt: "Analyze this artwork data and provide insights about the artist, style, and historical context"
+}
+
+// Setup: export OPENROUTER_API_KEY="sk-or-v1-..."
+// Fetches artwork data from API, then analyzes with Claude via OpenRouter
+AnalyzeArtwork(129884)
 ```
 
 ## Function Calls

@@ -8,16 +8,9 @@ name = "dsl"
 path = "src/main.rs"
 
 [dependencies]
-ratatui = { workspace = true }
-crossterm = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-simplify_baml = "0.1.0"
+# Core DSL engine and TUI
+dsl-core = { path = "../dsl-core" }
+dsl-tui = { path = "../dsl-tui" }
+
+# Async runtime
 tokio = { workspace = true }
-futures = { workspace = true }
-anyhow = { workspace = true }
-pest = { workspace = true }
-pest_derive = { workspace = true }
-duckdb = { workspace = true }
-indexmap = { workspace = true }
-reqwest = { workspace = true }

@@ -188,6 +188,107 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
         }
     }
 
+    /// Call Ask with custom model, base_url, and api_key_env configuration
+    pub async fn ask_with_config(
+        &mut self,
+        prompt: String,
+        model: Option<String>,
+        base_url: Option<String>,
+        api_key_env: Option<String>,
+    ) -> Result<Value> {
+        self.last_prompt = Some(prompt.clone());
+
+        let client = self.create_client(model, base_url, api_key_env)?;
+        let response = client.call(&prompt).await.map_err(|e| {
+            let mut error_msg = format!("Failed to call LLM: {}", e);
+            let mut source = e.source();
+            while let Some(err) = source {
+                error_msg.push_str(&format!("\n  Caused by: {}", err));
+                source = err.source();
+            }
+            anyhow::anyhow!(error_msg)
+        })?;
+
+        Ok(Value::String(response))
+    }
+
+    /// Call ExtractAs with custom model, base_url, and api_key_env configuration
+    pub async fn extract_as_with_config(
+        &mut self,
+        text: String,
+        type_identifier: String,
+        model: Option<String>,
+        base_url: Option<String>,
+        api_key_env: Option<String>,
+    ) -> Result<Value> {
+        let runtime = self.runtime.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "OPENAI_API_KEY not set. Please set it with: export OPENAI_API_KEY=sk-..."
+            )
+        })?;
+
+        let output_type = self.parse_type_identifier(&type_identifier, runtime.ir())?;
+        let mut params = std::collections::HashMap::new();
+        params.insert("text".to_string(), BamlValue::String(text.clone()));
+
+        let prompt_template = format!(
+            "Extract {} information from the following text:\n\n{{{{ text }}}}\n\nPlease extract all relevant fields.",
+            type_identifier
+        );
+
+        let prompt = generate_prompt_from_ir(runtime.ir(), &prompt_template, &params, &output_type)
+            .map_err(|e| anyhow::anyhow!("Failed to generate prompt: {}", e))?;
+
+        let client = self.create_client(model, base_url, api_key_env)?;
+        let raw_response = client
+            .call(&prompt)
+            .await
+            .map_err(|e| anyhow::anyhow!("LLM call failed: {}", e))?;
+
+        let result = parse_llm_response_with_ir(runtime.ir(), &raw_response, &output_type)
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to parse LLM response:\n  Error: {}\n  Raw response: {}",
+                    e,
+                    raw_response
+                )
+            })?;
+
+        Ok(self.baml_value_to_value(result))
+    }
+
+    /// Create an LLM client with the specified model, base_url, and api_key_env
+    fn create_client(
+        &self,
+        model: Option<String>,
+        base_url: Option<String>,
+        api_key_env: Option<String>,
+    ) -> Result<LLMClient> {
+        // Determine which environment variable to use for the API key
+        let env_var_name = api_key_env.as_deref().unwrap_or("OPENAI_API_KEY");
+
+        // Get the API key from the specified environment variable
+        let api_key = env::var(env_var_name).map_err(|_| {
+            anyhow::anyhow!(
+                "{} not set. Please set it with: export {}=your-api-key",
+                env_var_name,
+                env_var_name
+            )
+        })?;
+
+        let model = model.unwrap_or_else(|| "gpt-4o-mini".to_string());
+
+        let client = if let Some(base_url) = base_url {
+            // Use custom base URL (for OpenRouter or other providers)
+            LLMClient::custom(api_key, base_url, model)
+        } else {
+            // Default to OpenAI
+            LLMClient::openai(api_key, model)
+        };
+
+        Ok(client)
+    }
+
     async fn ask(&mut self, args: Vec<Value>) -> Result<Value> {
         if args.is_empty() {
             return Err(anyhow::anyhow!(
@@ -311,12 +412,12 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             }
         };
 
-        // Second argument: type name
-        let type_name = match &args[1] {
+        // Second argument: type identifier (could be a type name like "Person" or a type spec like "[string]")
+        let type_identifier = match &args[1] {
             Value::String(s) => s.clone(),
             _ => {
                 return Err(anyhow::anyhow!(
-                    "ExtractAs() second argument must be a type name (string)"
+                    "ExtractAs() second argument must be a type identifier (string)"
                 ))
             }
         };
@@ -328,31 +429,17 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             )
         })?;
 
-        // Check if the type exists in the runtime IR
-        if runtime.ir().find_class(&type_name).is_none()
-            && runtime.ir().find_enum(&type_name).is_none()
-        {
-            return Err(anyhow::anyhow!(
-                "Type '{}' not found. Use :types to see registered types.",
-                type_name
-            ));
-        }
+        // Parse the type identifier to determine the FieldType
+        let output_type = self.parse_type_identifier(&type_identifier, runtime.ir())?;
 
         // Prepare parameters
         let mut params = HashMap::new();
         params.insert("text".to_string(), BamlValue::String(text.clone()));
 
-        // Determine the output type
-        let output_type = if runtime.ir().find_class(&type_name).is_some() {
-            FieldType::Class(type_name.clone())
-        } else {
-            FieldType::Enum(type_name.clone())
-        };
-
         // Create a dynamic prompt template
         let prompt_template = format!(
             "Extract {} information from the following text:\n\n{{{{ text }}}}\n\nPlease extract all relevant fields.",
-            type_name
+            type_identifier
         );
 
         // Generate the prompt
@@ -402,6 +489,39 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                     .collect(),
             ),
         }
+    }
+
+    // Parse a type identifier string (like "Person", "[string]", etc.) into a FieldType
+    fn parse_type_identifier(&self, type_id: &str, ir: &IR) -> Result<FieldType> {
+        // Check if it's a list type like "[string]"
+        if type_id.starts_with('[') && type_id.ends_with(']') {
+            let inner_type = type_id[1..type_id.len()-1].trim();
+            let inner_field_type = self.parse_type_identifier(inner_type, ir)?;
+            return Ok(FieldType::List(Box::new(inner_field_type)));
+        }
+
+        // Check for primitive types
+        match type_id.to_lowercase().as_str() {
+            "string" => return Ok(FieldType::String),
+            "int" => return Ok(FieldType::Int),
+            "float" => return Ok(FieldType::Float),
+            "bool" => return Ok(FieldType::Bool),
+            _ => {}
+        }
+
+        // Check if it's a registered class or enum
+        if ir.find_class(type_id).is_some() {
+            return Ok(FieldType::Class(type_id.to_string()));
+        }
+
+        if ir.find_enum(type_id).is_some() {
+            return Ok(FieldType::Enum(type_id.to_string()));
+        }
+
+        Err(anyhow::anyhow!(
+            "Type '{}' not found. Use :types to see registered types.",
+            type_id
+        ))
     }
 
     fn length(&self, args: Vec<Value>) -> Result<Value> {

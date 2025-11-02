@@ -1,13 +1,17 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/dsl-core",
+    "crates/dsl-autocomplete",
+    "crates/dsl-tui",
     "crates/dsl-repl",
+    "tree-sitter-dsl",
 ]
 
 [workspace.dependencies]
 # TUI
-ratatui = "0.27"
-crossterm = "0.27"
+ratatui = "0.28"
+crossterm = "0.28"
 
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }
@@ -25,12 +29,15 @@ thiserror = "1.0"
 # Parser
 pest = "2.7"
 pest_derive = "2.7"
+tree-sitter = "0.25"
+tree-sitter-highlight = "0.25"
+tree-sitter-language = "0.1"
 
 # Database (for later phases)
 duckdb = { version = "1.4.1"}
 
 # HTTP client (for later phases)
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "blocking"], default-features = true }
 
 # CSV (for later phases)
 csv = "1.3"

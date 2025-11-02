@@ -8,7 +8,6 @@ use ratatui::{
 
 use crate::app::{App, Mode, WorkspacePane};
 use crate::banner;
-use crate::editor;
 use crate::preview;
 
 /// Wrap text to fit within the given width
@@ -65,7 +64,7 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-pub fn draw(f: &mut Frame, app: &App) -> Rect {
+pub fn draw(f: &mut Frame, app: &mut App) -> Rect {
     match app.mode {
         Mode::Repl => draw_repl(f, app),
         Mode::Workspace => draw_workspace(f, app),
@@ -205,7 +204,7 @@ fn draw_repl(f: &mut Frame, app: &App) -> Rect {
     area
 }
 
-fn draw_workspace(f: &mut Frame, app: &App) -> Rect {
+fn draw_workspace(f: &mut Frame, app: &mut App) -> Rect {
     // Create main layout with keybindings at bottom
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -243,105 +242,45 @@ fn draw_workspace(f: &mut Frame, app: &App) -> Rect {
         "F1: Full REPL | Tab: Switch Pane | Ctrl+E: Send Line | Ctrl+R: Run All | Ctrl+S: Save | Esc: Quit",
     );
 
-    // Set cursor based on active pane
+    // Return the active pane's area
     match app.active_pane {
-        WorkspacePane::Repl => {
-            // Cursor is already set in draw_repl_pane if active (now left side)
-            workspace_chunks[0]
-        }
-        WorkspacePane::Editor => {
-            // Set editor cursor (now right side)
-            let area = workspace_chunks[1];
-            let visible_height = area.height.saturating_sub(2) as usize;
-            let visible_row = app
-                .editor_cursor_row
-                .saturating_sub(app.editor_scroll_offset);
-            if visible_row < visible_height {
-                let cursor_x = area.x + 1 + 7 + app.editor_cursor_col as u16; // border(1) + gutter(7)
-                let cursor_y = area.y + 1 + visible_row as u16;
-                f.set_cursor(cursor_x, cursor_y);
-            }
-            workspace_chunks[1]
-        }
-        WorkspacePane::Preview => {
-            // Preview pane removed, should not reach here
-            // Default to REPL
-            workspace_chunks[0]
-        }
+        WorkspacePane::Repl => workspace_chunks[0],
+        WorkspacePane::Editor => workspace_chunks[1],
+        WorkspacePane::Preview => workspace_chunks[0], // Should not happen
     }
 }
 
-fn draw_editor_pane(f: &mut Frame, area: Rect, app: &App, title: &str) {
-    let visible_height = area.height.saturating_sub(2) as usize;
-    let visible_start = app.editor_scroll_offset;
-    let visible_end = (visible_start + visible_height).min(app.editor_lines.len());
+fn draw_editor_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
+    use crate::highlight;
 
-    // Calculate available width for text (accounting for borders, line numbers, and scrollbar)
-    let gutter_width = 7; // "1234 │ " is 7 characters
-    let editor_width = area.width.saturating_sub(2 + gutter_width) as usize; // borders + gutter
+    // Get the full text from the editor
+    let editor_text = app.editor.lines().join("\n");
 
-    // First, collect all wrapped lines with their metadata
-    let mut all_wrapped: Vec<(usize, usize, String)> = Vec::new(); // (line_num, wrap_idx, text)
+    // Apply Tree-sitter syntax highlighting to get styled lines
+    let highlighted_lines = if editor_text.is_empty() {
+        vec![Line::from("")]
+    } else {
+        highlight::highlight_text(&editor_text)
+    };
 
-    for (i, line) in app.editor_lines[visible_start..visible_end]
-        .iter()
-        .enumerate()
-    {
-        let line_num = visible_start + i + 1;
-        let wrapped_lines = wrap_text(line, editor_width);
+    // Get cursor position from TextArea
+    let (cursor_row, cursor_col) = app.editor.cursor();
 
-        for (wrap_idx, wrapped_line) in wrapped_lines.into_iter().enumerate() {
-            all_wrapped.push((line_num, wrap_idx, wrapped_line));
+    // Create paragraph with syntax highlighting
+    let paragraph = Paragraph::new(highlighted_lines)
+        .block(Block::default().borders(Borders::ALL).title(title));
+
+    f.render_widget(paragraph, area);
+
+    // Set cursor position if this is the active pane (accounting for borders)
+    if app.active_pane == WorkspacePane::Editor {
+        let cursor_x = area.x + 1 + cursor_col as u16;
+        let cursor_y = area.y + 1 + cursor_row as u16;
+
+        // Only set cursor if it's within bounds
+        if cursor_y < area.y + area.height.saturating_sub(1) {
+            f.set_cursor_position((cursor_x, cursor_y));
         }
-    }
-
-    // Now create the display lines from the wrapped data
-    let lines: Vec<Line> = all_wrapped
-        .iter()
-        .map(|(line_num, wrap_idx, wrapped_line)| {
-            let highlighted = editor::highlight_syntax_public(wrapped_line);
-
-            let mut spans = if *wrap_idx == 0 {
-                // First wrapped line shows the line number
-                vec![Span::styled(
-                    format!("{:4} │ ", line_num),
-                    Style::default().fg(Color::DarkGray),
-                )]
-            } else {
-                // Continuation lines show blank gutter
-                vec![Span::styled(
-                    "     │ ",
-                    Style::default().fg(Color::DarkGray),
-                )]
-            };
-            spans.extend(highlighted);
-
-            Line::from(spans)
-        })
-        .collect();
-
-    let editor = Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title));
-
-    f.render_widget(editor, area);
-
-    // Add scrollbar if content exceeds visible area
-    let total_lines = app.editor_lines.len();
-    if total_lines > visible_height {
-        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .style(Style::default().fg(Color::Cyan));
-
-        let max_scroll = total_lines.saturating_sub(visible_height);
-        let mut scrollbar_state =
-            ScrollbarState::new(max_scroll).position(app.editor_scroll_offset);
-
-        let scrollbar_area = Rect {
-            x: area.x + area.width.saturating_sub(1),
-            y: area.y + 1,
-            width: 1,
-            height: area.height.saturating_sub(2),
-        };
-
-        f.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
     }
 }
 
@@ -456,7 +395,7 @@ fn draw_repl_pane(f: &mut Frame, area: Rect, app: &App, title: &str) {
     }
 }
 
-fn draw_type_explorer_mode(f: &mut Frame, app: &App) -> Rect {
+fn draw_type_explorer_mode(f: &mut Frame, app: &mut App) -> Rect {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])

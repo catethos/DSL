@@ -1,0 +1,30 @@
+[package]
+name = "dsl-tui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core DSL engine
+dsl-core = { path = "../dsl-core" }
+
+# Autocomplete engine
+dsl-autocomplete = { path = "../dsl-autocomplete" }
+
+# TUI framework
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+
+# Text editor widget
+tui-textarea = "0.6.1"
+
+# Syntax highlighting
+tree-sitter = { workspace = true }
+tree-sitter-highlight = { workspace = true }
+tree-sitter-language = { workspace = true }
+tree-sitter-dsl = { path = "../../tree-sitter-dsl" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Clipboard support
+arboard = "3.4"

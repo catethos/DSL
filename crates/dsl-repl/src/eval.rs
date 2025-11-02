@@ -467,8 +467,8 @@ impl Evaluator {
 
         // Execute based on function type
         let result = match &func_def.execution {
-            FunctionExecution::LLM { prompt, model: _, temperature: _ } => {
-                self.execute_llm_function(func_def, prompt, &arg_values).await?
+            FunctionExecution::LLM { prompt, model, base_url, api_key_env, temperature: _ } => {
+                self.execute_llm_function(func_def, prompt, model.clone(), base_url.clone(), api_key_env.clone(), &arg_values).await?
             }
             FunctionExecution::HTTP { method, url, params, headers, body } => {
                 self.execute_http_function(func_def, method, url, params, headers, body, &arg_values).await?
@@ -482,7 +482,9 @@ impl Evaluator {
                 http_params,
                 http_headers,
                 llm_prompt,
-                llm_model: _,
+                llm_model,
+                llm_base_url,
+                llm_api_key_env,
                 llm_temperature: _,
             } => {
                 // First execute HTTP request
@@ -497,7 +499,7 @@ impl Evaluator {
                 ).await?;
 
                 // Then pass result to LLM
-                self.execute_llm_with_input(func_def, llm_prompt, &http_result, &arg_values).await?
+                self.execute_llm_with_input(func_def, llm_prompt, llm_model.clone(), llm_base_url.clone(), llm_api_key_env.clone(), &http_result, &arg_values).await?
             }
         };
 
@@ -512,6 +514,9 @@ impl Evaluator {
         &mut self,
         func_def: &FunctionDef,
         prompt_template: &str,
+        model: Option<String>,
+        base_url: Option<String>,
+        api_key_env: Option<String>,
         arg_values: &[Value],
     ) -> Result<Value, String> {
         // Interpolate template variables
@@ -519,24 +524,18 @@ impl Evaluator {
 
         // Call the appropriate builtin function based on return type
         if let Some(return_type) = &func_def.return_type {
-            // Structured output - use ExtractAs
-            let type_name = match return_type {
-                simplify_baml::FieldType::Class(name) => name.clone(),
-                simplify_baml::FieldType::Enum(name) => name.clone(),
-                _ => return Err("Return type must be a class or enum".to_string()),
-            };
+            // For structured types, use ExtractAs with the type name or serialized type
+            // simplify_baml can handle Class, Enum, List, and other complex types
+            let type_identifier = return_type.to_string();
 
             self.builtins
-                .call(
-                    "extractas",
-                    vec![Value::String(prompt), Value::String(type_name)],
-                )
+                .extract_as_with_config(prompt, type_identifier, model, base_url, api_key_env)
                 .await
                 .map_err(|e| e.to_string())
         } else {
             // Simple string output - use Ask
             self.builtins
-                .call("ask", vec![Value::String(prompt)])
+                .ask_with_config(prompt, model, base_url, api_key_env)
                 .await
                 .map_err(|e| e.to_string())
         }
@@ -547,6 +546,9 @@ impl Evaluator {
         &mut self,
         func_def: &FunctionDef,
         prompt_template: &str,
+        model: Option<String>,
+        base_url: Option<String>,
+        api_key_env: Option<String>,
         input_data: &Value,
         arg_values: &[Value],
     ) -> Result<Value, String> {
@@ -559,22 +561,17 @@ impl Evaluator {
 
         // Call the appropriate builtin function based on return type
         if let Some(return_type) = &func_def.return_type {
-            let type_name = match return_type {
-                simplify_baml::FieldType::Class(name) => name.clone(),
-                simplify_baml::FieldType::Enum(name) => name.clone(),
-                _ => return Err("Return type must be a class or enum".to_string()),
-            };
+            // For structured types, use ExtractAs with the type name or serialized type
+            // simplify_baml can handle Class, Enum, List, and other complex types
+            let type_identifier = return_type.to_string();
 
             self.builtins
-                .call(
-                    "extractas",
-                    vec![Value::String(prompt), Value::String(type_name)],
-                )
+                .extract_as_with_config(prompt, type_identifier, model, base_url, api_key_env)
                 .await
                 .map_err(|e| e.to_string())
         } else {
             self.builtins
-                .call("ask", vec![Value::String(prompt)])
+                .ask_with_config(prompt, model, base_url, api_key_env)
                 .await
                 .map_err(|e| e.to_string())
         }
@@ -594,11 +591,12 @@ impl Evaluator {
         // Interpolate URL template with arguments
         let url = self.interpolate_string_template(url_template, &func_def.params, arg_values)?;
 
-        // Create HTTP client
+        // Create HTTP client with User-Agent header
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
+            .user_agent("Mozilla/5.0 (compatible; DSL-REPL/1.0)")
             .build()
-            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+            .map_err(|e| format!("Failed to create HTTP client: {:#?}", e))?;
 
         // Build the request
         let mut request = match method.to_uppercase().as_str() {

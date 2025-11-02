@@ -1,0 +1,18 @@
+[package]
+name = "dsl-autocomplete"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Fuzzy matching (optional, feature-gated)
+nucleo-matcher = { version = "0.3", optional = true }
+
+# Prefix tree for trie-based matching (optional, feature-gated)
+prefix-tree-rs = { version = "0.1", optional = true }
+
+[features]
+default = ["fuzzy", "prefix"]
+fuzzy = ["dep:nucleo-matcher"]
+prefix = ["dep:prefix-tree-rs"]
+
+[dev-dependencies]

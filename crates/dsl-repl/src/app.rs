@@ -1,7 +1,9 @@
 use crate::banner;
 use crate::eval::Evaluator;
+use crate::output_item::OutputItem;
 use crate::value::Value;
 use std::time::Duration;
+use tui_textarea::TextArea;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -40,7 +42,7 @@ pub struct App {
 
     // REPL state
     pub input: String,
-    pub output: Vec<String>,
+    pub output: Vec<OutputItem>,
     pub evaluator: Evaluator,
     pub show_banner: bool,
     pub is_loading: bool,
@@ -53,18 +55,19 @@ pub struct App {
     pub history_temp: String,
 
     // Editor state
-    pub editor_lines: Vec<String>,
-    pub editor_cursor_row: usize,
-    pub editor_cursor_col: usize,
-    pub editor_scroll_offset: usize,
+    pub editor: TextArea<'static>,
     pub editor_file_path: Option<String>,
 
     // Preview state
     pub preview_steps: Vec<ExecutionStep>,
+
+    // Focused output item for interaction (future use)
+    pub focused_output_index: Option<usize>,
 }
 
 impl App {
     pub fn new() -> Self {
+
         let mut app = Self {
             mode: Mode::Workspace,            // Start in workspace mode
             active_pane: WorkspacePane::Repl, // Start with REPL active
@@ -80,12 +83,10 @@ impl App {
             history: vec![],
             history_index: None,
             history_temp: String::new(),
-            editor_lines: vec![String::new()],
-            editor_cursor_row: 0,
-            editor_cursor_col: 0,
-            editor_scroll_offset: 0,
+            editor: TextArea::default(),
             editor_file_path: None,
             preview_steps: vec![],
+            focused_output_index: None,
         };
         app.load_history();
         app
@@ -97,25 +98,56 @@ impl App {
         let mut bracket_count = 0;
         let mut paren_count = 0;
         let mut in_string = false;
+        let mut in_triple_string = false;
+        let mut in_single_quote = false;
         let mut escape_next = false;
 
-        for ch in self.input.chars() {
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
             if escape_next {
                 escape_next = false;
+                i += 1;
                 continue;
             }
 
-            if ch == '\\' {
+            let ch = chars[i];
+
+            if ch == '\\' && (in_string || in_single_quote) {
                 escape_next = true;
+                i += 1;
                 continue;
             }
 
-            if ch == '"' {
+            // Check for triple-quoted strings
+            if i + 2 < chars.len()
+                && chars[i] == '"'
+                && chars[i + 1] == '"'
+                && chars[i + 2] == '"'
+                && !in_string
+                && !in_single_quote
+            {
+                in_triple_string = !in_triple_string;
+                i += 3;
+                continue;
+            }
+
+            // Regular double quote
+            if ch == '"' && !in_single_quote && !in_triple_string {
                 in_string = !in_string;
+                i += 1;
                 continue;
             }
 
-            if !in_string {
+            // Single quote
+            if ch == '\'' && !in_string && !in_triple_string {
+                in_single_quote = !in_single_quote;
+                i += 1;
+                continue;
+            }
+
+            if !in_string && !in_triple_string && !in_single_quote {
                 match ch {
                     '{' => brace_count += 1,
                     '}' => brace_count -= 1,
@@ -126,9 +158,11 @@ impl App {
                     _ => {}
                 }
             }
+
+            i += 1;
         }
 
-        brace_count > 0 || bracket_count > 0 || paren_count > 0
+        brace_count > 0 || bracket_count > 0 || paren_count > 0 || in_triple_string || in_string || in_single_quote
     }
 
     /// Check if we should enter multiline mode
@@ -181,20 +215,21 @@ impl App {
 
         // Display input with proper formatting for multiline
         if input_text.contains('\n') {
-            self.output.push("flow> ".to_string());
+            let mut input_display = String::from("flow> \n");
             for line in input_text.lines() {
-                self.output.push(format!("  {}", line));
+                input_display.push_str(&format!("  {}\n", line));
             }
+            self.output.push(OutputItem::text(input_display));
         } else {
-            self.output.push(format!("flow> {}", input_text));
+            self.output
+                .push(OutputItem::text(format!("flow> {}", input_text)));
         }
 
         // Handle special commands
         if input_text.trim() == ":help" {
-            for line in banner::get_help_text() {
-                self.output.push(line);
-            }
-            self.output.push("".to_string());
+            let help_text = banner::get_help_text().join("\n");
+            self.output.push(OutputItem::text(help_text));
+            self.output.push(OutputItem::text(""));
             self.input.clear();
             self.multiline_mode = false;
             return;
@@ -215,45 +250,29 @@ impl App {
 
         match self.evaluator.eval(&input_text).await {
             Ok((value, var_name)) => {
-                let display_str = value.display();
                 let type_str = value.type_name();
 
+                // Add a header line indicating the result
                 if let Some(name) = var_name {
-                    // Check if display is multi-line (e.g., table)
-                    if display_str.contains('\n') {
-                        self.output
-                            .push(format!("✓ Bound '{}' : {}", name, type_str));
-                        for line in display_str.lines() {
-                            self.output.push(line.to_string());
-                        }
-                    } else {
-                        self.output.push(format!(
-                            "✓ Bound '{}' to {} : {}",
-                            name, display_str, type_str
-                        ));
-                    }
+                    self.output
+                        .push(OutputItem::text(format!("✓ Bound '{}' : {}", name, type_str)));
                 } else {
-                    // Check if display is multi-line (e.g., table)
-                    if display_str.contains('\n') {
-                        self.output.push(format!("✓ {}", type_str));
-                        for line in display_str.lines() {
-                            self.output.push(line.to_string());
-                        }
-                    } else {
-                        self.output
-                            .push(format!("✓ {} : {}", display_str, type_str));
-                    }
+                    self.output
+                        .push(OutputItem::text(format!("✓ {}", type_str)));
                 }
+
+                // Use the OutputItem system to display the value
+                self.output.push(OutputItem::from_value(&value));
             }
             Err(err) => {
-                self.output.push(format!("✗ Error: {}", err));
+                self.output.push(OutputItem::error(format!("{}", err)));
             }
         }
 
         // Clear loading state
         self.is_loading = false;
 
-        self.output.push("".to_string());
+        self.output.push(OutputItem::text(""));
         self.input.clear();
         self.cursor_position = 0;
         self.multiline_mode = false;
@@ -398,110 +417,23 @@ impl App {
     }
 
     // Editor methods
-
-    pub fn editor_insert_char(&mut self, c: char) {
-        // Ensure we have at least one line
-        if self.editor_lines.is_empty() {
-            self.editor_lines.push(String::new());
-            self.editor_cursor_row = 0;
-            self.editor_cursor_col = 0;
-        }
-
-        // Ensure cursor row is valid
-        if self.editor_cursor_row >= self.editor_lines.len() {
-            self.editor_lines.push(String::new());
-        }
-
-        // Ensure cursor col is within bounds
-        let line_len = self.editor_lines[self.editor_cursor_row].len();
-        if self.editor_cursor_col > line_len {
-            self.editor_cursor_col = line_len;
-        }
-
-        self.editor_lines[self.editor_cursor_row].insert(self.editor_cursor_col, c);
-        self.editor_cursor_col += 1;
-    }
-
-    pub fn editor_insert_newline(&mut self) {
-        if self.editor_cursor_row >= self.editor_lines.len() {
-            self.editor_lines.push(String::new());
-            self.editor_cursor_row += 1;
-            self.editor_cursor_col = 0;
-            return;
-        }
-
-        let current_line = &self.editor_lines[self.editor_cursor_row];
-        let after = current_line[self.editor_cursor_col..].to_string();
-        self.editor_lines[self.editor_cursor_row].truncate(self.editor_cursor_col);
-        self.editor_lines.insert(self.editor_cursor_row + 1, after);
-        self.editor_cursor_row += 1;
-        self.editor_cursor_col = 0;
-    }
-
-    pub fn editor_delete_char(&mut self) {
-        if self.editor_cursor_col > 0 {
-            self.editor_lines[self.editor_cursor_row].remove(self.editor_cursor_col - 1);
-            self.editor_cursor_col -= 1;
-        } else if self.editor_cursor_row > 0 {
-            // Merge with previous line
-            let current_line = self.editor_lines.remove(self.editor_cursor_row);
-            self.editor_cursor_row -= 1;
-            self.editor_cursor_col = self.editor_lines[self.editor_cursor_row].len();
-            self.editor_lines[self.editor_cursor_row].push_str(&current_line);
-        }
-    }
-
-    pub fn editor_move_left(&mut self) {
-        if self.editor_cursor_col > 0 {
-            self.editor_cursor_col -= 1;
-        } else if self.editor_cursor_row > 0 {
-            self.editor_cursor_row -= 1;
-            self.editor_cursor_col = self.editor_lines[self.editor_cursor_row].len();
-        }
-    }
-
-    pub fn editor_move_right(&mut self) {
-        if self.editor_cursor_col < self.editor_lines[self.editor_cursor_row].len() {
-            self.editor_cursor_col += 1;
-        } else if self.editor_cursor_row < self.editor_lines.len() - 1 {
-            self.editor_cursor_row += 1;
-            self.editor_cursor_col = 0;
-        }
-    }
-
-    pub fn editor_move_up(&mut self) {
-        if self.editor_cursor_row > 0 {
-            self.editor_cursor_row -= 1;
-            let line_len = self.editor_lines[self.editor_cursor_row].len();
-            self.editor_cursor_col = self.editor_cursor_col.min(line_len);
-        }
-    }
-
-    pub fn editor_move_down(&mut self) {
-        if self.editor_cursor_row < self.editor_lines.len() - 1 {
-            self.editor_cursor_row += 1;
-            let line_len = self.editor_lines[self.editor_cursor_row].len();
-            self.editor_cursor_col = self.editor_cursor_col.min(line_len);
-        }
-    }
+    // TextArea handles all input internally, so we don't need manual methods
 
     pub fn editor_load_file(&mut self, path: &str) -> Result<(), std::io::Error> {
         let content = std::fs::read_to_string(path)?;
-        self.editor_lines = if content.is_empty() {
+        let lines: Vec<String> = if content.is_empty() {
             vec![String::new()]
         } else {
             content.lines().map(|s| s.to_string()).collect()
         };
-        self.editor_cursor_row = 0;
-        self.editor_cursor_col = 0;
-        self.editor_scroll_offset = 0;
+        self.editor = TextArea::new(lines);
         self.editor_file_path = Some(path.to_string());
         Ok(())
     }
 
     pub fn editor_save_file(&self) -> Result<(), std::io::Error> {
         if let Some(path) = &self.editor_file_path {
-            let content = self.editor_lines.join("\n");
+            let content = self.editor.lines().join("\n");
             std::fs::write(path, content)?;
             Ok(())
         } else {
@@ -513,13 +445,14 @@ impl App {
     }
 
     pub fn editor_get_content(&self) -> String {
-        self.editor_lines.join("\n")
+        self.editor.lines().join("\n")
     }
 
     /// Send current line from editor to REPL for execution
     pub async fn send_current_line_to_repl(&mut self) {
-        if self.editor_cursor_row < self.editor_lines.len() {
-            let line = self.editor_lines[self.editor_cursor_row].clone();
+        let (row, _col) = self.editor.cursor();
+        if row < self.editor.lines().len() {
+            let line = self.editor.lines()[row].clone();
             if !line.trim().is_empty() && !line.trim().starts_with("//") {
                 // Set the REPL input to this line
                 self.input = line;
@@ -527,7 +460,7 @@ impl App {
                 // Execute it
                 self.submit_input().await;
                 // Move to next line in editor
-                self.editor_move_down();
+                self.editor.move_cursor(tui_textarea::CursorMove::Down);
             }
         }
     }

@@ -84,6 +84,8 @@ pub enum FunctionExecution {
     LLM {
         prompt: String,
         model: Option<String>,
+        base_url: Option<String>,
+        api_key_env: Option<String>,
         temperature: Option<f64>,
     },
     /// HTTP request execution
@@ -106,6 +108,8 @@ pub enum FunctionExecution {
         http_headers: Option<HashMap<String, String>>,
         llm_prompt: String,
         llm_model: Option<String>,
+        llm_base_url: Option<String>,
+        llm_api_key_env: Option<String>,
         llm_temperature: Option<f64>,
     },
 }
@@ -668,7 +672,7 @@ fn parse_http_block(pair: pest::iterators::Pair<Rule>) -> Result<(String, String
     // Parse remaining properties
     for item in inner {
         match item.as_rule() {
-            Rule::string_literal => {
+            Rule::string_literal | Rule::template_string => {
                 // This is the URL
                 url = extract_string_content(item)?;
             }
@@ -769,12 +773,20 @@ fn build_function_definition(pair: pest::iterators::Pair<Rule>) -> Result<Functi
             FunctionExecution::LLM {
                 prompt: prompt_value.unwrap(),
                 model: extract_string_property(&properties, "model"),
+                base_url: extract_string_property(&properties, "base_url"),
+                api_key_env: extract_string_property(&properties, "api_key_env"),
                 temperature: extract_float_property(&properties, "temperature"),
             }
         }
         (false, true, false) => {
             // Pure HTTP function
-            let (method, url, params, headers, body) = http_config.unwrap();
+            let (method, mut url, params, headers, body) = http_config.unwrap();
+
+            // Check if URL is in properties (since it's parsed separately as a property)
+            if url.is_empty() {
+                url = extract_string_property(&properties, "url").unwrap_or_default();
+            }
+
             FunctionExecution::HTTP {
                 method,
                 url,
@@ -791,7 +803,13 @@ fn build_function_definition(pair: pest::iterators::Pair<Rule>) -> Result<Functi
         }
         (true, true, false) => {
             // Hybrid: HTTP then LLM
-            let (method, url, params, headers, _body) = http_config.unwrap();
+            let (method, mut url, params, headers, _body) = http_config.unwrap();
+
+            // Check if URL is in properties (since it's parsed separately as a property)
+            if url.is_empty() {
+                url = extract_string_property(&properties, "url").unwrap_or_default();
+            }
+
             FunctionExecution::HTTPWithLLM {
                 http_method: method,
                 http_url: url,
@@ -799,6 +817,8 @@ fn build_function_definition(pair: pest::iterators::Pair<Rule>) -> Result<Functi
                 http_headers: headers,
                 llm_prompt: prompt_value.unwrap(),
                 llm_model: extract_string_property(&properties, "model"),
+                llm_base_url: extract_string_property(&properties, "base_url"),
+                llm_api_key_env: extract_string_property(&properties, "api_key_env"),
                 llm_temperature: extract_float_property(&properties, "temperature"),
             }
         }

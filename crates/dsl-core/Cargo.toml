@@ -1,0 +1,30 @@
+[package]
+name = "dsl-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Parser dependencies
+pest = { workspace = true }
+pest_derive = { workspace = true }
+
+# LLM and structured extraction
+simplify_baml = "0.1.0"
+
+# Database
+duckdb = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+futures = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Collections and utilities
+indexmap = { workspace = true }
+anyhow = { workspace = true }
