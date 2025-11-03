@@ -15,6 +15,8 @@ pub enum Value {
     // from actual data structure order, leading to confusing inconsistencies.
     Map(IndexMap<String, Value>),
     Null,
+    /// Markdown-formatted string for rich text rendering
+    Markdown(String),
 }
 
 impl Value {
@@ -27,6 +29,7 @@ impl Value {
             Value::List(_) => "List",
             Value::Map(_) => "Map",
             Value::Null => "Null",
+            Value::Markdown(_) => "Markdown",
         }
     }
 
@@ -66,6 +69,9 @@ impl Value {
                 }
             }
             Value::Null => "null".to_string(),
+            Value::Markdown(s) => {
+                format!("[Markdown: {}...]", s.chars().take(50).collect::<String>())
+            }
         }
     }
 
@@ -232,6 +238,7 @@ impl Value {
                 serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
             }
             Value::Null => "null".to_string(),
+            Value::Markdown(s) => s.clone(),
         }
     }
 

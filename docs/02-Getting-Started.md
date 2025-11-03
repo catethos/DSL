@@ -194,18 +194,18 @@ The DSL starts in **Workspace Mode** with three panes. Press **F1** to switch to
 
 ### Tutorial 5: Parallel Execution (2 minutes)
 
-11. **Parallel with `||`**
+11. **Parallel with `par()`**
     ```javascript
-    flow> (5 || 10 || 15)
+    flow> par(5, 10, 15)
     ✓ [5, 10, 15] : List
 
-    flow> (5 || 10 || 15) as numbers
+    flow> par(5, 10, 15) as numbers
     ✓ Bound 'numbers' to [5, 10, 15] : List
     ```
 
 12. **Parallel destructuring**
     ```javascript
-    flow> (10 || 20 || 30) as [a, b, c]
+    flow> par(10, 20, 30) as [a, b, c]
     ✓ Bound 'a' to 10 : Int
     ✓ Bound 'b' to 20 : Int
     ✓ Bound 'c' to 30 : Int
@@ -321,8 +321,11 @@ The REPL supports several special commands:
 
 ### Operators
 - `+`, `-`, `*`, `/` - Arithmetic
+- `==`, `!=`, `<`, `>`, `<=`, `>=` - Comparison
+- `&&`, `||`, `!` - Logical operators
 - `>>` - Sequential composition
-- `||` - Parallel execution
+- `par()` - Parallel execution
+- `?:` - Conditional (ternary)
 - `as` - Variable binding
 
 ### Data Types

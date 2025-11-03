@@ -21,8 +21,72 @@ pub mod editor;
 pub mod output_item;
 pub mod renderers;
 pub mod ui;
+pub mod utf8_utils;
 
 pub use app::App;
+
+/// Run the TUI in non-interactive mode, reading from stdin
+pub async fn run_stdin() -> io::Result<()> {
+    use dsl_core::Evaluator;
+    use std::io::{BufRead, BufReader};
+
+    let mut evaluator = Evaluator::new();
+    let stdin = io::stdin();
+    let reader = BufReader::new(stdin);
+
+    for line in reader.lines() {
+        let line = line?;
+        let trimmed = line.trim();
+
+        // Skip empty lines and comments
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            continue;
+        }
+
+        // Execute the line
+        match evaluator.eval(trimmed).await {
+            Ok((value, var_name)) => {
+                if let Some(name) = var_name {
+                    println!("✓ Bound '{}' : {}", name, value.type_name());
+                } else {
+                    println!("✓ {}", value.type_name());
+                }
+                // Print the value
+                println!("{}", format_value_for_output(&value));
+            }
+            Err(err) => {
+                eprintln!("Error: {}", err);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Format a value for output in non-interactive mode
+fn format_value_for_output(value: &dsl_core::Value) -> String {
+    use dsl_core::Value;
+
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Int(i) => i.to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::String(s) => format!("\"{}\"", s),
+        Value::List(items) => {
+            let items_str: Vec<String> = items.iter().map(format_value_for_output).collect();
+            format!("[{}]", items_str.join(", "))
+        }
+        Value::Map(map) => {
+            let entries: Vec<String> = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, format_value_for_output(v)))
+                .collect();
+            format!("{{{}}}", entries.join(", "))
+        }
+        Value::Markdown(s) => s.clone(),
+    }
+}
 
 /// Run the TUI application
 pub async fn run_tui() -> io::Result<()> {
@@ -136,7 +200,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app.output.push(OutputItem::text("✓ Copied to clipboard"));
                             }
                             Err(e) => {
-                                app.output.push(OutputItem::error(format!("Copy failed: {}", e)));
+                                app.output
+                                    .push(OutputItem::error(format!("Copy failed: {}", e)));
                             }
                         }
                         // Don't quit - let the event handling continue
@@ -293,7 +358,8 @@ async fn handle_workspace_input(app: &mut App, key: event::KeyEvent) {
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             use crate::output_item::OutputItem;
             if let Err(e) = app.editor_save_file() {
-                app.output.push(OutputItem::error(format!("Save error: {}", e)));
+                app.output
+                    .push(OutputItem::error(format!("Save error: {}", e)));
             } else {
                 app.output.push(OutputItem::text("✓ File saved"));
             }

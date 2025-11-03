@@ -178,11 +178,14 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             "ask" => self.ask(args).await,
             "extractperson" => self.extract_person(args).await,
             "extractas" => self.extract_as(args).await,
+            "rendermarkdown" => self.render_markdown(args),
             "sql" => self.sql(args),
             "length" => self.length(args),
             "upper" => self.upper(args),
             "lower" => self.lower(args),
             "join" => self.join(args),
+            "par" => Ok(self.par(args)),
+            "not" => self.not(args),
             _ => Err(anyhow::anyhow!("Unknown function: {}", name)),
         }
     }
@@ -476,12 +479,9 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             BamlValue::Float(f) => Value::Float(f),
             BamlValue::Bool(b) => Value::Bool(b),
             BamlValue::Null => Value::Null,
-            BamlValue::List(items) => Value::List(
-                items
-                    .into_iter()
-                    .map(Self::baml_value_to_value)
-                    .collect(),
-            ),
+            BamlValue::List(items) => {
+                Value::List(items.into_iter().map(Self::baml_value_to_value).collect())
+            }
             BamlValue::Map(map) => Value::Map(
                 map.into_iter()
                     .map(|(k, v)| (k, Self::baml_value_to_value(v)))
@@ -494,7 +494,7 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
     fn parse_type_identifier(type_id: &str, ir: &IR) -> Result<FieldType> {
         // Check if it's a list type like "[string]"
         if type_id.starts_with('[') && type_id.ends_with(']') {
-            let inner_type = type_id[1..type_id.len()-1].trim();
+            let inner_type = type_id[1..type_id.len() - 1].trim();
             let inner_field_type = Self::parse_type_identifier(inner_type, ir)?;
             return Ok(FieldType::List(Box::new(inner_field_type)));
         }
@@ -561,6 +561,23 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             Value::String(s) => Ok(Value::String(s.to_lowercase())),
             _ => Err(anyhow::anyhow!(
                 "Lower() requires a string, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn render_markdown(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!(
+                "RenderMarkdown() requires exactly 1 argument"
+            ));
+        }
+
+        match &args[0] {
+            Value::String(s) => Ok(Value::Markdown(s.clone())),
+            Value::Markdown(s) => Ok(Value::Markdown(s.clone())),
+            _ => Err(anyhow::anyhow!(
+                "RenderMarkdown() requires a string, got {}",
                 args[0].type_name()
             )),
         }
@@ -639,6 +656,31 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
         executor
             .execute(&query, &HashMap::new())
             .map_err(|e| anyhow::anyhow!("SQL execution failed: {}", e))
+    }
+
+    /// par() - Parallel execution function
+    /// Takes multiple arguments and returns them as a list
+    /// This replaces the old || operator syntax
+    fn par(&self, args: Vec<Value>) -> Value {
+        // Always return a list, even for single argument
+        // This ensures destructuring works consistently
+        Value::List(args)
+    }
+
+    /// not() - Logical NOT function
+    /// Takes a boolean and returns its negation
+    fn not(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("not() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::Bool(b) => Ok(Value::Bool(!b)),
+            _ => Err(anyhow::anyhow!(
+                "not() requires a boolean, got {}",
+                args[0].type_name()
+            )),
+        }
     }
 }
 

@@ -177,7 +177,12 @@ impl App {
             i += 1;
         }
 
-        brace_count > 0 || bracket_count > 0 || paren_count > 0 || in_triple_string || in_string || in_single_quote
+        brace_count > 0
+            || bracket_count > 0
+            || paren_count > 0
+            || in_triple_string
+            || in_string
+            || in_single_quote
     }
 
     /// Check if we should enter multiline mode
@@ -215,6 +220,9 @@ impl App {
 
         // Hide banner after first input
         self.show_banner = false;
+
+        // Enable auto-scroll to show new output
+        self.auto_scroll_output = true;
 
         let input_text = self.input.clone();
 
@@ -278,8 +286,10 @@ impl App {
 
                 // Add a header line indicating the result
                 if let Some(name) = var_name {
-                    self.output
-                        .push(OutputItem::text(format!("✓ Bound '{}' : {}", name, type_str)));
+                    self.output.push(OutputItem::text(format!(
+                        "✓ Bound '{}' : {}",
+                        name, type_str
+                    )));
                 } else {
                     self.output
                         .push(OutputItem::text(format!("✓ {}", type_str)));
@@ -306,12 +316,24 @@ impl App {
     }
 
     pub fn move_cursor_left(&mut self) {
-        self.cursor_position = self.cursor_position.saturating_sub(1);
+        if self.cursor_position > 0 {
+            // Move to the start of the previous character (handles multi-byte UTF-8)
+            let mut new_pos = self.cursor_position - 1;
+            while new_pos > 0 && !self.input.is_char_boundary(new_pos) {
+                new_pos -= 1;
+            }
+            self.cursor_position = new_pos;
+        }
     }
 
     pub fn move_cursor_right(&mut self) {
         if self.cursor_position < self.input.len() {
-            self.cursor_position += 1;
+            // Move to the start of the next character (handles multi-byte UTF-8)
+            let mut new_pos = self.cursor_position + 1;
+            while new_pos < self.input.len() && !self.input.is_char_boundary(new_pos) {
+                new_pos += 1;
+            }
+            self.cursor_position = new_pos;
         }
     }
 
@@ -327,7 +349,8 @@ impl App {
         // Exit history browsing mode when typing
         self.history_index = None;
         self.input.insert(self.cursor_position, c);
-        self.cursor_position += 1;
+        // Move cursor by the UTF-8 byte length of the character (e.g., 3 bytes for Chinese)
+        self.cursor_position += c.len_utf8();
 
         // Trigger autocomplete
         self.trigger_autocomplete();
@@ -337,8 +360,15 @@ impl App {
         // Exit history browsing mode when deleting
         self.history_index = None;
         if self.cursor_position > 0 {
-            self.input.remove(self.cursor_position - 1);
-            self.cursor_position -= 1;
+            // Find the start of the character before cursor (handles multi-byte UTF-8)
+            let mut char_start = self.cursor_position - 1;
+            while char_start > 0 && !self.input.is_char_boundary(char_start) {
+                char_start -= 1;
+            }
+
+            // Remove the character and update cursor position
+            self.input.remove(char_start);
+            self.cursor_position = char_start;
         }
 
         // Trigger autocomplete
@@ -349,7 +379,10 @@ impl App {
         // Exit history browsing mode when deleting
         self.history_index = None;
         if self.cursor_position < self.input.len() {
+            // The cursor is already at a character boundary (maintained by insert_char)
+            // String::remove() will remove the full character at this position
             self.input.remove(self.cursor_position);
+            // Cursor position stays the same after forward delete
         }
 
         // Trigger autocomplete
@@ -402,7 +435,11 @@ impl App {
                 let line_within_item = line_after_banner - current_line;
 
                 // If it's a tree, handle the click
-                if let OutputItem::Tree { root, expanded_paths } = output_item {
+                if let OutputItem::Tree {
+                    root,
+                    expanded_paths,
+                } = output_item
+                {
                     // Account for the hint line at the top (line 0)
                     // The actual tree nodes start at line 1
                     if line_within_item > 0 {
@@ -411,7 +448,8 @@ impl App {
                         // Find which node was clicked (using current expansion state)
                         // Make a temporary clone of expanded_paths for finding the node
                         let temp_expanded = expanded_paths.clone();
-                        if let Some(node) = tree::find_node_at_line(root, &temp_expanded, tree_line) {
+                        if let Some(node) = tree::find_node_at_line(root, &temp_expanded, tree_line)
+                        {
                             // Toggle expansion for this node
                             let path = node.path.clone();
                             let current_state = expanded_paths.get(&path).copied().unwrap_or(false);

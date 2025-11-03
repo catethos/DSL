@@ -141,11 +141,7 @@ conditional = {
 }
 
 sequential = {
-    parallel ~ (binding)? ~ (">>" ~ parallel ~ (binding)?)*
-}
-
-parallel = {
-    additive ~ ("||" ~ additive)* ~ (binding)?
+    logical_or ~ (binding)? ~ ("|>" ~ logical_or ~ (binding)?)*
 }
 
 binding = {
@@ -156,6 +152,24 @@ list_binding = {
     "[" ~ identifier ~ ("," ~ identifier)* ~ "]"
 }
 
+// Logical operators (lower precedence than comparison)
+logical_or = {
+    logical_and ~ ("||" ~ logical_and)*
+}
+
+logical_and = {
+    comparison ~ ("&&" ~ comparison)*
+}
+
+// Comparison operators
+comparison = {
+    additive ~ (comparison_op ~ additive)?
+}
+
+comparison_op = {
+    "==" | "!=" | "<=" | ">=" | "<" | ">"
+}
+
 // Arithmetic expressions with operator precedence
 additive = {
     multiplicative ~ (add_op ~ multiplicative)*
@@ -164,18 +178,37 @@ additive = {
 add_op = { "+" | "-" }
 
 multiplicative = {
-    primary ~ (mul_op ~ primary)*
+    unary ~ (mul_op ~ unary)*
 }
 
 mul_op = { "*" | "/" }
 
+// Unary operators (!, -)
+unary = {
+    unary_op ~ unary
+    | primary
+}
+
+unary_op = { "!" | "-" }
+
 primary = _{
     paren_expr
+    | type_instantiation
     | function_call
     | access_chain
     | block
     | literal
     | identifier
+}
+
+// Type instantiation: TypeName { field: value, ... }
+// Must come before function_call to avoid ambiguity
+type_instantiation = {
+    identifier ~ "{" ~ (type_field_assignment ~ ("," ~ type_field_assignment)*)? ~ ","? ~ "}"
+}
+
+type_field_assignment = {
+    identifier ~ ":" ~ expr
 }
 
 paren_expr = { "(" ~ expr ~ ")" }

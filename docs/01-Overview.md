@@ -254,7 +254,7 @@ SQL("SELECT * FROM 'data.csv' WHERE score > 0.8") as data
 ### 2. **API Orchestration**
 ```javascript
 // Fetch from multiple APIs in parallel, combine results
-(getWeather("NYC") || getNews("NYC") || getEvents("NYC"))
+par(getWeather("NYC"), getNews("NYC"), getEvents("NYC"))
   >> Summarize(_) as report
 ```
 

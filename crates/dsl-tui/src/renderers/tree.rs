@@ -17,7 +17,9 @@ pub fn tree_to_lines(
     if matches!(root.value, TreeValue::Map { .. } | TreeValue::List { .. }) {
         lines.push(Line::from(vec![Span::styled(
             "💡 Click on ▶/▼ to expand/collapse".to_string(),
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
         )]));
     }
 
@@ -142,7 +144,9 @@ fn find_node_at_line_recursive<'a>(
     let is_expanded = expanded_paths.get(&node.path).copied().unwrap_or(false);
     if is_expanded {
         for child in &node.children {
-            if let Some(found) = find_node_at_line_recursive(child, expanded_paths, target_line, current_line) {
+            if let Some(found) =
+                find_node_at_line_recursive(child, expanded_paths, target_line, current_line)
+            {
                 return Some(found);
             }
         }
@@ -182,6 +186,6 @@ mod tests {
         expanded.insert("root".to_string(), true);
 
         let lines = tree_to_lines(&root, &expanded, 80);
-        assert_eq!(lines.len(), 3); // root + 2 children
+        assert_eq!(lines.len(), 4); // hint line + root + 2 children
     }
 }

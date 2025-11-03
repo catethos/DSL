@@ -111,15 +111,16 @@ fn draw_repl_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
     app.last_render_width = repl_width;
 
     // Calculate selection range if any
-    let (selection_start, selection_end) = if let (Some(start), Some(end)) = (app.selection_start, app.selection_end) {
-        if start <= end {
-            (start, end)
+    let (selection_start, selection_end) =
+        if let (Some(start), Some(end)) = (app.selection_start, app.selection_end) {
+            if start <= end {
+                (start, end)
+            } else {
+                (end, start)
+            }
         } else {
-            (end, start)
-        }
-    } else {
-        (usize::MAX, usize::MAX) // No selection
-    };
+            (usize::MAX, usize::MAX) // No selection
+        };
 
     let mut current_line = 0;
 
@@ -203,7 +204,9 @@ fn draw_repl_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
 
     // Set cursor position if REPL pane is active
     if app.active_pane == WorkspacePane::Repl && !app.input.is_empty() {
-        let text_before_cursor = &app.input[..app.cursor_position];
+        use crate::utf8_utils::safe_prefix;
+
+        let text_before_cursor = safe_prefix(&app.input, app.cursor_position);
         let cursor_input_line = text_before_cursor.matches('\n').count();
         let input_line_count = app.input.lines().count().max(1);
         let cursor_global_line = total_lines.saturating_sub(input_line_count) + cursor_input_line;
@@ -213,7 +216,12 @@ fn draw_repl_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
             .rfind('\n')
             .map(|pos| pos + 1)
             .unwrap_or(0);
-        let cursor_col_in_input = app.cursor_position - line_start;
+
+        // Calculate display width (visual columns) instead of byte length
+        // Chinese characters take 2 columns each, ASCII takes 1
+        use unicode_width::UnicodeWidthStr;
+        let current_line_text = &text_before_cursor[line_start..];
+        let cursor_col_in_input = current_line_text.width();
         let prompt_width = if cursor_input_line == 0 { 6 } else { 5 };
         let cursor_x = area.x + 1 + prompt_width + cursor_col_in_input as u16;
         let cursor_y = area.y + 1 + cursor_visible_line as u16;

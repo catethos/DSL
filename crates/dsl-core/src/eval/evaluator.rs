@@ -1,7 +1,8 @@
 use crate::eval::builtin::BuiltinFunctions;
 use crate::parser::{
     is_command, parse_enum_definition, parse_expr, parse_expr_with_binding,
-    parse_function_definition, parse_type_definition, Expr, FunctionDef, FunctionExecution, TemplateSegment,
+    parse_function_definition, parse_type_definition, Expr, FunctionDef, FunctionExecution,
+    TemplateSegment,
 };
 use crate::types::{TypeRegistry, Value};
 use indexmap::IndexMap;
@@ -200,6 +201,16 @@ impl Evaluator {
                         .map_err(|e| e.to_string())
                 }
             }
+            Expr::TypeInstantiation {
+                type_name,
+                fields: _,
+            } => {
+                // TODO: Type instantiation not yet implemented in evaluator
+                Err(format!(
+                    "Type instantiation for '{}' not yet supported",
+                    type_name
+                ))
+            }
             Expr::FieldAccess { base, field } => {
                 let base_value = Box::pin(self.eval_expr(base)).await?;
                 self.access_field(&base_value, field)
@@ -299,9 +310,16 @@ impl Evaluator {
             }
             Expr::Parallel { exprs, binding } => {
                 // Execute all expressions and collect into a list
-                // Note: Due to Rust's borrow checker and Send trait limitations,
-                // we evaluate sequentially but still collect results as a list
-                // This maintains the correct semantics for the || operator
+                //
+                // NOTE: Despite the || operator suggesting parallelism, we currently evaluate
+                // sequentially due to fundamental architecture limitations:
+                // - BuiltinFunctions contains RefCell<duckdb::Connection> which is !Sync
+                // - This prevents sharing across threads even with Arc<Mutex<>>
+                // - True parallelism would require refactoring all internal state to be thread-safe
+                //
+                // For I/O-bound workloads (LLM/HTTP calls), async concurrency within a single
+                // task already provides good performance. True parallelism would mainly benefit
+                // CPU-bound operations, which are rare in this DSL's use case.
                 //
                 // The Parallel node is also used for simple bindings like "expr as name"
                 // (with a single expression) to avoid double evaluation that would happen
@@ -490,10 +508,30 @@ impl Evaluator {
 
         // Execute based on function type
         let result = match &func_def.execution {
-            FunctionExecution::LLM { prompt, model, base_url, api_key_env, temperature: _ } => {
-                self.execute_llm_function(func_def, prompt, model.clone(), base_url.clone(), api_key_env.clone(), &arg_values).await?
+            FunctionExecution::LLM {
+                prompt,
+                model,
+                base_url,
+                api_key_env,
+                temperature: _,
+            } => {
+                self.execute_llm_function(
+                    func_def,
+                    prompt,
+                    model.clone(),
+                    base_url.clone(),
+                    api_key_env.clone(),
+                    &arg_values,
+                )
+                .await?
             }
-            FunctionExecution::HTTP { method, url, params, headers, body } => {
+            FunctionExecution::HTTP {
+                method,
+                url,
+                params,
+                headers,
+                body,
+            } => {
                 let http_config = HttpRequestConfig {
                     method,
                     url_template: url,
@@ -501,10 +539,12 @@ impl Evaluator {
                     headers,
                     body,
                 };
-                self.execute_http_function(func_def, &http_config, &arg_values).await?
+                self.execute_http_function(func_def, &http_config, &arg_values)
+                    .await?
             }
             FunctionExecution::SQL { query } => {
-                self.execute_sql_function(func_def, query, &arg_values).await?
+                self.execute_sql_function(func_def, query, &arg_values)
+                    .await?
             }
             FunctionExecution::HTTPWithLLM {
                 http_method,
@@ -525,11 +565,9 @@ impl Evaluator {
                     headers: http_headers,
                     body: &None,
                 };
-                let http_result = self.execute_http_function(
-                    func_def,
-                    &http_config,
-                    &arg_values
-                ).await?;
+                let http_result = self
+                    .execute_http_function(func_def, &http_config, &arg_values)
+                    .await?;
 
                 // Then pass result to LLM
                 let llm_config = LlmConfig {
@@ -537,7 +575,14 @@ impl Evaluator {
                     base_url: llm_base_url.clone(),
                     api_key_env: llm_api_key_env.clone(),
                 };
-                self.execute_llm_with_input(func_def, llm_prompt, &llm_config, &http_result, &arg_values).await?
+                self.execute_llm_with_input(
+                    func_def,
+                    llm_prompt,
+                    &llm_config,
+                    &http_result,
+                    &arg_values,
+                )
+                .await?
             }
         };
 
@@ -558,7 +603,8 @@ impl Evaluator {
         arg_values: &[Value],
     ) -> Result<Value, String> {
         // Interpolate template variables
-        let prompt = self.interpolate_string_template(prompt_template, &func_def.params, arg_values)?;
+        let prompt =
+            self.interpolate_string_template(prompt_template, &func_def.params, arg_values)?;
 
         // Call the appropriate builtin function based on return type
         if let Some(return_type) = &func_def.return_type {
@@ -589,7 +635,8 @@ impl Evaluator {
         arg_values: &[Value],
     ) -> Result<Value, String> {
         // Interpolate template with both args and input data
-        let mut prompt = self.interpolate_string_template(prompt_template, &func_def.params, arg_values)?;
+        let mut prompt =
+            self.interpolate_string_template(prompt_template, &func_def.params, arg_values)?;
 
         // Append the input data to the prompt
         prompt.push_str("\n\nData to analyze:\n");
@@ -602,12 +649,23 @@ impl Evaluator {
             let type_identifier = return_type.to_string();
 
             self.builtins
-                .extract_as_with_config(prompt, type_identifier, config.model.clone(), config.base_url.clone(), config.api_key_env.clone())
+                .extract_as_with_config(
+                    prompt,
+                    type_identifier,
+                    config.model.clone(),
+                    config.base_url.clone(),
+                    config.api_key_env.clone(),
+                )
                 .await
                 .map_err(|e| e.to_string())
         } else {
             self.builtins
-                .ask_with_config(prompt, config.model.clone(), config.base_url.clone(), config.api_key_env.clone())
+                .ask_with_config(
+                    prompt,
+                    config.model.clone(),
+                    config.base_url.clone(),
+                    config.api_key_env.clone(),
+                )
                 .await
                 .map_err(|e| e.to_string())
         }
@@ -621,7 +679,8 @@ impl Evaluator {
         arg_values: &[Value],
     ) -> Result<Value, String> {
         // Interpolate URL template with arguments
-        let url = self.interpolate_string_template(config.url_template, &func_def.params, arg_values)?;
+        let url =
+            self.interpolate_string_template(config.url_template, &func_def.params, arg_values)?;
 
         // Create HTTP client with User-Agent header
         let client = reqwest::Client::builder()
@@ -656,7 +715,8 @@ impl Evaluator {
         // Add body if provided (for POST, PUT, PATCH)
         if let Some(body_content) = config.body {
             // Interpolate body template
-            let interpolated_body = self.interpolate_string_template(body_content, &func_def.params, arg_values)?;
+            let interpolated_body =
+                self.interpolate_string_template(body_content, &func_def.params, arg_values)?;
 
             // Try to parse as JSON, otherwise send as plain text
             if let Ok(json_body) = serde_json::from_str::<serde_json::Value>(&interpolated_body) {
@@ -675,7 +735,11 @@ impl Evaluator {
         // Check if the response is successful
         let status = response.status();
         if !status.is_success() {
-            return Err(format!("HTTP request failed with status: {} {}", status.as_u16(), status.canonical_reason().unwrap_or("Unknown")));
+            return Err(format!(
+                "HTTP request failed with status: {} {}",
+                status.as_u16(),
+                status.canonical_reason().unwrap_or("Unknown")
+            ));
         }
 
         // Get the response body as text first
@@ -701,7 +765,8 @@ impl Evaluator {
         arg_values: &[Value],
     ) -> Result<Value, String> {
         // Interpolate query template with arguments
-        let query = self.interpolate_string_template(query_template, &func_def.params, arg_values)?;
+        let query =
+            self.interpolate_string_template(query_template, &func_def.params, arg_values)?;
 
         // Use existing SQL builtin
         self.builtins

@@ -36,9 +36,41 @@ impl CompletionContext {
         }
     }
 
+    /// Safely slice a string at UTF-8 character boundaries
+    /// Returns a substring from `start` to `end` (byte offsets), adjusting boundaries if needed
+    fn safe_slice(input: &str, start: usize, end: usize) -> &str {
+        let len = input.len();
+        let start = start.min(len);
+        let end = end.min(len);
+
+        // Adjust start to the nearest valid character boundary
+        let start = if start > 0 && !input.is_char_boundary(start) {
+            // Move backward to find the start of the character
+            (0..=start)
+                .rev()
+                .find(|&i| input.is_char_boundary(i))
+                .unwrap_or(0)
+        } else {
+            start
+        };
+
+        // Adjust end to the nearest valid character boundary
+        let end = if end > 0 && !input.is_char_boundary(end) {
+            // Move backward to find the start of the character
+            (0..=end)
+                .rev()
+                .find(|&i| input.is_char_boundary(i))
+                .unwrap_or(0)
+        } else {
+            end
+        };
+
+        &input[start..end]
+    }
+
     /// Detect what kind of completion is appropriate
     fn detect_kind(input: &str, cursor: usize) -> ContextKind {
-        let before_cursor = &input[..cursor.min(input.len())];
+        let before_cursor = Self::safe_slice(input, 0, cursor);
 
         // Check for REPL command (starts with :)
         if before_cursor.trim_start().starts_with(':') {
@@ -57,14 +89,28 @@ impl CompletionContext {
         // Check if we're inside a function call (after opening paren)
         if let Some(paren_pos) = before_cursor.rfind('(') {
             if !Self::is_inside_string(before_cursor, paren_pos) {
-                // Extract function name before the paren
-                let before_paren = before_cursor[..paren_pos].trim();
-                if let Some(func_start) = before_paren.rfind(|c: char| !c.is_alphanumeric() && c != '_') {
-                    let func_name = before_paren[func_start + 1..].to_string();
-                    return ContextKind::FunctionCall { function: func_name };
-                } else {
-                    let func_name = before_paren.to_string();
-                    return ContextKind::FunctionCall { function: func_name };
+                // Check if there's a matching closing paren after the opening paren
+                // If so, we're not inside the function call anymore
+                let after_paren = &before_cursor[paren_pos..];
+                let has_closing_paren = after_paren.contains(')');
+
+                if !has_closing_paren {
+                    // We're inside the function call
+                    // Extract function name before the paren
+                    let before_paren = before_cursor[..paren_pos].trim();
+                    if let Some(func_start) =
+                        before_paren.rfind(|c: char| !c.is_alphanumeric() && c != '_')
+                    {
+                        let func_name = before_paren[func_start + 1..].to_string();
+                        return ContextKind::FunctionCall {
+                            function: func_name,
+                        };
+                    } else {
+                        let func_name = before_paren.to_string();
+                        return ContextKind::FunctionCall {
+                            function: func_name,
+                        };
+                    }
                 }
             }
         }
@@ -75,7 +121,8 @@ impl CompletionContext {
         }
 
         // Check if we're after a type keyword
-        if before_cursor.trim_end().ends_with("type") || before_cursor.trim_end().ends_with("enum") {
+        if before_cursor.trim_end().ends_with("type") || before_cursor.trim_end().ends_with("enum")
+        {
             return ContextKind::AfterType;
         }
 
@@ -85,7 +132,7 @@ impl CompletionContext {
 
     /// Extract the partial word being typed
     fn extract_partial(input: &str, cursor: usize) -> String {
-        let before_cursor = &input[..cursor.min(input.len())];
+        let before_cursor = Self::safe_slice(input, 0, cursor);
 
         // Find the start of the current word
         let word_start = before_cursor
@@ -93,7 +140,8 @@ impl CompletionContext {
             .map(|pos| pos + 1)
             .unwrap_or(0);
 
-        before_cursor[word_start..].to_string()
+        // Safe slice from word_start to end of before_cursor
+        Self::safe_slice(before_cursor, word_start, before_cursor.len()).to_string()
     }
 
     /// Extract additional context-specific data
@@ -101,7 +149,7 @@ impl CompletionContext {
         match kind {
             ContextKind::FunctionCall { function: _ } => {
                 // Count how many arguments we've typed so far
-                let before_cursor = &input[..cursor.min(input.len())];
+                let before_cursor = Self::safe_slice(input, 0, cursor);
                 if let Some(paren_pos) = before_cursor.rfind('(') {
                     let args_text = &before_cursor[paren_pos + 1..];
                     let arg_count = args_text.matches(',').count();
@@ -223,5 +271,78 @@ mod tests {
     fn test_partial_extraction() {
         let ctx = CompletionContext::new("let foo = Up", 12);
         assert_eq!(ctx.partial, "Up");
+    }
+
+    #[test]
+    fn test_chinese_characters() {
+        // Test with Chinese characters in function call
+        let ctx = CompletionContext::new("emotional_value(你喜欢现在的我", 41);
+        assert_eq!(
+            ctx.kind,
+            ContextKind::FunctionCall {
+                function: "emotional_value".to_string()
+            }
+        );
+
+        // Test partial extraction with Chinese
+        let ctx2 = CompletionContext::new("我跟游戏进比较重要", 27);
+        assert_eq!(ctx2.kind, ContextKind::General);
+    }
+
+    #[test]
+    fn test_safe_slice() {
+        // Test that safe_slice handles multibyte characters correctly
+        let text = "你喜欢现在的我";
+        let slice = CompletionContext::safe_slice(text, 0, 100);
+        assert_eq!(slice, text);
+
+        // Test slicing in the middle - should round down to valid boundary
+        let slice2 = CompletionContext::safe_slice(text, 0, 17);
+        assert!(slice2.len() <= 17);
+        assert!(text.is_char_boundary(slice2.len()));
+    }
+
+    #[test]
+    fn test_pipe_operator_context() {
+        // Test after first |>
+        let ctx1 = CompletionContext::new("\"Hello\" |> Upp", 14);
+        println!(
+            "Test 1 - After first |>: kind={:?}, partial='{}'",
+            ctx1.kind, ctx1.partial
+        );
+        assert_eq!(ctx1.kind, ContextKind::General);
+        assert_eq!(ctx1.partial, "Upp");
+
+        // Test after second |>
+        let ctx2 = CompletionContext::new("\"Hello\" |> Lower(_) |> ", 24);
+        println!(
+            "Test 2 - After second |>: kind={:?}, partial='{}'",
+            ctx2.kind, ctx2.partial
+        );
+        assert_eq!(ctx2.kind, ContextKind::General);
+        assert_eq!(ctx2.partial, "");
+
+        // Test after second |> with partial
+        let ctx3 = CompletionContext::new("\"Hello\" |> Lower(_) |> Upp", 27);
+        println!(
+            "Test 3 - After second |> with partial: kind={:?}, partial='{}'",
+            ctx3.kind, ctx3.partial
+        );
+        assert_eq!(ctx3.kind, ContextKind::General);
+        assert_eq!(ctx3.partial, "Upp");
+
+        // Test that we still detect function call context correctly (inside parens)
+        let ctx4 = CompletionContext::new("\"Hello\" |> Lower(", 17);
+        println!(
+            "Test 4 - Inside function call: kind={:?}, partial='{}'",
+            ctx4.kind, ctx4.partial
+        );
+        assert_eq!(
+            ctx4.kind,
+            ContextKind::FunctionCall {
+                function: "Lower".to_string()
+            }
+        );
+        assert_eq!(ctx4.partial, "");
     }
 }

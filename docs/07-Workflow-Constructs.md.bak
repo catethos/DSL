@@ -3,17 +3,17 @@
 ## Overview
 
 Workflows are built by composing operations using these main constructs:
-- **`|>`** - Sequential composition (pipeline)
+- **`>>`** - Sequential composition (pipeline)
 - **`par()`** - Parallel execution (concurrent)
 - **`?:`** - Conditional branching
 - **Comparison operators** - `==`, `!=`, `<`, `>`, `<=`, `>=`
 - **Logical operators** - `&&`, `||`, `!`
 
-## Sequential Composition (`|>`)
+## Sequential Composition (`>>`)
 
 ### Concept
 
-The `|>` operator chains operations, passing the result of each step to the next.
+The `>>` operator chains operations, passing the result of each step to the next.
 
 **Mental Model:** Unix pipes
 ```bash
@@ -22,22 +22,22 @@ cat file.txt | grep "keyword" | sort | uniq
 
 **DSL Equivalent:**
 ```javascript
-LoadFile("file.txt") |> Filter(_) |> Sort(_) |> Unique(_)
+LoadFile("file.txt") >> Filter(_) >> Sort(_) >> Unique(_)
 ```
 
 ### Basic Usage
 
 ```javascript
 // Simple chain
-"hello" |> Upper(_)
+"hello" >> Upper(_)
 // "HELLO"
 
 // Multi-step
-"hello" |> Upper(_) |> Length(_)
+"hello" >> Upper(_) >> Length(_)
 // 5
 
 // With numbers
-5 |> _ * 2 |> _ + 3
+5 >> _ * 2 >> _ + 3
 // 13 (5 * 2 = 10, 10 + 3 = 13)
 ```
 
@@ -46,10 +46,10 @@ LoadFile("file.txt") |> Filter(_) |> Sort(_) |> Unique(_)
 `_` always contains the result of the previous step:
 
 ```javascript
-[1, 2, 3, 4, 5] |> Length(_)
+[1, 2, 3, 4, 5] >> Length(_)
 // 5
 
-"test" |> Upper(_) |> Length(_)
+"test" >> Upper(_) >> Length(_)
 // 4 ("TEST" has 4 characters)
 ```
 
@@ -58,10 +58,10 @@ LoadFile("file.txt") |> Filter(_) |> Sort(_) |> Unique(_)
 Bind intermediate results with `as`:
 
 ```javascript
-["a", "b", "c"] |> Join(_, "-") as joined |> Upper(joined)
+["a", "b", "c"] >> Join(_, "-") as joined >> Upper(joined)
 // "A-B-C"
 
-5 |> _ * 2 as doubled |> doubled + 3
+5 >> _ * 2 as doubled >> doubled + 3
 // 13
 ```
 
@@ -70,9 +70,9 @@ Bind intermediate results with `as`:
 ```javascript
 // Data processing pipeline
 SQL("SELECT * FROM 'data.csv'") as raw
-  |> SQL("SELECT * FROM raw WHERE score > 0.8") as filtered
-  |> SQL("SELECT AVG(score) FROM filtered") as avg
-  |> "Average score: ${avg}"
+  >> SQL("SELECT * FROM raw WHERE score > 0.8") as filtered
+  >> SQL("SELECT AVG(score) FROM filtered") as avg
+  >> "Average score: ${avg}"
 ```
 
 ### LLM Workflow
@@ -81,11 +81,11 @@ SQL("SELECT * FROM 'data.csv'") as raw
 type Article { title: String, summary: String, keywords: [String] }
 
 "AI trends" as topic
-  |> Search(topic) as research
-  |> Outline(research) as outline
-  |> WriteArticle(outline) as draft
-  |> Review(draft) as feedback
-  |> Revise(draft, feedback)
+  >> Search(topic) as research
+  >> Outline(research) as outline
+  >> WriteArticle(outline) as draft
+  >> Review(draft) as feedback
+  >> Revise(draft, feedback)
 ```
 
 ## Parallel Execution (`par()`)
@@ -105,11 +105,11 @@ Input ├─ Task 2 ─┤ Output = [result1, result2, result3]
 
 ```javascript
 // Simple parallel
-par(5, 10, 15)
+(5 || 10 || 15)
 // [5, 10, 15]
 
 // With expressions
-par(5 + 1, 10 + 2, 15 + 3)
+(5 + 1 || 10 + 2 || 15 + 3)
 // [6, 12, 18]
 ```
 
@@ -117,12 +117,12 @@ par(5 + 1, 10 + 2, 15 + 3)
 
 ```javascript
 // Bind entire list
-par(5, 10, 15) as numbers
+(5 || 10 || 15) as numbers
 numbers
 // [5, 10, 15]
 
 // Destructure into variables
-par(10, 20, 30) as [a, b, c]
+(10 || 20 || 30) as [a, b, c]
 a + b + c
 // 60
 ```
@@ -136,7 +136,7 @@ def GetUser(id: Int) {
 }
 
 // Fetch 3 users in parallel
-par(GetUser(1), GetUser(2), GetUser(3)) as users
+(GetUser(1) || GetUser(2) || GetUser(3)) as users
 users[0].name
 ```
 
@@ -144,25 +144,25 @@ users[0].name
 
 ```javascript
 // Ask multiple questions simultaneously
-par(
-  Ask("What is the capital of France?"),
-  Ask("What is the capital of Germany?"),
+(
+  Ask("What is the capital of France?") ||
+  Ask("What is the capital of Germany?") ||
   Ask("What is the capital of Italy?")
-) as (france, germany, italy)
+) as [france, germany, italy]
 ```
 
 ### Combining Parallel and Sequential
 
 ```javascript
 // Parallel fetch, then sequential process
-par(FetchA(), FetchB(), FetchC()) as data
-  |> Combine(data) as combined
-  |> Analyze(combined)
+(FetchA() || FetchB() || FetchC()) as data
+  >> Combine(data) as combined
+  >> Analyze(combined)
 
 // Sequential fetch, parallel process
 FetchAll() as data
-  |> par(ProcessA(data), ProcessB(data), ProcessC(data)) as results
-  |> MergeResults(results)
+  >> (ProcessA(data) || ProcessB(data) || ProcessC(data)) as results
+  >> MergeResults(results)
 ```
 
 ## Workflow Patterns
@@ -171,10 +171,10 @@ FetchAll() as data
 
 ```javascript
 Input
-  |> Step1(_) as result1
-  |> Step2(result1) as result2
-  |> Step3(result2) as result3
-  |> FinalStep(result3)
+  >> Step1(_) as result1
+  >> Step2(result1) as result2
+  >> Step3(result2) as result3
+  >> FinalStep(result3)
 ```
 
 **Use Cases:**
@@ -185,9 +185,9 @@ Input
 ### Pattern 2: Fan-Out (Parallel Tasks)
 
 ```javascript
-Input as data |> par(
-  TaskA(data),
-  TaskB(data),
+Input as data >> (
+  TaskA(data) ||
+  TaskB(data) ||
   TaskC(data)
 ) as [resultA, resultB, resultC]
 ```
@@ -204,7 +204,7 @@ Input as data |> par(
 [1, 2, 3, 4, 5] as ids
 
 // Process in parallel
-par(GetData(ids[0]) , GetData(ids[1]) , GetData(ids[2])) as results
+(GetData(ids[0]) || GetData(ids[1]) || GetData(ids[2])) as results
 
 // Reduce
 Combine(results) as final
@@ -219,8 +219,8 @@ Combine(results) as final
 
 ```javascript
 FetchData() as data
-  |> Validate(data) as isValid
-  |> isValid
+  >> Validate(data) as isValid
+  >> isValid
      ? ProcessValid(data)
      : ProcessInvalid(data)
 ```
@@ -255,9 +255,9 @@ def WriteArticle(outline: Outline) -> Article {
 
 // Execute workflow
 "AI Ethics" as topic
-  |> Research(topic) as research
-  |> CreateOutline(research, topic) as outline
-  |> WriteArticle(outline)
+  >> Research(topic) as research
+  >> CreateOutline(research, topic) as outline
+  >> WriteArticle(outline)
 ```
 
 ### Example 2: Data Analysis Pipeline
@@ -265,17 +265,17 @@ def WriteArticle(outline: Outline) -> Article {
 ```javascript
 // Load and clean data
 SQL("SELECT * FROM 'sales.csv'") as raw
-  |> SQL("SELECT * FROM raw WHERE amount > 0") as clean
+  >> SQL("SELECT * FROM raw WHERE amount > 0") as clean
 
 // Parallel analysis
-  |> par(
-       SQL("SELECT SUM(amount) FROM clean"),
-       SQL("SELECT AVG(amount) FROM clean"),
+  >> (
+       SQL("SELECT SUM(amount) FROM clean") ||
+       SQL("SELECT AVG(amount) FROM clean") ||
        SQL("SELECT COUNT(*) FROM clean")
      ) as [total, average, count]
 
 // Generate report
-  |> GenerateReport(total, average, count)
+  >> GenerateReport(total, average, count)
 ```
 
 ### Example 3: Multi-Source Aggregation
@@ -297,15 +297,15 @@ def FetchEvents(city: String) {
 }
 
 // Parallel fetch
-"New York" as city |> par(
-  FetchWeather(city),
-  FetchNews(city),
+"New York" as city >> (
+  FetchWeather(city) ||
+  FetchNews(city) ||
   FetchEvents(city)
 ) as [weather, news, events]
 
 // Sequential processing
-  |> CombineData(weather, news, events) as cityData
-  |> GenerateSummary(cityData)
+  >> CombineData(weather, news, events) as cityData
+  >> GenerateSummary(cityData)
 ```
 
 ### Example 4: Iterative Refinement
@@ -330,11 +330,11 @@ def Revise(text: String, feedback: Feedback) -> String {
 }
 
 "AI in Healthcare" as topic
-  |> Draft(topic) as v1
-  |> Review(v1) as feedback1
-  |> Revise(v1, feedback1) as v2
-  |> Review(v2) as feedback2
-  |> Revise(v2, feedback2) as final
+  >> Draft(topic) as v1
+  >> Review(v1) as feedback1
+  >> Revise(v1, feedback1) as v2
+  >> Review(v2) as feedback2
+  >> Revise(v2, feedback2) as final
 ```
 
 ## Error Handling
@@ -344,7 +344,7 @@ def Revise(text: String, feedback: Feedback) -> String {
 Errors stop execution and propagate:
 
 ```javascript
-Step1() |> Step2() |> Step3()
+Step1() >> Step2() >> Step3()
 // If Step2 fails, Step3 doesn't execute
 ```
 
@@ -353,7 +353,7 @@ Step1() |> Step2() |> Step3()
 If any parallel task fails, the entire parallel block fails:
 
 ```javascript
-par(TaskA(), TaskB(), TaskC())
+(TaskA() || TaskB() || TaskC())
 // If TaskB fails, entire block fails
 ```
 
@@ -364,7 +364,7 @@ par(TaskA(), TaskB(), TaskC())
 Sequential operations execute one after another:
 
 ```javascript
-Slow1() |> Slow2() |> Slow3()
+Slow1() >> Slow2() >> Slow3()
 // Total time = Time(Slow1) + Time(Slow2) + Time(Slow3)
 ```
 
@@ -373,7 +373,7 @@ Slow1() |> Slow2() |> Slow3()
 Parallel operations execute concurrently:
 
 ```javascript
-par(Slow1(), Slow2(), Slow3())
+(Slow1() || Slow2() || Slow3())
 // Total time ≈ Max(Time(Slow1), Time(Slow2), Time(Slow3))
 ```
 
@@ -382,25 +382,25 @@ par(Slow1(), Slow2(), Slow3())
 1. **Use Parallel for Independent Tasks**
    ```javascript
    // Slow (sequential)
-   GetA() |> GetB() |> GetC()
+   GetA() >> GetB() >> GetC()
 
    // Fast (parallel)
-   par(GetA(), GetB(), GetC())
+   (GetA() || GetB() || GetC())
    ```
 
 2. **Minimize Data Transfer**
    ```javascript
    // Bad: Transfer large data
-   LargeData() |> Process1(_) |> Process2(_)
+   LargeData() >> Process1(_) >> Process2(_)
 
    // Good: Summarize early
-   LargeData() |> Summarize(_) |> Process1(_) |> Process2(_)
+   LargeData() >> Summarize(_) >> Process1(_) >> Process2(_)
    ```
 
 3. **Batch Operations**
    ```javascript
    // Bad: Many small requests
-   Get(1) |> Get(2) |> Get(3)
+   Get(1) >> Get(2) >> Get(3)
 
    // Good: One batch request
    GetBatch([1, 2, 3])
@@ -413,13 +413,13 @@ par(Slow1(), Slow2(), Slow3())
 **Good:**
 ```javascript
 FetchData() as raw
-  |> CleanData(raw) as clean
-  |> Analyze(clean) as insights
+  >> CleanData(raw) as clean
+  >> Analyze(clean) as insights
 ```
 
 **Bad:**
 ```javascript
-FetchData() |> CleanData(_) |> Analyze(_)
+FetchData() >> CleanData(_) >> Analyze(_)
 ```
 
 ### 2. Break Long Pipelines
@@ -431,7 +431,7 @@ FetchA() as dataA
 FetchB() as dataB
 
 // Stage 2: Processing
-par(ProcessA(dataA), ProcessB(dataB)) as results
+(ProcessA(dataA) || ProcessB(dataB)) as results
 
 // Stage 3: Analysis
 Analyze(results) as final
@@ -439,19 +439,19 @@ Analyze(results) as final
 
 **Bad:**
 ```javascript
-FetchA() |> ProcessA(_) |> Analyze(_) |> ... // 10 more steps
+FetchA() >> ProcessA(_) >> Analyze(_) >> ... // 10 more steps
 ```
 
 ### 3. Use Parallel Judiciously
 
 **Good (independent tasks):**
 ```javascript
-par(GetWeather(), GetNews(), GetEvents())
+(GetWeather() || GetNews() || GetEvents())
 ```
 
 **Bad (dependent tasks):**
 ```javascript
-par(Login(), FetchUserData(), ProcessData())
+(Login() || FetchUserData() || ProcessData())
 // FetchUserData depends on Login!
 ```
 
@@ -461,8 +461,8 @@ par(Login(), FetchUserData(), ProcessData())
 ```javascript
 // Check result before proceeding
 FetchData() as data
-  |> Validate(data) as isValid
-  |> isValid ? Process(data) : HandleError()
+  >> Validate(data) as isValid
+  >> isValid ? Process(data) : HandleError()
 ```
 
 **Note:** Error handling operators not yet fully implemented.

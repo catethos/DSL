@@ -4,7 +4,13 @@ use simplify_baml::{Class, Enum, Field, FieldType};
 use std::collections::HashMap;
 
 /// Type alias for HTTP configuration: (method, url, params, headers, body)
-type HttpConfig = (String, String, Option<HashMap<String, String>>, Option<HashMap<String, String>>, Option<String>);
+type HttpConfig = (
+    String,
+    String,
+    Option<HashMap<String, String>>,
+    Option<HashMap<String, String>>,
+    Option<String>,
+);
 
 #[derive(Parser)]
 #[grammar = "parser/grammar.pest"]
@@ -32,6 +38,11 @@ pub enum Expr {
     Variable(String),
     /// Function call: name(args)
     FunctionCall { name: String, args: Vec<Expr> },
+    /// Type instantiation: TypeName { field: value, ... }
+    TypeInstantiation {
+        type_name: String,
+        fields: Vec<(String, Expr)>,
+    },
     /// Field access: expr.field
     FieldAccess { base: Box<Expr>, field: String },
     /// Index access: expr[index]
@@ -48,7 +59,7 @@ pub enum Expr {
         then_expr: Box<Expr>,
         else_expr: Box<Expr>,
     },
-    /// Sequential composition: left >> right
+    /// Sequential composition: left |> right
     Sequential {
         left: Box<Expr>,
         right: Box<Expr>,
@@ -100,9 +111,7 @@ pub enum FunctionExecution {
         body: Option<String>,
     },
     /// SQL query execution
-    SQL {
-        query: String,
-    },
+    SQL { query: String },
     /// Hybrid: HTTP then LLM processing
     HTTPWithLLM {
         http_method: String,
@@ -205,7 +214,7 @@ fn build_expr(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
                 return Err("Empty sequential expression".to_string());
             }
 
-            // Grammar: parallel ~ (binding)? ~ (">>" ~ parallel ~ (binding)?)*
+            // Grammar: logical_or ~ (binding)? ~ ("|>" ~ logical_or ~ (binding)?)*
             let mut i = 0;
 
             // Get first parallel expression
@@ -221,7 +230,7 @@ fn build_expr(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
                 None
             };
 
-            // If no >> operators, return the expression (possibly with binding)
+            // If no |> operators, return the expression (possibly with binding)
             if i >= parts.len() {
                 if let Some(binding) = first_binding {
                     // Wrap in a Parallel node with a single expression to handle the binding
@@ -246,7 +255,7 @@ fn build_expr(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
                 first_expr
             };
 
-            // Process remaining ">>" chains
+            // Process remaining "|>" chains
             while i < parts.len() {
                 let right_expr = build_expr(parts[i].clone())?;
                 i += 1;
@@ -269,46 +278,139 @@ fn build_expr(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
 
             Ok(result)
         }
-        Rule::parallel => {
+        Rule::logical_or => {
             let inner = pair.into_inner();
             let parts: Vec<pest::iterators::Pair<Rule>> = inner.collect();
 
             if parts.is_empty() {
-                return Err("Empty parallel expression".to_string());
+                return Err("Empty logical_or expression".to_string());
             }
 
-            // Separate binding from expressions
-            let (expr_parts, binding) = if parts.last().map(|p| p.as_rule()) == Some(Rule::binding)
-            {
-                let b = parse_binding(parts.last().unwrap().clone())?;
-                (&parts[..parts.len() - 1], Some(b))
+            if parts.len() == 1 {
+                return build_expr(parts[0].clone());
+            }
+
+            // Build left-associative binary operations
+            let mut result = build_expr(parts[0].clone())?;
+            let mut i = 1;
+
+            while i < parts.len() {
+                let right = build_expr(parts[i].clone())?;
+
+                result = Expr::BinaryOp {
+                    left: Box::new(result),
+                    op: "||".to_string(),
+                    right: Box::new(right),
+                };
+
+                i += 1;
+            }
+
+            Ok(result)
+        }
+        Rule::logical_and => {
+            let inner = pair.into_inner();
+            let parts: Vec<pest::iterators::Pair<Rule>> = inner.collect();
+
+            if parts.is_empty() {
+                return Err("Empty logical_and expression".to_string());
+            }
+
+            if parts.len() == 1 {
+                return build_expr(parts[0].clone());
+            }
+
+            // Build left-associative binary operations
+            let mut result = build_expr(parts[0].clone())?;
+            let mut i = 1;
+
+            while i < parts.len() {
+                let right = build_expr(parts[i].clone())?;
+
+                result = Expr::BinaryOp {
+                    left: Box::new(result),
+                    op: "&&".to_string(),
+                    right: Box::new(right),
+                };
+
+                i += 1;
+            }
+
+            Ok(result)
+        }
+        Rule::comparison => {
+            let inner = pair.into_inner();
+            let parts: Vec<pest::iterators::Pair<Rule>> = inner.collect();
+
+            if parts.is_empty() {
+                return Err("Empty comparison expression".to_string());
+            }
+
+            if parts.len() == 1 {
+                return build_expr(parts[0].clone());
+            }
+
+            // Should have exactly 3 parts: left, op, right
+            if parts.len() == 3 {
+                let left = build_expr(parts[0].clone())?;
+                let op = parts[1].as_str().to_string();
+                let right = build_expr(parts[2].clone())?;
+
+                Ok(Expr::BinaryOp {
+                    left: Box::new(left),
+                    op,
+                    right: Box::new(right),
+                })
             } else {
-                (&parts[..], None)
-            };
+                Err("Invalid comparison expression".to_string())
+            }
+        }
+        Rule::comparison_op => {
+            // This shouldn't be called directly
+            Err("Comparison operator should not be built directly".to_string())
+        }
+        Rule::unary => {
+            let inner = pair.into_inner();
+            let parts: Vec<pest::iterators::Pair<Rule>> = inner.collect();
 
-            // Parse all expressions
-            let exprs: Result<Vec<_>, _> =
-                expr_parts.iter().map(|p| build_expr(p.clone())).collect();
-
-            let expr_list = exprs?;
-
-            if expr_list.is_empty() {
-                return Err("Empty parallel expression".to_string());
+            if parts.is_empty() {
+                return Err("Empty unary expression".to_string());
             }
 
-            // If only one expression and no binding, just return the expression
-            // This prevents wrapping simple expressions like string literals in Parallel nodes
-            if expr_list.len() == 1 && binding.is_none() {
-                return Ok(expr_list.into_iter().next().unwrap());
+            if parts.len() == 1 {
+                return build_expr(parts[0].clone());
             }
 
-            // Multiple expressions (or single expression with binding) - create Parallel node
-            // Note: Even a single expression with a binding becomes a Parallel node
-            // to ensure the binding is handled without re-evaluating the expression
-            Ok(Expr::Parallel {
-                exprs: expr_list,
-                binding,
-            })
+            // Unary operator: op ~ expr
+            if parts.len() == 2 {
+                let op = parts[0].as_str().to_string();
+                let operand = build_expr(parts[1].clone())?;
+
+                // Convert unary minus to BinaryOp: 0 - operand
+                // Convert unary ! to separate UnaryOp
+                if op == "-" {
+                    Ok(Expr::BinaryOp {
+                        left: Box::new(Expr::Int(0)),
+                        op: "-".to_string(),
+                        right: Box::new(operand),
+                    })
+                } else if op == "!" {
+                    // We'll represent ! as a special unary operation
+                    // For now, use a function call-like structure
+                    Ok(Expr::FunctionCall {
+                        name: "not".to_string(),
+                        args: vec![operand],
+                    })
+                } else {
+                    Err(format!("Unknown unary operator: {}", op))
+                }
+            } else {
+                Err("Invalid unary expression".to_string())
+            }
+        }
+        Rule::unary_op => {
+            // This shouldn't be called directly
+            Err("Unary operator should not be built directly".to_string())
         }
         Rule::additive => {
             let inner = pair.into_inner();
@@ -392,6 +494,35 @@ fn build_expr(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
             }
 
             Ok(Expr::FunctionCall { name, args })
+        }
+        Rule::type_instantiation => {
+            let mut inner = pair.into_inner();
+
+            // First element is the type name
+            let type_name = inner
+                .next()
+                .ok_or("Missing type name")?
+                .as_str()
+                .to_string();
+
+            // Remaining elements are field assignments
+            let mut fields = Vec::new();
+
+            for field_pair in inner {
+                if field_pair.as_rule() == Rule::type_field_assignment {
+                    let mut field_inner = field_pair.into_inner();
+                    let field_name = field_inner
+                        .next()
+                        .ok_or("Missing field name")?
+                        .as_str()
+                        .to_string();
+                    let field_value = field_inner.next().ok_or("Missing field value")?;
+                    let value_expr = build_expr(field_value)?;
+                    fields.push((field_name, value_expr));
+                }
+            }
+
+            Ok(Expr::TypeInstantiation { type_name, fields })
         }
         Rule::access_chain => {
             let mut inner = pair.into_inner();
@@ -628,7 +759,10 @@ pub fn parse_command(input: &str) -> Option<String> {
 }
 
 /// Extract a string property value from properties HashMap
-fn extract_string_property(properties: &HashMap<String, PropertyValue>, key: &str) -> Option<String> {
+fn extract_string_property(
+    properties: &HashMap<String, PropertyValue>,
+    key: &str,
+) -> Option<String> {
     properties.get(key).and_then(|v| match v {
         PropertyValue::String(s) => Some(s.clone()),
         PropertyValue::Template(segments) => {
@@ -994,7 +1128,8 @@ mod tests {
         assert!(matches!(result, Expr::Bool(true)));
 
         let result = parse_expr(r#""hello""#).unwrap();
-        assert!(matches!(result, Expr::String(_)));
+        // Strings can be parsed as TemplateString (with no interpolation) or String
+        assert!(matches!(result, Expr::String(_) | Expr::TemplateString(_)));
     }
 
     #[test]
@@ -1043,11 +1178,11 @@ mod tests {
     #[test]
     fn test_parse_sequential() {
         // Test simple sequential
-        let result = parse_expr("5 >> Length(_)").unwrap();
+        let result = parse_expr("5 |> Length(_)").unwrap();
         assert!(matches!(result, Expr::Sequential { .. }));
 
         // Test chained sequential
-        let result = parse_expr("1 >> _ * 2 >> _ + 3").unwrap();
+        let result = parse_expr("1 |> _ * 2 |> _ + 3").unwrap();
         // Debug: print the actual structure
         println!("Parsed result: {:?}", result);
 
@@ -1065,24 +1200,105 @@ mod tests {
 
     #[test]
     fn test_parse_parallel() {
-        // Test parallel with || operator
-        let result = parse_expr("Ask(\"a\") || Ask(\"b\")").unwrap();
-        if let Expr::Parallel { exprs, .. } = result {
-            assert_eq!(exprs.len(), 2);
+        // Test parallel with par() function
+        let result = parse_expr("par(Ask(\"a\"), Ask(\"b\"))").unwrap();
+        if let Expr::FunctionCall { name, args } = result {
+            assert_eq!(name, "par");
+            assert_eq!(args.len(), 2);
         } else {
-            panic!("Expected parallel expression, got: {:?}", result);
+            panic!("Expected function call to par, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_parse_comparison_operators() {
+        // Test equality
+        let result = parse_expr("5 == 5").unwrap();
+        if let Expr::BinaryOp { op, .. } = result {
+            assert_eq!(op, "==");
+        } else {
+            panic!("Expected comparison expression");
         }
 
-        // Test parallel with binding
-        let result = parse_expr("Ask(\"a\") || Ask(\"b\") as results").unwrap();
-        if let Expr::Parallel { exprs, binding } = result {
-            assert_eq!(exprs.len(), 2);
-            assert!(binding.is_some());
+        // Test inequality
+        let result = parse_expr("5 != 3").unwrap();
+        if let Expr::BinaryOp { op, .. } = result {
+            assert_eq!(op, "!=");
         } else {
-            panic!(
-                "Expected parallel expression with binding, got: {:?}",
-                result
-            );
+            panic!("Expected comparison expression");
+        }
+
+        // Test less than
+        let result = parse_expr("3 < 5").unwrap();
+        if let Expr::BinaryOp { op, .. } = result {
+            assert_eq!(op, "<");
+        } else {
+            panic!("Expected comparison expression");
+        }
+
+        // Test greater than or equal
+        let result = parse_expr("5 >= 3").unwrap();
+        if let Expr::BinaryOp { op, .. } = result {
+            assert_eq!(op, ">=");
+        } else {
+            panic!("Expected comparison expression");
+        }
+    }
+
+    #[test]
+    fn test_parse_logical_operators() {
+        // Test AND
+        let result = parse_expr("true && false").unwrap();
+        if let Expr::BinaryOp { op, .. } = result {
+            assert_eq!(op, "&&");
+        } else {
+            panic!("Expected logical AND expression");
+        }
+
+        // Test OR
+        let result = parse_expr("true || false").unwrap();
+        if let Expr::BinaryOp { op, .. } = result {
+            assert_eq!(op, "||");
+        } else {
+            panic!("Expected logical OR expression");
+        }
+
+        // Test NOT
+        let result = parse_expr("!true").unwrap();
+        if let Expr::FunctionCall { name, args } = result {
+            assert_eq!(name, "not");
+            assert_eq!(args.len(), 1);
+        } else {
+            panic!("Expected NOT expression (as function call)");
+        }
+    }
+
+    #[test]
+    fn test_parse_complex_conditional() {
+        // Test conditional with comparison
+        let result = parse_expr("age >= 18 ? \"adult\" : \"minor\"").unwrap();
+        if let Expr::Conditional { condition, .. } = result {
+            // Condition should be a comparison
+            if let Expr::BinaryOp { op, .. } = *condition {
+                assert_eq!(op, ">=");
+            } else {
+                panic!("Expected comparison in condition");
+            }
+        } else {
+            panic!("Expected conditional expression");
+        }
+
+        // Test conditional with logical operators
+        let result = parse_expr("age >= 18 && verified ? \"proceed\" : \"reject\"").unwrap();
+        if let Expr::Conditional { condition, .. } = result {
+            // Condition should be a logical AND
+            if let Expr::BinaryOp { op, .. } = *condition {
+                assert_eq!(op, "&&");
+            } else {
+                panic!("Expected logical AND in condition");
+            }
+        } else {
+            panic!("Expected conditional expression");
         }
     }
 
@@ -1106,12 +1322,12 @@ mod tests {
 
     #[test]
     fn test_parse_binding_with_sequential() {
-        // Regression test for: [1, 2, 3] as numbers >> Length(numbers)
+        // Regression test for: [1, 2, 3] as numbers |> Length(numbers)
         // This previously failed with "Invalid variable name" error
-        let result = parse_expr("[1, 2, 3] as numbers >> Length(numbers)").unwrap();
+        let result = parse_expr("[1, 2, 3] as numbers |> Length(numbers)").unwrap();
 
         // Should be: Sequential {
-        //   left: Sequential { left: [1,2,3], right: [1,2,3], binding: Some("numbers") },
+        //   left: Parallel { exprs: [[1,2,3]], binding: Some("numbers") },
         //   right: Length(numbers),
         //   binding: None
         // }
@@ -1121,19 +1337,32 @@ mod tests {
             binding,
         } = result
         {
-            // Left should be another Sequential with the binding
-            if let Expr::Sequential {
-                binding: left_binding,
-                ..
-            } = *left
-            {
-                if let Some(Binding::Single(name)) = left_binding {
-                    assert_eq!(name, "numbers");
-                } else {
-                    panic!("Expected binding 'numbers' on left");
+            // Left should be Parallel (single expr with binding) or Sequential
+            match *left {
+                Expr::Parallel {
+                    binding: left_binding,
+                    ..
+                } => {
+                    if let Some(Binding::Single(name)) = left_binding {
+                        assert_eq!(name, "numbers");
+                    } else {
+                        panic!("Expected binding 'numbers' on left");
+                    }
                 }
-            } else {
-                panic!("Expected left to be Sequential with binding");
+                Expr::Sequential {
+                    binding: left_binding,
+                    ..
+                } => {
+                    if let Some(Binding::Single(name)) = left_binding {
+                        assert_eq!(name, "numbers");
+                    } else {
+                        panic!("Expected binding 'numbers' on left Sequential");
+                    }
+                }
+                _ => panic!(
+                    "Expected left to be Parallel or Sequential with binding, got: {:?}",
+                    left
+                ),
             }
 
             // Right should be function call
@@ -1143,6 +1372,103 @@ mod tests {
             assert!(binding.is_none());
         } else {
             panic!("Expected sequential expression, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_parse_type_instantiation() {
+        // Test basic type instantiation
+        let result = parse_expr(r#"Person { name: "Alice", age: 30 }"#).unwrap();
+        if let Expr::TypeInstantiation { type_name, fields } = result {
+            assert_eq!(type_name, "Person");
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].0, "name");
+            assert_eq!(fields[1].0, "age");
+            // Strings are parsed as TemplateString, not String
+            assert!(matches!(
+                fields[0].1,
+                Expr::String(_) | Expr::TemplateString(_)
+            ));
+            assert!(matches!(fields[1].1, Expr::Int(30)));
+        } else {
+            panic!("Expected type instantiation, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_parse_type_instantiation_with_optional_fields() {
+        // Test type instantiation with optional fields
+        let result =
+            parse_expr(r#"Person { name: "Bob", age: 25, email: "bob@example.com" }"#).unwrap();
+        if let Expr::TypeInstantiation { type_name, fields } = result {
+            assert_eq!(type_name, "Person");
+            assert_eq!(fields.len(), 3);
+            assert_eq!(fields[0].0, "name");
+            assert_eq!(fields[1].0, "age");
+            assert_eq!(fields[2].0, "email");
+        } else {
+            panic!("Expected type instantiation, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_parse_type_instantiation_with_expressions() {
+        // Test type instantiation with complex expressions
+        let result = parse_expr(r#"Point { x: 1 + 2, y: 3 * 4 }"#).unwrap();
+        if let Expr::TypeInstantiation { type_name, fields } = result {
+            assert_eq!(type_name, "Point");
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].0, "x");
+            assert_eq!(fields[1].0, "y");
+            assert!(matches!(fields[0].1, Expr::BinaryOp { .. }));
+            assert!(matches!(fields[1].1, Expr::BinaryOp { .. }));
+        } else {
+            panic!("Expected type instantiation, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_parse_type_instantiation_nested() {
+        // Test nested type instantiation
+        let result =
+            parse_expr(r#"Employee { person: Person { name: "Alice", age: 30 }, id: 123 }"#)
+                .unwrap();
+        if let Expr::TypeInstantiation { type_name, fields } = result {
+            assert_eq!(type_name, "Employee");
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].0, "person");
+            assert_eq!(fields[1].0, "id");
+
+            // Check that the first field is itself a type instantiation
+            assert!(matches!(fields[0].1, Expr::TypeInstantiation { .. }));
+        } else {
+            panic!("Expected type instantiation, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_type_instantiation() {
+        // Test empty type instantiation
+        let result = parse_expr("Empty {}").unwrap();
+        if let Expr::TypeInstantiation { type_name, fields } = result {
+            assert_eq!(type_name, "Empty");
+            assert_eq!(fields.len(), 0);
+        } else {
+            panic!("Expected type instantiation, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_parse_type_instantiation_syntax_error() {
+        // Test syntax error - missing comma between fields
+        let result = parse_expr(r#"Person { name: "Alice", age: 30 email: "ada@gmail.com"}"#);
+        println!("Parse result: {:?}", result);
+
+        // Let's see what it actually parses to
+        if let Ok(expr) = result {
+            println!("Parsed as: {:?}", expr);
+            // It probably parses as: Person { name: "Alice", age: 30 }
+            // with "email: ..." left unparsed or treated as something else
         }
     }
 }

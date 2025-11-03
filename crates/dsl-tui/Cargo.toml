@@ -28,3 +28,9 @@ tokio = { workspace = true }
 
 # Clipboard support
 arboard = "3.4"
+
+# Unicode width calculation for proper cursor positioning with wide characters
+unicode-width = "0.1"
+
+# Markdown rendering
+pulldown-cmark = "0.13"

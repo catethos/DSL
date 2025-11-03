@@ -1,3 +1,4 @@
+pub mod markdown;
 pub mod table;
 pub mod text;
 pub mod tree;
@@ -26,6 +27,7 @@ impl OutputRenderer for OutputItem {
                 expanded_paths,
             } => tree::tree_to_lines(root, expanded_paths, width),
             OutputItem::Error(s) => text::error_to_lines(s, width),
+            OutputItem::Markdown(s) => markdown::markdown_to_lines(s, width),
             OutputItem::Chart { .. } => {
                 vec![Line::from("[Chart rendering not yet implemented]")]
             }

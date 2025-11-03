@@ -208,13 +208,13 @@ x * 2           // 10
 10 * 2.5        // 25.0 (Int * Float = Float)
 ```
 
-### Sequential Operator `>>`
+### Sequential Operator `|>`
 
 Chain operations together, passing the result forward.
 
 **Syntax:**
 ```javascript
-expr1 >> expr2 >> expr3
+expr1 |> expr2 |> expr3
 ```
 
 **The result of each expression flows to the next.**
@@ -222,19 +222,19 @@ expr1 >> expr2 >> expr3
 **Examples:**
 ```javascript
 // Simple chain
-"hello" >> Upper(_)
+"hello" |> Upper(_)
 // Result: "HELLO"
 
 // Multi-step
-"hello" >> Upper(_) >> Length(_)
+"hello" |> Upper(_) |> Length(_)
 // Result: 5
 
 // With binding
-["a", "b", "c"] >> Join(_, "-") as joined >> Upper(joined)
+["a", "b", "c"] |> Join(_, "-") as joined |> Upper(joined)
 // Result: "A-B-C"
 
 // Arithmetic
-5 >> _ * 2 >> _ + 3
+5 |> _ * 2 |> _ + 3
 // Result: 13 (5 * 2 = 10, 10 + 3 = 13)
 ```
 
@@ -245,42 +245,64 @@ expr1 >> expr2 >> expr3
 4. Store result in `_`
 5. Continue...
 
-### Parallel Operator `||`
+### Comparison Operators
 
-Execute expressions concurrently and collect results.
+Compare values and return boolean results.
 
-**Syntax:**
 ```javascript
-(expr1 || expr2 || expr3)
+==  // Equal to
+!=  // Not equal to
+<   // Less than
+>   // Greater than
+<=  // Less than or equal to
+>=  // Greater than or equal to
 ```
-
-**Results are collected into a list.**
 
 **Examples:**
 ```javascript
-// Simple parallel
-(5 || 10 || 15)
-// Result: [5, 10, 15]
+5 == 5          // true
+5 != 3          // true
+3 < 5           // true
+10 > 5          // true
+5 <= 5          // true
+10 >= 5         // true
 
-// With binding
-(5 || 10 || 15) as numbers
-// Result: numbers = [5, 10, 15]
+// With variables
+18 as age
+age >= 18       // true
 
-// Destructuring
-(10 || 20 || 30) as [a, b, c]
-// Result: a=10, b=20, c=30
-
-// Use destructured values
-(10 || 20 || 30) as [a, b, c] >> a + b + c
-// Result: 60
+// String comparison
+"hello" == "hello"  // true
+"a" != "b"          // true
 ```
 
-**Use Cases:**
-- Parallel API calls
-- Concurrent LLM queries
-- Batch data fetching
+### Logical Operators
 
-### Conditional Operator `?:` (Future)
+Combine boolean expressions.
+
+```javascript
+&&  // Logical AND
+||  // Logical OR
+!   // Logical NOT
+```
+
+**Examples:**
+```javascript
+true && true        // true
+true && false       // false
+true || false       // true
+false || false      // false
+!true               // false
+!false              // true
+
+// Complex conditions
+18 as age
+true as verified
+age >= 18 && verified           // true
+age < 13 || age > 65            // false
+```
+
+### Conditional Operator `?:`
 
 Branch based on a condition.
 
@@ -289,12 +311,72 @@ Branch based on a condition.
 condition ? true_expr : false_expr
 ```
 
-**Example:**
+**Examples:**
 ```javascript
-score > 0.8 ? "high" : "low"
+// Simple conditional
+18 >= 18 ? "adult" : "minor"
+// Result: "adult"
+
+// With comparison
+25 as age
+age >= 18 ? "adult" : "minor"
+// Result: "adult"
+
+// With logical operators
+true as active
+true as verified
+active && verified ? "proceed" : "reject"
+// Result: "proceed"
+
+// In pipeline
+30 as age |> (age >= 18 ? "adult" : "minor")
+// Result: "adult"
+
+// Complex example
+[1, 2, 3] as nums
+  |> Length(nums) as len
+  |> (len > 5 ? "many" : "few")
+// Result: "few"
 ```
 
-**Note:** Not yet implemented in current version.
+### Parallel Execution with `par()`
+
+Execute expressions concurrently and collect results using the `par()` function.
+
+**Syntax:**
+```javascript
+par(expr1, expr2, expr3)
+```
+
+**Results are collected into a list.**
+
+**Examples:**
+```javascript
+// Simple parallel
+par(5, 10, 15)
+// Result: [5, 10, 15]
+
+// With binding
+par(5, 10, 15) as numbers
+// Result: numbers = [5, 10, 15]
+
+// Destructuring
+par(10, 20, 30) as [a, b, c]
+// Result: a=10, b=20, c=30
+
+// Use destructured values
+par(10, 20, 30) as [a, b, c] |> a + b + c
+// Result: 60
+
+// Parallel function calls
+par(Length("hello"), Length("world"), Length("test"))
+// Result: [5, 5, 4]
+```
+
+**Use Cases:**
+- Parallel API calls
+- Concurrent LLM queries
+- Batch data fetching
 
 ---
 
@@ -428,7 +510,7 @@ x * 2
 ### Sequential Expressions
 
 ```javascript
-expr1 >> expr2 >> expr3
+expr1 |> expr2 |> expr3
 ```
 
 ### Parallel Expressions
@@ -455,7 +537,7 @@ expr as name
 3. **Function Calls** - `func(args)`
 4. **Arithmetic** - `*`, `/`, then `+`, `-`
 5. **Parallel** - `||`
-6. **Sequential** - `>>`
+6. **Sequential** - `|>`
 7. **Binding** - `as`
 
 ### Precedence Examples
@@ -468,12 +550,12 @@ expr as name
 Length("hello") + 1     // 6
 
 // Parallel before sequential
-5 || 10 >> _ * 2
+5 || 10 |> _ * 2
 // (5 || 10) = [5, 10]
 // [5, 10] * 2 = error (can't multiply list)
 
 // Use parentheses for clarity
-(5 >> _ * 2) || (10 >> _ * 2)
+(5 |> _ * 2) || (10 |> _ * 2)
 // (5 * 2) || (10 * 2) = [10, 20]
 ```
 
@@ -577,8 +659,8 @@ SQL("SELECT * FROM 'users.csv'") as x
 **Good:**
 ```javascript
 data as raw
-  >> Clean(raw) as cleaned
-  >> Analyze(cleaned) as results
+  |> Clean(raw) as cleaned
+  |> Analyze(cleaned) as results
 ```
 
 **Bad:**
@@ -614,7 +696,7 @@ getUser(3) as u3
 
 **Quick calculations:**
 ```javascript
-100 >> _ * 2 >> _ + 50      // 250
+100 |> _ * 2 |> _ + 50      // 250
 ```
 
 ---
@@ -625,9 +707,9 @@ getUser(3) as u3
 
 ```javascript
 SQL("SELECT * FROM 'data.csv'") as raw
-  >> Clean(raw) as cleaned
-  >> Transform(cleaned) as transformed
-  >> Analyze(transformed) as results
+  |> Clean(raw) as cleaned
+  |> Transform(cleaned) as transformed
+  |> Analyze(transformed) as results
 ```
 
 ### Pattern 2: Parallel Data Fetching
@@ -641,16 +723,16 @@ SQL("SELECT * FROM 'data.csv'") as raw
 
 ```javascript
 Draft(topic) as v1
-  >> Review(v1) as feedback
-  >> Revise(v1, feedback) as v2
-  >> Finalize(v2) as final
+  |> Review(v1) as feedback
+  |> Revise(v1, feedback) as v2
+  |> Finalize(v2) as final
 ```
 
 ### Pattern 4: Conditional Processing (future)
 
 ```javascript
 Analyze(data) as score
-  >> score > 0.8 ? ProcessHigh(data) : ProcessLow(data)
+  |> score > 0.8 ? ProcessHigh(data) : ProcessLow(data)
 ```
 
 ---

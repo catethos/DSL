@@ -82,16 +82,19 @@ impl AutocompleteState {
 
     /// Accept the currently selected suggestion
     pub fn accept_selected(&mut self, input: &mut String, cursor_position: &mut usize) {
+        use crate::utf8_utils::{safe_prefix, safe_suffix};
+
         if let Some(suggestion) = self.get_selected() {
-            // Find the start of the word being completed
-            let word_start = input[..*cursor_position]
+            // Find the start of the word being completed (using safe UTF-8 slicing)
+            let before_cursor = safe_prefix(input, *cursor_position);
+            let word_start = before_cursor
                 .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != ':')
                 .map(|pos| pos + 1)
                 .unwrap_or(0);
 
-            // Replace the partial word with the completion
-            let before = &input[..word_start];
-            let after = &input[*cursor_position..];
+            // Replace the partial word with the completion (using safe UTF-8 slicing)
+            let before = safe_prefix(input, word_start);
+            let after = safe_suffix(input, *cursor_position);
             let insert_text = suggestion.get_insert_text();
 
             *input = format!("{}{}{}", before, insert_text, after);
@@ -127,18 +130,33 @@ impl EvaluatorFunctionSource {
         functions.push(("Upper".to_string(), Some("(String) -> String".to_string())));
         functions.push(("Lower".to_string(), Some("(String) -> String".to_string())));
         functions.push(("Length".to_string(), Some("(String) -> Int".to_string())));
-        functions.push(("Join".to_string(), Some("(List, String) -> String".to_string())));
+        functions.push((
+            "Join".to_string(),
+            Some("(List, String) -> String".to_string()),
+        ));
         functions.push(("Ask".to_string(), Some("(String) -> String".to_string())));
-        functions.push(("ExtractPerson".to_string(), Some("(String) -> Person".to_string())));
-        functions.push(("ExtractAs".to_string(), Some("(String, Type) -> Type".to_string())));
+        functions.push((
+            "RenderMarkdown".to_string(),
+            Some("(String) -> Markdown".to_string()),
+        ));
+        functions.push((
+            "ExtractPerson".to_string(),
+            Some("(String) -> Person".to_string()),
+        ));
+        functions.push((
+            "ExtractAs".to_string(),
+            Some("(String, Type) -> Type".to_string()),
+        ));
         functions.push(("SQL".to_string(), Some("(String) -> Table".to_string())));
 
         // Add user-defined functions
         for (name, func_def) in evaluator.functions.iter() {
             let detail = if let Some(return_type) = &func_def.return_type {
-                Some(format!("({}) -> {}",
+                Some(format!(
+                    "({}) -> {}",
                     func_def.params.join(", "),
-                    format!("{:?}", return_type)))
+                    format!("{:?}", return_type)
+                ))
             } else {
                 Some(format!("({})", func_def.params.join(", ")))
             };

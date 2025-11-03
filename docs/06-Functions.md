@@ -329,7 +329,7 @@ GetUser(1)
 ### With Parallel Operator
 
 ```javascript
-(GetUser(1) || GetUser(2) || GetUser(3)) as users
+par(GetUser(1), GetUser(2), GetUser(3)) as users
 
 (
   Ask("Name a color") ||

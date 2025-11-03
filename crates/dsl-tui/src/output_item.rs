@@ -25,11 +25,11 @@ pub enum OutputItem {
     /// Error messages with special formatting
     Error(String),
 
+    /// Markdown formatted text with syntax highlighting
+    Markdown(String),
+
     /// Chart/visualization placeholder (for future)
-    Chart {
-        chart_type: ChartType,
-        data: Value,
-    },
+    Chart { chart_type: ChartType, data: Value },
 }
 
 #[derive(Clone, Debug)]
@@ -65,8 +65,10 @@ impl OutputItem {
     pub fn from_value(value: &Value) -> Self {
         if value.is_table() {
             Self::from_table_value(value)
-        } else if matches!(value, Value::Map(_)) {
+        } else if matches!(value, Value::Map(_) | Value::List(_)) {
             Self::from_tree_value(value, "root", true)
+        } else if let Value::Markdown(s) = value {
+            Self::Markdown(s.clone())
         } else {
             Self::Text(value.display())
         }
@@ -80,6 +82,11 @@ impl OutputItem {
     /// Create an error output item
     pub fn error(s: impl Into<String>) -> Self {
         Self::Error(s.into())
+    }
+
+    /// Create a markdown output item
+    pub fn markdown(s: impl Into<String>) -> Self {
+        Self::Markdown(s.into())
     }
 
     /// Convert a tabular value to a Table output item
@@ -118,7 +125,10 @@ impl OutputItem {
                                 .map(|val| match val {
                                     Value::String(s) => {
                                         if s.len() > 30 {
-                                            format!("{}...", &s.chars().take(27).collect::<String>())
+                                            format!(
+                                                "{}...",
+                                                &s.chars().take(27).collect::<String>()
+                                            )
                                         } else {
                                             s.clone()
                                         }
@@ -227,7 +237,13 @@ impl OutputItem {
             }
         }
 
-        let root = build_tree_node(value, None, path.to_string(), &mut expanded_paths, expanded_by_default);
+        let root = build_tree_node(
+            value,
+            None,
+            path.to_string(),
+            &mut expanded_paths,
+            expanded_by_default,
+        );
 
         Self::Tree {
             root,
