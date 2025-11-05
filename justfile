@@ -90,37 +90,33 @@ build:
     @echo "Building and packaging {{binary_name}}..."
     @echo "======================================"
     @echo ""
-    rm -rf {{dist_dir}}
-    mkdir -p {{dist_dir}}
+    @rm -rf {{dist_dir}}
+    @mkdir -p {{dist_dir}}
+    #!/usr/bin/env bash
+    @set -e
     @echo "Current architecture: $(uname -m)"
     @echo ""
+    @export VERSION=$(cat {{version_file}}) && echo "Version: $VERSION"
+    @echo ""
+    @echo "Building for current architecture..."
+    @cargo build --release --manifest-path crates/dsl-repl/Cargo.toml
     #!/usr/bin/env bash
-    set -e
-    VERSION=$(cat {{version_file}})
-    echo "Version: $VERSION"
-    echo ""
-    echo "Building for current architecture..."
-    cargo build --release --manifest-path crates/dsl-repl/Cargo.toml
-    CURRENT_ARCH=$(uname -m)
-    case $CURRENT_ARCH in
-    x86_64)
-    ARCH_NAME="x86_64"
-    ;;
-    arm64)
-    ARCH_NAME="aarch64"
-    ;;
-    *)
-    ARCH_NAME="$CURRENT_ARCH"
-    ;;
-    esac
-    ARCHIVE="{{binary_name}}-v${VERSION}-${ARCH_NAME}-macos.tar.gz"
-    echo "Packaging $ARCHIVE..."
-    tar czf "{{dist_dir}}/$ARCHIVE" -C target/release "{{binary_name}}"
-    echo ""
-    echo "✓ Built and packaged: {{dist_dir}}/$ARCHIVE"
-    cp install.sh {{dist_dir}}/
-    cp {{version_file}} {{dist_dir}}/
-    echo ""
+    @set -e; \
+    export VERSION=$(cat {{version_file}}); \
+    export CURRENT_ARCH=$(uname -m); \
+    case $CURRENT_ARCH in \
+        x86_64) export ARCH_NAME="x86_64" ;; \
+        arm64) export ARCH_NAME="aarch64" ;; \
+        *) export ARCH_NAME="$CURRENT_ARCH" ;; \
+    esac; \
+    export ARCHIVE="{{binary_name}}-v$VERSION-$ARCH_NAME-macos.tar.gz"; \
+    echo "Packaging $ARCHIVE..."; \
+    tar czf "{{dist_dir}}/$ARCHIVE" -C target/release "{{binary_name}}"; \
+    echo ""; \
+    echo "✓ Built and packaged: {{dist_dir}}/$ARCHIVE"; \
+    cp install.sh "{{dist_dir}}/"; \
+    cp "{{version_file}}" "{{dist_dir}}/"; \
+    echo ""; \
     echo "Distribution files ready in: {{dist_dir}}/"
 
 # Upload distribution files to VPS
@@ -131,21 +127,21 @@ upload:
     @echo "======================================"
     @echo ""
     #!/usr/bin/env bash
-    set -e
-    if [ ! -d "{{dist_dir}}" ]; then
-    echo "Error: {{dist_dir}} directory not found. Run 'just build' first."
-    exit 1
+    @set -e
+    @if [ ! -d "{{dist_dir}}" ]; then \
+        echo "Error: {{dist_dir}} directory not found. Run 'just build' first."; \
+        exit 1; \
     fi
-    if [ -z "$(ls -A {{dist_dir}})" ]; then
-    echo "Error: {{dist_dir}} is empty. Run 'just build' first."
-    exit 1
+    @if [ -z "$(ls -A {{dist_dir}})" ]; then \
+        echo "Error: {{dist_dir}} is empty. Run 'just build' first."; \
+        exit 1; \
     fi
-    echo "Creating remote directory..."
-    ssh -i {{ssh_key}} {{vps_user}}@{{vps_host}} "mkdir -p {{remote_dir}}"
-    echo "Uploading files..."
-    scp -i {{ssh_key}} {{dist_dir}}/* {{vps_user}}@{{vps_host}}:{{remote_dir}}/
-    echo ""
-    echo "✓ Files uploaded successfully!"
+    @echo "Creating remote directory..."
+    @ssh -i {{ssh_key}} {{vps_user}}@{{vps_host}} "mkdir -p {{remote_dir}}"
+    @echo "Uploading files..."
+    @scp -i {{ssh_key}} {{dist_dir}}/* {{vps_user}}@{{vps_host}}:{{remote_dir}}/
+    @echo ""
+    @echo "✓ Files uploaded successfully!"
 
 # Start HTTP server on VPS
 start-server:
