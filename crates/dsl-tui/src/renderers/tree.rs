@@ -107,9 +107,15 @@ fn render_tree_node(
     // Render children if expanded
     if is_expanded && !node.children.is_empty() {
         let child_prefix = if prefix.is_empty() {
-            String::new()
+            // First level: start with base indentation
+            if is_last {
+                "    ".to_string()
+            } else {
+                "│   ".to_string()
+            }
         } else {
-            format!("{}{}", prefix, if is_last { "   " } else { "│  " })
+            // Nested levels: extend parent's prefix
+            format!("{}{}", prefix, if is_last { "    " } else { "│   " })
         };
 
         for (i, child) in node.children.iter().enumerate() {
