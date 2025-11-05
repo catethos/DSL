@@ -348,17 +348,24 @@ impl Evaluator {
                             self.vars.insert(name.clone(), result_value.clone());
                         }
                         crate::parser::Binding::List(names) => {
-                            // Destructure results into named variables
-                            for (i, name) in names.iter().enumerate() {
-                                if let Some(item) = results.get(i) {
-                                    self.vars.insert(name.clone(), item.clone());
-                                } else {
-                                    return Err(format!(
-                                        "Not enough results to destructure: expected at least {}, got {}",
-                                        names.len(),
-                                        results.len()
-                                    ));
+                            // Destructure list value into named variables
+                            if let Value::List(items) = &result_value {
+                                for (i, name) in names.iter().enumerate() {
+                                    if let Some(item) = items.get(i) {
+                                        self.vars.insert(name.clone(), item.clone());
+                                    } else {
+                                        return Err(format!(
+                                            "Not enough items to destructure: expected at least {}, got {}",
+                                            names.len(),
+                                            items.len()
+                                        ));
+                                    }
                                 }
+                            } else {
+                                return Err(format!(
+                                    "Cannot destructure non-list value: got {}",
+                                    result_value.type_name()
+                                ));
                             }
                         }
                     }

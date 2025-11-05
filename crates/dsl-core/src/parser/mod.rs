@@ -162,8 +162,15 @@ pub fn parse_expr(input: &str) -> Result<Expr, String> {
 /// Note: Bindings are now handled within Sequential expression nodes
 pub fn parse_expr_with_binding(input: &str) -> Result<(Expr, Option<Binding>), String> {
     let expr = parse_expr(input)?;
-    // Bindings are handled within the expression tree, not at the top level
-    Ok((expr, None))
+
+    // Extract binding from top-level Sequential or Parallel expression
+    let binding = match &expr {
+        Expr::Sequential { binding, .. } => binding.clone(),
+        Expr::Parallel { binding, .. } => binding.clone(),
+        _ => None,
+    };
+
+    Ok((expr, binding))
 }
 
 /// Parse a binding pattern
@@ -593,6 +600,39 @@ fn build_expr(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
                 items.push(build_expr(item_pair)?);
             }
             Ok(Expr::List(items))
+        }
+        Rule::map_literal => {
+            let mut entries = Vec::new();
+            for entry_pair in pair.into_inner() {
+                if entry_pair.as_rule() == Rule::map_entry {
+                    let mut entry_inner = entry_pair.into_inner();
+
+                    // Get the key (either identifier or string_literal)
+                    let key_pair = entry_inner.next().ok_or("Missing map key")?;
+                    let key = match key_pair.as_rule() {
+                        Rule::identifier => key_pair.as_str().to_string(),
+                        Rule::string_literal => {
+                            // Extract the string content without quotes
+                            let inner = key_pair.into_inner().next().ok_or("Empty string key")?;
+                            inner.as_str().to_string()
+                        }
+                        _ => return Err(format!("Invalid map key type: {:?}", key_pair.as_rule())),
+                    };
+
+                    // Get the value
+                    let value_pair = entry_inner.next().ok_or("Missing map value")?;
+                    let value = build_expr(value_pair)?;
+
+                    entries.push((key, value));
+                }
+            }
+            Ok(Expr::Map(entries))
+        }
+        Rule::block => {
+            // A block in expression context is treated as an empty map
+            // This can happen when {} is parsed as a block rather than map_literal
+            // due to grammar ambiguity
+            Ok(Expr::Map(Vec::new()))
         }
         Rule::identifier => Ok(Expr::Variable(pair.as_str().to_string())),
         _ => Err(format!("Unexpected rule: {:?}", pair.as_rule())),
@@ -1469,6 +1509,82 @@ mod tests {
             println!("Parsed as: {:?}", expr);
             // It probably parses as: Person { name: "Alice", age: 30 }
             // with "email: ..." left unparsed or treated as something else
+        }
+    }
+
+    #[test]
+    fn test_parse_map_literal() {
+        // Test empty map
+        let result = parse_expr("{}").unwrap();
+        if let Expr::Map(entries) = result {
+            assert_eq!(entries.len(), 0);
+        } else {
+            panic!("Expected map literal, got: {:?}", result);
+        }
+
+        // Test simple map with identifier keys
+        let result = parse_expr(r#"{ name: "Alice", age: 30 }"#).unwrap();
+        if let Expr::Map(entries) = result {
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].0, "name");
+            assert_eq!(entries[1].0, "age");
+            assert!(matches!(
+                entries[0].1,
+                Expr::String(_) | Expr::TemplateString(_)
+            ));
+            assert!(matches!(entries[1].1, Expr::Int(30)));
+        } else {
+            panic!("Expected map literal, got: {:?}", result);
+        }
+
+        // Test map with string literal keys
+        let result = parse_expr(
+            r#"{ "Authorization": "Bearer token123", "Content-Type": "application/json" }"#,
+        )
+        .unwrap();
+        if let Expr::Map(entries) = result {
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].0, "Authorization");
+            assert_eq!(entries[1].0, "Content-Type");
+        } else {
+            panic!("Expected map literal, got: {:?}", result);
+        }
+
+        // Test nested map
+        let result =
+            parse_expr(r#"{ config: { timeout: 30, retries: 3 }, enabled: true }"#).unwrap();
+        if let Expr::Map(entries) = result {
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].0, "config");
+            assert_eq!(entries[1].0, "enabled");
+            assert!(matches!(entries[0].1, Expr::Map(_)));
+            assert!(matches!(entries[1].1, Expr::Bool(true)));
+        } else {
+            panic!("Expected map literal, got: {:?}", result);
+        }
+
+        // Test map with mixed value types
+        let result =
+            parse_expr(r#"{ str: "hello", num: 42, float: 3.14, bool: true, list: [1, 2, 3] }"#)
+                .unwrap();
+        if let Expr::Map(entries) = result {
+            assert_eq!(entries.len(), 5);
+            assert_eq!(entries[0].0, "str");
+            assert_eq!(entries[1].0, "num");
+            assert_eq!(entries[2].0, "float");
+            assert_eq!(entries[3].0, "bool");
+            assert_eq!(entries[4].0, "list");
+            assert!(matches!(entries[4].1, Expr::List(_)));
+        } else {
+            panic!("Expected map literal, got: {:?}", result);
+        }
+
+        // Test map with trailing comma
+        let result = parse_expr(r#"{ name: "Bob", age: 25, }"#).unwrap();
+        if let Expr::Map(entries) = result {
+            assert_eq!(entries.len(), 2);
+        } else {
+            panic!("Expected map literal, got: {:?}", result);
         }
     }
 }
