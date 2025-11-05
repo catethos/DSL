@@ -7,10 +7,63 @@ vps_host := "72.61.149.67"
 vps_user := "root"
 ssh_key := "~/.ssh/id_hostinger"
 remote_dir := "~/dsl-dist"
+version_file := "VERSION"
 
 # Default recipe (show available commands)
 default:
     @just --list
+
+# Show current version
+version:
+    @cat {{version_file}}
+
+# Bump major version (X.0.0)
+bump-major:
+    #!/usr/bin/env bash
+    set -e
+    CURRENT=$(cat {{version_file}})
+    MAJOR=$(echo $CURRENT | cut -d. -f1)
+    NEW_VERSION="$((MAJOR + 1)).0.0"
+    echo $NEW_VERSION > {{version_file}}
+    echo "Version bumped: $CURRENT → $NEW_VERSION"
+    just update-cargo-versions $NEW_VERSION
+
+# Bump minor version (x.X.0)
+bump-minor:
+    #!/usr/bin/env bash
+    set -e
+    CURRENT=$(cat {{version_file}})
+    MAJOR=$(echo $CURRENT | cut -d. -f1)
+    MINOR=$(echo $CURRENT | cut -d. -f2)
+    NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
+    echo $NEW_VERSION > {{version_file}}
+    echo "Version bumped: $CURRENT → $NEW_VERSION"
+    just update-cargo-versions $NEW_VERSION
+
+# Bump patch version (x.x.X)
+bump-patch:
+    #!/usr/bin/env bash
+    set -e
+    CURRENT=$(cat {{version_file}})
+    MAJOR=$(echo $CURRENT | cut -d. -f1)
+    MINOR=$(echo $CURRENT | cut -d. -f2)
+    PATCH=$(echo $CURRENT | cut -d. -f3)
+    NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+    echo $NEW_VERSION > {{version_file}}
+    echo "Version bumped: $CURRENT → $NEW_VERSION"
+    just update-cargo-versions $NEW_VERSION
+
+# Internal: Update all Cargo.toml files with new version
+update-cargo-versions VERSION:
+    #!/usr/bin/env bash
+    set -e
+    echo "Updating Cargo.toml files to version {{VERSION}}..."
+    sed -i.bak 's/^version = ".*"/version = "{{VERSION}}"/' crates/dsl-repl/Cargo.toml
+    sed -i.bak 's/^version = ".*"/version = "{{VERSION}}"/' crates/dsl-core/Cargo.toml
+    sed -i.bak 's/^version = ".*"/version = "{{VERSION}}"/' crates/dsl-tui/Cargo.toml
+    sed -i.bak 's/^version = ".*"/version = "{{VERSION}}"/' crates/dsl-autocomplete/Cargo.toml
+    rm -f crates/*/Cargo.toml.bak
+    echo "✓ Cargo.toml files updated"
 
 # Full release workflow: build, package, upload, and start server
 release: build upload start-server
@@ -41,10 +94,13 @@ build:
     mkdir -p {{dist_dir}}
     @echo "Current architecture: $(uname -m)"
     @echo ""
-    @echo "Building for current architecture..."
-    cargo build --release --manifest-path crates/dsl-repl/Cargo.toml
     #!/usr/bin/env bash
     set -e
+    VERSION=$(cat {{version_file}})
+    echo "Version: $VERSION"
+    echo ""
+    echo "Building for current architecture..."
+    cargo build --release --manifest-path crates/dsl-repl/Cargo.toml
     CURRENT_ARCH=$(uname -m)
     case $CURRENT_ARCH in
     x86_64)
@@ -57,12 +113,13 @@ build:
     ARCH_NAME="$CURRENT_ARCH"
     ;;
     esac
-    ARCHIVE="{{binary_name}}-${ARCH_NAME}-macos.tar.gz"
+    ARCHIVE="{{binary_name}}-v${VERSION}-${ARCH_NAME}-macos.tar.gz"
     echo "Packaging $ARCHIVE..."
     tar czf "{{dist_dir}}/$ARCHIVE" -C target/release "{{binary_name}}"
     echo ""
     echo "✓ Built and packaged: {{dist_dir}}/$ARCHIVE"
     cp install.sh {{dist_dir}}/
+    cp {{version_file}} {{dist_dir}}/
     echo ""
     echo "Distribution files ready in: {{dist_dir}}/"
 

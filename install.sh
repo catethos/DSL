@@ -21,20 +21,50 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
+# Fetch the latest version
+echo "Checking latest version..."
+VERSION=$(curl -fsSL "${BASE_URL}/VERSION" || echo "unknown")
+if [ "$VERSION" = "unknown" ]; then
+  echo -e "${YELLOW}Warning: Could not fetch version info, will try to install anyway${NC}"
+fi
+
+# Check if already installed
+if command -v ${BINARY_NAME} &> /dev/null; then
+  CURRENT_VERSION=$(${BINARY_NAME} --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+  if [ "$CURRENT_VERSION" != "unknown" ] && [ "$VERSION" != "unknown" ]; then
+    echo -e "${YELLOW}Current version: ${CURRENT_VERSION}${NC}"
+    echo -e "${YELLOW}Latest version: ${VERSION}${NC}"
+    if [ "$CURRENT_VERSION" = "$VERSION" ]; then
+      echo -e "${GREEN}Already up to date!${NC}"
+      exit 0
+    fi
+    echo "Updating..."
+  else
+    echo "Reinstalling..."
+  fi
+fi
+
 # Detect architecture
 ARCH=$(uname -m)
 case $ARCH in
   x86_64)
-    ARCHIVE="${BINARY_NAME}-x86_64-macos.tar.gz"
+    ARCH_NAME="x86_64"
     ;;
   arm64|aarch64)
-    ARCHIVE="${BINARY_NAME}-aarch64-macos.tar.gz"
+    ARCH_NAME="aarch64"
     ;;
   *)
     echo -e "${RED}Unsupported architecture: $ARCH${NC}"
     exit 1
     ;;
 esac
+
+# Determine archive name (try versioned first, fallback to unversioned)
+if [ "$VERSION" != "unknown" ]; then
+  ARCHIVE="${BINARY_NAME}-v${VERSION}-${ARCH_NAME}-macos.tar.gz"
+else
+  ARCHIVE="${BINARY_NAME}-${ARCH_NAME}-macos.tar.gz"
+fi
 
 URL="${BASE_URL}/${ARCHIVE}"
 echo -e "${YELLOW}Downloading from: ${URL}${NC}"

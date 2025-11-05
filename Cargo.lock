@@ -834,6 +834,10 @@ dependencies = [
  "clap",
  "dsl-core",
  "dsl-tui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
 ]
 
