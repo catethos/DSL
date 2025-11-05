@@ -49,7 +49,7 @@ fn draw_workspace(f: &mut Frame, app: &mut App) -> Rect {
     // Render key bindings at bottom
     render_keybindings(
         f,
-        "Tab: Switch Pane | Ctrl+E: Send Line | Ctrl+R: Run All | Ctrl+S: Save | :q or Ctrl+C: Quit",
+        "Shift+Tab: Switch Pane | Tab: Autocomplete | Ctrl+E: Send Line | Ctrl+R: Run All | Ctrl+S: Save | Ctrl+C: Quit",
     );
 
     // Return the active pane's area
