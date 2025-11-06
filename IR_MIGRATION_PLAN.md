@@ -1,0 +1,1915 @@
+# DSL IR Migration Plan
+
+## Executive Summary
+
+This document outlines the complete migration plan for transforming the DSL compiler from direct AST evaluation to an IR-based architecture supporting both interpretation (REPL) and compilation (Rust codegen).
+
+### Core Architecture Principle
+
+**DSL grammar (grammar.pest) is the single source of truth.**
+
+All 4,302 lines of existing functionality will be preserved while adding an IR layer:
+
+```
+DSL Grammar (363 lines) ← Source of truth
+    ↓
+Parser (1,590 lines) → AST
+    ↓
+IR Compiler (new) → IR (serde)
+    ↓
+├─→ Interpreter (new) → REPL
+└─→ Codegen (new) → Rust Binary
+```
+
+### Key Decisions
+
+- **IR Serialization**: MessagePack (binary) + JSON (debug)
+- **Actor Runtime**: Tokio + channels (generated code)
+- **State Model**: Immutable handlers, mutable process (BEAM semantics)
+- **Codegen Target**: Both library and executable
+- **Interpreter**: Simple tree-walk for REPL
+
+---
+
+## Current State Analysis
+
+### Crate Structure
+- **Total Lines**: 4,302 (3,939 Rust + 363 Pest grammar)
+- **Source Files**: 9 Rust files + 1 Pest grammar
+- **Expression Types**: 13 variants in Expr enum
+- **Builtin Functions**: 10 functions
+- **REPL Commands**: 7 commands
+- **Dependencies**: 8 major external libraries
+
+### Key Files Inventory
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `parser/grammar.pest` | 363 | DSL syntax specification |
+| `parser/mod.rs` | 1,590 | Parser and AST definitions |
+| `eval/evaluator.rs` | 1,019 | Expression evaluation engine |
+| `eval/builtin.rs` | 746 | Builtin function implementations |
+| `types/value.rs` | 272 | Runtime value representation |
+| `eval/sql.rs` | 160 | SQL execution via DuckDB |
+| `types/registry.rs` | 72 | User-defined type registry |
+| `types/mod.rs` | 5 | Module exports |
+| `eval/mod.rs` | 7 | Module exports |
+| `lib.rs` | 34 | Public API surface |
+
+---
+
+## Phase 1: Create IR Crate from Existing AST (Week 1)
+
+### 1.1 Initialize dsl-ir Crate
+
+**Action**: Create new library crate
+```bash
+cargo new --lib crates/dsl-ir
+```
+
+**Dependencies** (`Cargo.toml`):
+```toml
+[package]
+name = "dsl-ir"
+version = "0.1.0"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+rmp-serde = "1.1"  # MessagePack serialization
+indexmap = { workspace = true }
+anyhow = { workspace = true }
+simplify_baml = "0.1.0"  # For type system
+```
+
+### 1.2 Copy and Transform AST to IR
+
+**Source**: `crates/dsl-core/src/parser/mod.rs` (lines 1-1154)
+
+**Action**: Extract AST types to `crates/dsl-ir/src/ir.rs`
+
+**Type Transformations**:
+
+| Current AST Type | New IR Type | Changes |
+|-----------------|-------------|---------|
+| `Expr` | `IRNode` | Add serde derives |
+| `TemplateSegment` | `IRTemplateSegment` | Add serde derives |
+| `Binding` | `IRBinding` | Add serde derives |
+| `FunctionExecution` | `IRExecution` | Add serde derives |
+| `FunctionDef` | `IRFunction` | Add serde derives |
+| `PropertyValue` | `IRProperty` | Add serde derives |
+
+**Serde Derives**: All types must have:
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+```
+
+**IRNode Enum** (13 variants):
+```rust
+pub enum IRNode {
+    String(String),
+    TemplateString(Vec<IRTemplateSegment>),
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    List(Vec<IRNode>),
+    Map(Vec<(String, IRNode)>),
+    Variable(String),
+    FunctionCall {
+        name: String,
+        args: Vec<IRNode>,
+    },
+    TypeInstantiation {
+        type_name: String,
+        fields: Vec<(String, IRNode)>,
+    },
+    FieldAccess {
+        base: Box<IRNode>,
+        field: String,
+    },
+    IndexAccess {
+        base: Box<IRNode>,
+        index: Box<IRNode>,
+    },
+    BinaryOp {
+        left: Box<IRNode>,
+        op: String,
+        right: Box<IRNode>,
+    },
+    Conditional {
+        condition: Box<IRNode>,
+        then_expr: Box<IRNode>,
+        else_expr: Box<IRNode>,
+    },
+    Sequential {
+        left: Box<IRNode>,
+        right: Box<IRNode>,
+        binding: Option<IRBinding>,
+    },
+    Parallel {
+        exprs: Vec<IRNode>,
+        binding: Option<IRBinding>,
+    },
+}
+```
+
+### 1.3 Import Type System
+
+**Action**: Re-export types from simplify_baml
+
+In `crates/dsl-ir/src/types.rs`:
+```rust
+pub use simplify_baml::{Class, Enum, Field, FieldType};
+```
+
+These types already have serde support and are battle-tested.
+
+### 1.4 Create IR Container
+
+**File**: `crates/dsl-ir/src/ir.rs`
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IR {
+    pub version: String,
+    pub types: Vec<Class>,
+    pub enums: Vec<Enum>,
+    pub functions: Vec<IRFunction>,
+    pub agents: Vec<IRAgent>,  // Future extension
+    pub entry_expr: IRNode,
+}
+```
+
+### 1.5 Add Serialization API
+
+**File**: `crates/dsl-ir/src/serde.rs`
+
+```rust
+impl IR {
+    /// Serialize to MessagePack binary format
+    pub fn to_msgpack(&self) -> Result<Vec<u8>> {
+        rmp_serde::to_vec(self)
+            .context("Failed to serialize IR to MessagePack")
+    }
+
+    /// Deserialize from MessagePack binary format
+    pub fn from_msgpack(bytes: &[u8]) -> Result<Self> {
+        rmp_serde::from_slice(bytes)
+            .context("Failed to deserialize IR from MessagePack")
+    }
+
+    /// Serialize to JSON (for debugging/inspection)
+    pub fn to_json_pretty(&self) -> Result<String> {
+        serde_json::to_string_pretty(self)
+            .context("Failed to serialize IR to JSON")
+    }
+
+    /// Deserialize from JSON
+    pub fn from_json(json: &str) -> Result<Self> {
+        serde_json::from_str(json)
+            .context("Failed to deserialize IR from JSON")
+    }
+}
+```
+
+### 1.6 Preserve Value Type
+
+**Source**: `crates/dsl-core/src/types/value.rs` (272 lines)
+
+**Action**: Copy to `crates/dsl-ir/src/value.rs`
+
+**Preserve all 8 variants**:
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum Value {
+    String(String),
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    List(Vec<Value>),
+    Map(IndexMap<String, Value>),  // Order-preserving
+    Null,
+    Markdown(String),
+}
+```
+
+**Preserve all methods**:
+- `type_name()` - Type identification
+- `display()` - Human-readable display with truncation
+- `is_table()` - Detect list-of-maps
+- `display_as_table()` - Box-drawing table formatting
+- `to_prompt_string()` - Full serialization for LLM prompts
+- `from_json()` - Convert from serde_json::Value
+
+**Critical**: Keep exact table display logic (lines 60-123) including:
+- Max 20 rows display
+- Max 30 character column width
+- Box-drawing characters
+- Column header formatting
+
+---
+
+## Phase 2: Extend IR for Agentic Features (Week 2)
+
+### 2.1 Add Agent Types
+
+**File**: `crates/dsl-ir/src/agent.rs`
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IRAgent {
+    pub name: String,
+    pub description: Option<String>,
+    pub state_type: Class,
+    pub tools: Vec<String>,
+    pub handlers: Vec<IRMessageHandler>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IRMessageHandler {
+    pub message_type: FieldType,
+    pub reply_type: Option<FieldType>,
+    pub body: IRNode,
+}
+```
+
+### 2.2 Extend IRNode Enum
+
+**Add to `IRNode` enum**:
+
+```rust
+// Agent primitives
+SpawnAgent {
+    agent_type: String,
+    init_state: Box<IRNode>,
+},
+SendMessage {
+    target: String,
+    message: Box<IRNode>,
+    timeout_ms: Option<u32>,
+},
+ReceiveMessage {
+    pattern: IRPattern,
+},
+Broadcast {
+    targets: Vec<String>,
+    message: Box<IRNode>,
+},
+
+// Control flow
+Loop {
+    body: Box<IRNode>,
+},
+While {
+    condition: Box<IRNode>,
+    body: Box<IRNode>,
+},
+For {
+    var: String,
+    iterable: Box<IRNode>,
+    body: Box<IRNode>,
+},
+Break {
+    value: Option<Box<IRNode>>,
+},
+Continue,
+
+// Error handling
+TryBlock {
+    body: Box<IRNode>,
+    catch_var: String,
+    catch_body: Box<IRNode>,
+},
+Throw {
+    error: Box<IRNode>,
+},
+```
+
+### 2.3 Add Pattern Matching Type
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum IRPattern {
+    Type(FieldType),
+    Binding(String, Box<IRPattern>),
+    Any,
+}
+```
+
+### 2.4 Add Context Store Type
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IRContextStore {
+    pub name: String,
+    pub schema: Class,
+    pub read_permissions: Vec<String>,
+    pub write_permissions: Vec<String>,
+}
+```
+
+---
+
+## Phase 3: Create IR Compiler in dsl-core (Week 2-3)
+
+### 3.1 Create compiler.rs Module
+
+**File**: `crates/dsl-core/src/compiler.rs`
+
+**Main entry point**:
+```rust
+use dsl_ir::{IR, IRNode, IRFunction, Class, Enum};
+use crate::parser::{Expr, FunctionDef};
+
+pub fn compile_to_ir(source: &str) -> Result<IR> {
+    // Parse source
+    let ast = parse_program(source)?;
+
+    // Collect types, enums, functions
+    let mut types = Vec::new();
+    let mut enums = Vec::new();
+    let mut functions = Vec::new();
+
+    // Extract from AST
+    // ... collection logic ...
+
+    // Compile entry expression
+    let entry_expr = compile_expr(&ast.expr)?;
+
+    Ok(IR {
+        version: "0.1.0".to_string(),
+        types,
+        enums,
+        functions,
+        agents: Vec::new(),  // Future
+        entry_expr,
+    })
+}
+```
+
+### 3.2 Implement AST → IR Translation
+
+**Preserve exact semantics for all 13 Expr variants**:
+
+```rust
+fn compile_expr(expr: &Expr) -> Result<IRNode> {
+    match expr {
+        Expr::String(s) => Ok(IRNode::String(s.clone())),
+
+        Expr::TemplateString(segments) => {
+            let ir_segments = segments.iter()
+                .map(compile_template_segment)
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRNode::TemplateString(ir_segments))
+        },
+
+        Expr::Int(i) => Ok(IRNode::Int(*i)),
+        Expr::Float(f) => Ok(IRNode::Float(*f)),
+        Expr::Bool(b) => Ok(IRNode::Bool(*b)),
+
+        Expr::List(items) => {
+            let ir_items = items.iter()
+                .map(compile_expr)
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRNode::List(ir_items))
+        },
+
+        Expr::Map(entries) => {
+            let ir_entries = entries.iter()
+                .map(|(k, v)| Ok((k.clone(), compile_expr(v)?)))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRNode::Map(ir_entries))
+        },
+
+        Expr::Variable(name) => Ok(IRNode::Variable(name.clone())),
+
+        Expr::FunctionCall { name, args } => {
+            let ir_args = args.iter()
+                .map(compile_expr)
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRNode::FunctionCall {
+                name: name.clone(),
+                args: ir_args,
+            })
+        },
+
+        Expr::TypeInstantiation { type_name, fields } => {
+            let ir_fields = fields.iter()
+                .map(|(k, v)| Ok((k.clone(), compile_expr(v)?)))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRNode::TypeInstantiation {
+                type_name: type_name.clone(),
+                fields: ir_fields,
+            })
+        },
+
+        Expr::FieldAccess { base, field } => {
+            Ok(IRNode::FieldAccess {
+                base: Box::new(compile_expr(base)?),
+                field: field.clone(),
+            })
+        },
+
+        Expr::IndexAccess { base, index } => {
+            Ok(IRNode::IndexAccess {
+                base: Box::new(compile_expr(base)?),
+                index: Box::new(compile_expr(index)?),
+            })
+        },
+
+        Expr::BinaryOp { left, op, right } => {
+            Ok(IRNode::BinaryOp {
+                left: Box::new(compile_expr(left)?),
+                op: op.clone(),
+                right: Box::new(compile_expr(right)?),
+            })
+        },
+
+        Expr::Conditional { condition, then_expr, else_expr } => {
+            Ok(IRNode::Conditional {
+                condition: Box::new(compile_expr(condition)?),
+                then_expr: Box::new(compile_expr(then_expr)?),
+                else_expr: Box::new(compile_expr(else_expr)?),
+            })
+        },
+
+        Expr::Sequential { left, right, binding } => {
+            Ok(IRNode::Sequential {
+                left: Box::new(compile_expr(left)?),
+                right: Box::new(compile_expr(right)?),
+                binding: binding.as_ref().map(compile_binding).transpose()?,
+            })
+        },
+
+        Expr::Parallel { exprs, binding } => {
+            let ir_exprs = exprs.iter()
+                .map(compile_expr)
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRNode::Parallel {
+                exprs: ir_exprs,
+                binding: binding.as_ref().map(compile_binding).transpose()?,
+            })
+        },
+    }
+}
+```
+
+### 3.3 Preserve FunctionExecution Modes
+
+```rust
+fn compile_function(func: &FunctionDef) -> Result<IRFunction> {
+    let execution = match &func.execution {
+        FunctionExecution::LLM { prompt, model, base_url, api_key_env, temperature } => {
+            IRExecution::LLM {
+                prompt: prompt.clone(),
+                model: model.clone(),
+                base_url: base_url.clone(),
+                api_key_env: api_key_env.clone(),
+                temperature: *temperature,
+            }
+        },
+
+        FunctionExecution::HTTP { method, url, params, headers, body } => {
+            IRExecution::HTTP {
+                method: method.clone(),
+                url: url.clone(),
+                params: params.clone(),
+                headers: headers.clone(),
+                body: body.clone(),
+            }
+        },
+
+        FunctionExecution::SQL { query } => {
+            IRExecution::SQL {
+                query: query.clone(),
+            }
+        },
+
+        FunctionExecution::HTTPWithLLM { /* ... */ } => {
+            IRExecution::HTTPWithLLM {
+                // Preserve all fields
+            }
+        },
+    };
+
+    Ok(IRFunction {
+        name: func.name.clone(),
+        params: func.params.clone(),
+        return_type: func.return_type.clone(),
+        properties: func.properties.clone(),
+        execution,
+    })
+}
+```
+
+### 3.4 Update lib.rs
+
+**Add to public API**:
+```rust
+pub mod compiler;
+pub use compiler::compile_to_ir;
+```
+
+**Preserve existing exports**:
+- `Evaluator`
+- `TypeRegistry`, `Value`
+- Parser functions
+- AST types
+
+---
+
+## Phase 4: Create IR Interpreter (Week 3-5)
+
+### 4.1 Initialize dsl-interpreter Crate
+
+```bash
+cargo new --lib crates/dsl-interpreter
+```
+
+**Dependencies**:
+```toml
+[dependencies]
+dsl-ir = { path = "../dsl-ir" }
+tokio = { workspace = true }
+simplify_baml = "0.1.0"
+reqwest = { workspace = true }
+duckdb = { workspace = true }
+indexmap = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+```
+
+### 4.2 Port Evaluator State
+
+**Source**: `crates/dsl-core/src/eval/evaluator.rs` (lines 21-30)
+
+**File**: `crates/dsl-interpreter/src/runtime.rs`
+
+```rust
+use dsl_ir::{Value, Class, Enum, IRFunction};
+use std::collections::HashMap;
+
+pub struct Runtime {
+    pub vars: HashMap<String, Value>,
+    pub types: TypeRegistry,
+    pub functions: HashMap<String, IRFunction>,
+    pub agents: HashMap<String, AgentHandle>,  // Future
+}
+
+impl Runtime {
+    pub fn new() -> Self {
+        Self {
+            vars: HashMap::new(),
+            types: TypeRegistry::new(),
+            functions: HashMap::new(),
+            agents: HashMap::new(),
+        }
+    }
+
+    pub fn get_var(&self, name: &str) -> Result<Value> {
+        self.vars.get(name)
+            .cloned()
+            .ok_or_else(|| anyhow!("Undefined variable: {}", name))
+    }
+
+    pub fn set_var(&mut self, name: String, value: Value) {
+        self.vars.insert(name, value);
+    }
+}
+```
+
+### 4.3 Port TypeRegistry
+
+**Source**: `crates/dsl-core/src/types/registry.rs` (72 lines)
+
+**File**: `crates/dsl-interpreter/src/type_registry.rs`
+
+Copy entire implementation:
+- `register_class()`
+- `register_enum()`
+- `get_class()` / `get_enum()`
+- `has_type()`
+- `all_classes()` / `all_enums()`
+- `to_ir_types()`
+
+### 4.4 Port BuiltinFunctions
+
+**Source**: `crates/dsl-core/src/eval/builtin.rs` (746 lines)
+
+**File**: `crates/dsl-interpreter/src/builtins.rs`
+
+**Preserve all 10 builtin functions**:
+
+1. **Ask** (lines 124-140): Simple LLM call returning string
+2. **ExtractPerson** (lines 228-237): Built-in Person type extraction
+3. **ExtractAs** (lines 238-314): Generic structured extraction
+4. **Length** (lines 315-323): String/list length
+5. **Upper** (lines 324-333): Uppercase conversion
+6. **Lower** (lines 334-343): Lowercase conversion
+7. **Join** (lines 344-366): Join list with separator
+8. **SQL** (lines 367-420): Execute SQL query
+9. **par** (lines 421-434): Parallel execution (returns list)
+10. **not** (lines 435-441): Logical negation
+11. **RenderMarkdown** (lines 442-448): Create Markdown value
+
+**Preserve helper methods**:
+- `rebuild_runtime()` (lines 96-122): Rebuild BAML runtime with new types
+- `ask_with_config()` (lines 141-167): LLM with custom config
+- `extract_as_with_config()` (lines 168-227): Extraction with custom config
+- `create_client()` (lines 452-476): Create LLM client
+- `baml_value_to_value()` (lines 477-532): Convert BAML → DSL values
+- `parse_type_identifier()` (lines 533-579): Parse type strings
+
+**Preserve special behaviors**:
+- OPENAI_API_KEY environment variable support
+- Custom base_url for LLM providers
+- Dynamic type registration in BAML runtime
+- Built-in Person type for backward compatibility
+
+### 4.5 Port SQLExecutor
+
+**Source**: `crates/dsl-core/src/eval/sql.rs` (160 lines)
+
+**File**: `crates/dsl-interpreter/src/sql.rs`
+
+Copy entire implementation:
+- In-memory DuckDB connection
+- Template variable substitution (`{{variable}}`)
+- Dynamic table registration from lists
+- Schema inference from data
+- Type conversion (Int, Float, String, Bool, Null)
+- Return as `Value::List` of `Value::Map`
+
+### 4.6 Implement Interpreter
+
+**File**: `crates/dsl-interpreter/src/interpreter.rs`
+
+**Source logic**: `crates/dsl-core/src/eval/evaluator.rs` (lines 141-878)
+
+```rust
+use dsl_ir::{IRNode, Value};
+
+pub struct Interpreter {
+    runtime: Runtime,
+    builtins: BuiltinFunctions,
+}
+
+impl Interpreter {
+    pub fn new() -> Self {
+        Self {
+            runtime: Runtime::new(),
+            builtins: BuiltinFunctions::new(),
+        }
+    }
+
+    pub async fn eval(&mut self, node: &IRNode) -> Result<Value> {
+        match node {
+            // Preserve exact logic from evaluator.rs
+            IRNode::String(s) => Ok(Value::String(s.clone())),
+
+            IRNode::TemplateString(segments) => {
+                // Lines 174-193: Template interpolation
+                let mut result = String::new();
+                for segment in segments {
+                    match segment {
+                        IRTemplateSegment::Text(t) => result.push_str(t),
+                        IRTemplateSegment::Interpolation(expr) => {
+                            let val = self.eval(expr).await?;
+                            result.push_str(&val.to_string());
+                        }
+                    }
+                }
+                Ok(Value::String(result))
+            },
+
+            IRNode::Int(i) => Ok(Value::Int(*i)),
+            IRNode::Float(f) => Ok(Value::Float(*f)),
+            IRNode::Bool(b) => Ok(Value::Bool(*b)),
+
+            IRNode::List(items) => {
+                // Lines 409-418: Recursive evaluation
+                let mut values = Vec::new();
+                for item in items {
+                    values.push(self.eval(item).await?);
+                }
+                Ok(Value::List(values))
+            },
+
+            IRNode::Map(entries) => {
+                // Lines 419-438: Preserve order with IndexMap
+                let mut map = IndexMap::new();
+                for (key, expr) in entries {
+                    let value = self.eval(expr).await?;
+                    map.insert(key.clone(), value);
+                }
+                Ok(Value::Map(map))
+            },
+
+            IRNode::Variable(name) => {
+                // Lines 194-197: HashMap lookup
+                self.runtime.get_var(name)
+            },
+
+            IRNode::FunctionCall { name, args } => {
+                // Lines 198-229: Builtin or user function dispatch
+                self.call_function(name, args).await
+            },
+
+            IRNode::FieldAccess { base, field } => {
+                // Lines 230-258: Navigate into maps
+                let base_val = self.eval(base).await?;
+                match base_val {
+                    Value::Map(map) => {
+                        map.get(field)
+                            .cloned()
+                            .ok_or_else(|| anyhow!("Field not found: {}", field))
+                    },
+                    _ => Err(anyhow!("Cannot access field on non-map")),
+                }
+            },
+
+            IRNode::IndexAccess { base, index } => {
+                // Lines 259-285: Array/map indexing
+                let base_val = self.eval(base).await?;
+                let index_val = self.eval(index).await?;
+
+                match (base_val, index_val) {
+                    (Value::List(list), Value::Int(i)) => {
+                        list.get(i as usize)
+                            .cloned()
+                            .ok_or_else(|| anyhow!("Index out of bounds"))
+                    },
+                    (Value::Map(map), Value::String(key)) => {
+                        map.get(&key)
+                            .cloned()
+                            .ok_or_else(|| anyhow!("Key not found: {}", key))
+                    },
+                    _ => Err(anyhow!("Invalid index operation")),
+                }
+            },
+
+            IRNode::BinaryOp { left, op, right } => {
+                // Lines 286-312: All operators with type coercion
+                let left_val = self.eval(left).await?;
+                let right_val = self.eval(right).await?;
+                self.apply_binary_op(op, left_val, right_val)
+            },
+
+            IRNode::Conditional { condition, then_expr, else_expr } => {
+                // Lines 313-326: Ternary evaluation
+                let cond = self.eval(condition).await?;
+                match cond {
+                    Value::Bool(true) => self.eval(then_expr).await,
+                    Value::Bool(false) => self.eval(else_expr).await,
+                    _ => Err(anyhow!("Condition must be boolean")),
+                }
+            },
+
+            IRNode::Sequential { left, right, binding } => {
+                // Lines 327-369: Pipe with binding
+                let left_result = self.eval(left).await?;
+
+                // Set _ variable
+                self.runtime.set_var("_".to_string(), left_result.clone());
+
+                // Handle binding
+                if let Some(binding) = binding {
+                    self.apply_binding(binding, left_result)?;
+                }
+
+                // Eval right side
+                self.eval(right).await
+            },
+
+            IRNode::Parallel { exprs, binding } => {
+                // Lines 370-408: Currently sequential
+                // TODO: True parallel with tokio::join!
+                let mut results = Vec::new();
+                for expr in exprs {
+                    results.push(self.eval(expr).await?);
+                }
+
+                let result = Value::List(results);
+
+                if let Some(binding) = binding {
+                    self.apply_binding(binding, result.clone())?;
+                }
+
+                Ok(result)
+            },
+
+            IRNode::TypeInstantiation { type_name, fields } => {
+                // Lines 204-212: TODO - Not yet implemented
+                Err(anyhow!("Type instantiation not yet implemented"))
+            },
+
+            // Future variants
+            _ => Err(anyhow!("Unsupported IR node")),
+        }
+    }
+}
+```
+
+**Preserve user function execution** (lines 439-493):
+```rust
+async fn call_user_function(&mut self, func: &IRFunction, args: Vec<Value>) -> Result<Value> {
+    match &func.execution {
+        IRExecution::LLM { prompt, model, base_url, api_key_env, temperature } => {
+            self.execute_llm_function(prompt, model, base_url, api_key_env, temperature, args).await
+        },
+        IRExecution::HTTP { method, url, params, headers, body } => {
+            self.execute_http_function(method, url, params, headers, body, args).await
+        },
+        IRExecution::SQL { query } => {
+            self.execute_sql_function(query, args).await
+        },
+        IRExecution::HTTPWithLLM { /* ... */ } => {
+            self.execute_http_llm_function(/* ... */).await
+        },
+    }
+}
+```
+
+### 4.7 Implement Agent Runtime (Basic)
+
+**File**: `crates/dsl-interpreter/src/agent.rs`
+
+```rust
+pub struct AgentHandle {
+    tx: mpsc::Sender<Message>,
+}
+
+pub async fn spawn_agent(
+    agent: &IRAgent,
+    runtime: Arc<Mutex<Runtime>>,
+) -> AgentHandle {
+    let (tx, mut rx) = mpsc::channel(100);
+
+    tokio::spawn(async move {
+        let mut state = /* initialize state */;
+
+        while let Some(msg) = rx.recv().await {
+            // Find matching handler
+            // Execute handler body
+            // Update state
+        }
+    });
+
+    AgentHandle { tx }
+}
+```
+
+---
+
+## Phase 5: Update REPL to Use IR (Week 5)
+
+### 5.1 Refactor REPL Main Loop
+
+**File**: `crates/dsl-repl/src/main.rs`
+
+**Old pipeline**:
+```rust
+let ast = parse(input)?;
+let result = evaluator.eval_expr(&ast).await?;
+```
+
+**New pipeline**:
+```rust
+let ast = parse(input)?;
+let ir = compile_to_ir(&ast)?;
+let result = interpreter.eval(&ir.entry_expr).await?;
+```
+
+### 5.2 Port Command System
+
+**Source**: `crates/dsl-core/src/eval/evaluator.rs` (lines 737-878)
+
+**Preserve all 7 commands**:
+
+1. **:vars** (lines 740-753)
+```rust
+if input == ":vars" {
+    for (name, value) in &interpreter.runtime.vars {
+        println!("{} = {}", name, value.display());
+    }
+    return Ok(());
+}
+```
+
+2. **:types** (lines 754-775)
+```rust
+if input == ":types" {
+    for class in interpreter.runtime.types.all_classes() {
+        println!("{} {{", class.name);
+        for field in &class.fields {
+            println!("  {}: {:?}", field.name, field.field_type);
+        }
+        println!("}}");
+    }
+    return Ok(());
+}
+```
+
+3. **:funcs / :functions** (lines 776-797)
+```rust
+if input == ":funcs" || input == ":functions" {
+    for (name, func) in &interpreter.runtime.functions {
+        println!("{}({}) -> {:?}", name, func.params.join(", "), func.return_type);
+    }
+    return Ok(());
+}
+```
+
+4. **:copy <file>** (lines 798-822)
+```rust
+if input.starts_with(":copy ") {
+    let filename = &input[6..];
+    if let Some(last_result) = &last_result {
+        std::fs::write(filename, last_result.to_prompt_string())?;
+        println!("Saved to {}", filename);
+    }
+    return Ok(());
+}
+```
+
+5. **:save <file>** (lines 823-862)
+```rust
+if input.starts_with(":save ") {
+    let filename = &input[6..];
+    let json = serde_json::to_string_pretty(&interpreter.runtime.vars)?;
+    std::fs::write(filename, json)?;
+    println!("Session saved to {}", filename);
+    return Ok(());
+}
+```
+
+6. **:load <file>** (lines 863-878)
+```rust
+if input.starts_with(":load ") {
+    let filename = &input[6..];
+    let json = std::fs::read_to_string(filename)?;
+    let vars: HashMap<String, Value> = serde_json::from_str(&json)?;
+    interpreter.runtime.vars = vars;
+    println!("Session loaded from {}", filename);
+    return Ok(());
+}
+```
+
+7. **:debug** (preserve from builtin.rs)
+```rust
+if input == ":debug" {
+    if let Some(prompt) = &interpreter.builtins.last_prompt {
+        println!("{}", prompt);
+    }
+    return Ok(());
+}
+```
+
+### 5.3 Add New IR Commands
+
+```rust
+if input.starts_with(":ir ") {
+    let expr = &input[4..];
+    let ast = parse_expr(expr)?;
+    let ir = compile_expr(&ast)?;
+    println!("{}", serde_json::to_string_pretty(&ir)?);
+    return Ok(());
+}
+
+if input.starts_with(":ir-save ") {
+    let filename = &input[9..];
+    let ir = /* current IR */;
+    let bytes = ir.to_msgpack()?;
+    std::fs::write(filename, bytes)?;
+    println!("IR saved to {}", filename);
+    return Ok(());
+}
+
+if input.starts_with(":ir-load ") {
+    let filename = &input[9..];
+    let bytes = std::fs::read(filename)?;
+    let ir = IR::from_msgpack(&bytes)?;
+    let result = interpreter.eval(&ir.entry_expr).await?;
+    println!("{}", result.display());
+    return Ok(());
+}
+```
+
+### 5.4 Preserve Display Behavior
+
+Keep exact same formatting:
+- Table display for `List<Map>` (from value.rs lines 60-123)
+- Truncation for long strings (>100 chars)
+- Markdown rendering
+- Type annotations
+
+---
+
+## Phase 6: Create Rust Code Generator (Week 6-8)
+
+### 6.1 Initialize dsl-codegen Crate
+
+```bash
+cargo new --lib crates/dsl-codegen
+```
+
+**Dependencies**:
+```toml
+[dependencies]
+dsl-ir = { path = "../dsl-ir" }
+```
+
+### 6.2 Define Rust AST Types
+
+**File**: `crates/dsl-codegen/src/rust_ast.rs`
+
+```rust
+pub enum RustItem {
+    Use(String),
+    Struct(RustStruct),
+    Enum(RustEnum),
+    Impl(RustImpl),
+    Function(RustFunction),
+}
+
+pub struct RustStruct {
+    pub name: String,
+    pub derives: Vec<String>,
+    pub fields: Vec<(String, RustType)>,
+}
+
+pub struct RustFunction {
+    pub name: String,
+    pub params: Vec<(String, RustType)>,
+    pub return_type: RustType,
+    pub is_async: bool,
+    pub body: Vec<RustStmt>,
+}
+
+pub enum RustExpr {
+    Literal(RustLiteral),
+    Variable(String),
+    Call(String, Vec<RustExpr>),
+    FieldAccess(Box<RustExpr>, String),
+    BinaryOp(Box<RustExpr>, String, Box<RustExpr>),
+    Block(Vec<RustStmt>),
+    If(Box<RustExpr>, Vec<RustStmt>, Vec<RustStmt>),
+    Match(Box<RustExpr>, Vec<(RustPattern, Vec<RustStmt>)>),
+    // ... more variants
+}
+
+impl RustItem {
+    pub fn pretty_print(&self, indent: usize) -> String {
+        // Format with proper indentation and escaping
+    }
+}
+```
+
+### 6.3 Generate Type Definitions
+
+**File**: `crates/dsl-codegen/src/types.rs`
+
+```rust
+pub fn generate_struct(class: &Class) -> RustStruct {
+    RustStruct {
+        name: class.name.clone(),
+        derives: vec!["Debug", "Clone", "Serialize", "Deserialize"],
+        fields: class.fields.iter().map(|f| {
+            (f.name.clone(), field_type_to_rust(&f.field_type, f.optional))
+        }).collect(),
+    }
+}
+
+fn field_type_to_rust(field_type: &FieldType, optional: bool) -> RustType {
+    let base = match field_type {
+        FieldType::String => RustType::Named("String"),
+        FieldType::Int => RustType::Named("i64"),
+        FieldType::Float => RustType::Named("f64"),
+        FieldType::Bool => RustType::Named("bool"),
+        FieldType::List(inner) => {
+            RustType::Generic("Vec", vec![field_type_to_rust(inner, false)])
+        },
+        FieldType::Class(name) => RustType::Named(name),
+        FieldType::Enum(name) => RustType::Named(name),
+    };
+
+    if optional {
+        RustType::Generic("Option", vec![base])
+    } else {
+        base
+    }
+}
+```
+
+### 6.4 Generate Builtin Function Wrappers
+
+**File**: `crates/dsl-codegen/src/builtins.rs`
+
+```rust
+pub fn generate_builtins() -> Vec<RustFunction> {
+    vec![
+        generate_ask(),
+        generate_extract_as(),
+        generate_length(),
+        generate_upper(),
+        generate_lower(),
+        generate_join(),
+        generate_sql(),
+        generate_par(),
+        generate_not(),
+        generate_render_markdown(),
+    ]
+}
+
+fn generate_ask() -> RustFunction {
+    RustFunction {
+        name: "ask".to_string(),
+        params: vec![("prompt".to_string(), RustType::Named("String"))],
+        return_type: RustType::Result(Box::new(RustType::Named("String"))),
+        is_async: true,
+        body: vec![
+            RustStmt::Expr(RustExpr::Call(
+                "dsl_runtime::builtins::ask".to_string(),
+                vec![RustExpr::Variable("prompt".to_string())],
+            )),
+        ],
+    }
+}
+```
+
+### 6.5 Generate User Function Code
+
+**File**: `crates/dsl-codegen/src/functions.rs`
+
+```rust
+pub fn generate_function(func: &IRFunction) -> RustFunction {
+    match &func.execution {
+        IRExecution::LLM { prompt, model, base_url, api_key_env, temperature } => {
+            generate_llm_function(func, prompt, model, base_url, api_key_env, temperature)
+        },
+        IRExecution::HTTP { method, url, params, headers, body } => {
+            generate_http_function(func, method, url, params, headers, body)
+        },
+        IRExecution::SQL { query } => {
+            generate_sql_function(func, query)
+        },
+        IRExecution::HTTPWithLLM { /* ... */ } => {
+            generate_http_llm_function(func, /* ... */)
+        },
+    }
+}
+
+fn generate_llm_function(
+    func: &IRFunction,
+    prompt: &str,
+    model: &Option<String>,
+    base_url: &Option<String>,
+    api_key_env: &Option<String>,
+    temperature: &Option<f64>,
+) -> RustFunction {
+    // Generate async function using simplify_baml
+    // Template interpolation in prompt
+    // All config from parameters
+}
+```
+
+### 6.6 Generate Expression Code
+
+**File**: `crates/dsl-codegen/src/expressions.rs`
+
+```rust
+pub fn generate_expr(node: &IRNode) -> RustExpr {
+    match node {
+        IRNode::String(s) => RustExpr::Literal(RustLiteral::String(s.clone())),
+
+        IRNode::TemplateString(segments) => {
+            // Generate format!() macro
+            generate_format_macro(segments)
+        },
+
+        IRNode::Int(i) => RustExpr::Literal(RustLiteral::Int(*i)),
+        IRNode::Float(f) => RustExpr::Literal(RustLiteral::Float(*f)),
+        IRNode::Bool(b) => RustExpr::Literal(RustLiteral::Bool(*b)),
+
+        IRNode::List(items) => {
+            let item_exprs = items.iter().map(generate_expr).collect();
+            RustExpr::Vec(item_exprs)
+        },
+
+        IRNode::Map(entries) => {
+            // Generate HashMap construction
+            generate_hashmap(entries)
+        },
+
+        IRNode::Variable(name) => RustExpr::Variable(name.clone()),
+
+        IRNode::FunctionCall { name, args } => {
+            let arg_exprs = args.iter().map(generate_expr).collect();
+            RustExpr::Call(name.clone(), arg_exprs)
+        },
+
+        IRNode::FieldAccess { base, field } => {
+            RustExpr::FieldAccess(
+                Box::new(generate_expr(base)),
+                field.clone()
+            )
+        },
+
+        IRNode::BinaryOp { left, op, right } => {
+            RustExpr::BinaryOp(
+                Box::new(generate_expr(left)),
+                op.clone(),
+                Box::new(generate_expr(right))
+            )
+        },
+
+        IRNode::Sequential { left, right, binding } => {
+            // Generate let bindings
+            generate_sequential(left, right, binding)
+        },
+
+        IRNode::Parallel { exprs, binding } => {
+            // Generate tokio::join!
+            generate_parallel(exprs, binding)
+        },
+
+        // ... all other variants
+    }
+}
+```
+
+### 6.7 Generate Main Function
+
+**File**: `crates/dsl-codegen/src/main_gen.rs`
+
+```rust
+pub fn generate_main(ir: &IR) -> RustFunction {
+    RustFunction {
+        name: "main".to_string(),
+        params: vec![],
+        return_type: RustType::Result(RustType::Unit),
+        is_async: true,
+        body: vec![
+            // Initialize runtime
+            RustStmt::Let("runtime", RustExpr::Call("Runtime::new", vec![])),
+
+            // Execute entry expression
+            RustStmt::Let("result", generate_expr(&ir.entry_expr)),
+
+            // Print result
+            RustStmt::Expr(RustExpr::Call(
+                "println!",
+                vec![RustExpr::Call("result.display", vec![])],
+            )),
+        ],
+    }
+}
+```
+
+### 6.8 Generate Library Code
+
+**File**: `crates/dsl-codegen/src/lib_gen.rs`
+
+```rust
+pub fn generate_library(ir: &IR) -> Vec<RustItem> {
+    let mut items = vec![];
+
+    // Export types
+    for class in &ir.types {
+        items.push(RustItem::Struct(generate_struct(class)));
+    }
+
+    // Export functions
+    for func in &ir.functions {
+        items.push(RustItem::Function(generate_function(func)));
+    }
+
+    // Export initialization
+    items.push(RustItem::Function(generate_init()));
+
+    items
+}
+```
+
+---
+
+## Phase 7: Create Compiler CLI (Week 8)
+
+### 7.1 Initialize dsl-compiler Crate
+
+```bash
+cargo new --bin crates/dsl-compiler
+```
+
+**Dependencies**:
+```toml
+[dependencies]
+dsl-core = { path = "../dsl-core" }
+dsl-ir = { path = "../dsl-ir" }
+dsl-codegen = { path = "../dsl-codegen" }
+clap = { version = "4.0", features = ["derive"] }
+anyhow = "1.0"
+```
+
+### 7.2 Implement Commands
+
+**File**: `crates/dsl-compiler/src/main.rs`
+
+```rust
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Build DSL to native binary
+    Build {
+        /// Input .dsl file
+        input: String,
+
+        /// Output binary path
+        #[arg(short, long)]
+        output: String,
+
+        /// Save IR to file
+        #[arg(long)]
+        emit_ir: Option<String>,
+
+        /// Save generated Rust to file
+        #[arg(long)]
+        emit_rust: Option<String>,
+
+        /// Generate library instead of executable
+        #[arg(long)]
+        lib: bool,
+
+        /// Build with --release
+        #[arg(long)]
+        release: bool,
+    },
+
+    /// Check DSL for errors
+    Check {
+        /// Input .dsl file
+        input: String,
+    },
+
+    /// Compile DSL to IR
+    Ir {
+        /// Input .dsl file
+        input: String,
+
+        /// Output IR file
+        #[arg(short, long)]
+        output: String,
+
+        /// Output JSON instead of MessagePack
+        #[arg(long)]
+        json: bool,
+    },
+}
+```
+
+### 7.3 Implement Build Command
+
+```rust
+async fn build(
+    input: &str,
+    output: &str,
+    emit_ir: Option<&str>,
+    emit_rust: Option<&str>,
+    lib: bool,
+    release: bool,
+) -> Result<()> {
+    println!("Parsing {}...", input);
+    let source = std::fs::read_to_string(input)?;
+
+    println!("Compiling to IR...");
+    let ir = dsl_core::compile_to_ir(&source)?;
+
+    if let Some(ir_file) = emit_ir {
+        println!("Saving IR to {}...", ir_file);
+        let bytes = ir.to_msgpack()?;
+        std::fs::write(ir_file, bytes)?;
+    }
+
+    println!("Generating Rust code...");
+    let rust_code = if lib {
+        dsl_codegen::generate_library(&ir)
+    } else {
+        dsl_codegen::generate_executable(&ir)
+    };
+
+    let temp_file = "/tmp/dsl_generated.rs";
+    std::fs::write(temp_file, rust_code)?;
+
+    if let Some(rust_file) = emit_rust {
+        println!("Saving Rust code to {}...", rust_file);
+        std::fs::copy(temp_file, rust_file)?;
+    }
+
+    println!("Compiling with rustc...");
+    let mut cmd = std::process::Command::new("rustc");
+    cmd.arg(temp_file);
+    cmd.arg("-o").arg(output);
+
+    if release {
+        cmd.arg("-O");
+    }
+
+    let status = cmd.status()?;
+    if !status.success() {
+        return Err(anyhow!("rustc compilation failed"));
+    }
+
+    println!("Built successfully: {}", output);
+    Ok(())
+}
+```
+
+---
+
+## Phase 8: Create Runtime Support Library (Week 8-9)
+
+### 8.1 Create dsl-runtime Crate
+
+```bash
+cargo new --lib crates/dsl-runtime
+```
+
+**Dependencies**:
+```toml
+[dependencies]
+dsl-ir = { path = "../dsl-ir" }
+tokio = { workspace = true }
+simplify_baml = "0.1.0"
+reqwest = { workspace = true }
+duckdb = { workspace = true }
+indexmap = { workspace = true }
+anyhow = { workspace = true }
+```
+
+### 8.2 Re-export Builtin Functions
+
+**File**: `crates/dsl-runtime/src/builtins.rs`
+
+```rust
+// Re-export from interpreter or implement here
+pub use dsl_interpreter::builtins::{
+    ask,
+    extract_as,
+    length,
+    upper,
+    lower,
+    join,
+    sql,
+    par,
+    not,
+    render_markdown,
+};
+```
+
+### 8.3 Value Type
+
+**File**: `crates/dsl-runtime/src/lib.rs`
+
+```rust
+pub use dsl_ir::Value;
+pub mod builtins;
+pub mod runtime;
+```
+
+---
+
+## Phase 9: Testing and Validation (Week 9-10)
+
+### 9.1 Port Existing Tests
+
+**Parser tests** (22 tests):
+```rust
+// In dsl-core/src/compiler.rs
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compile_string_literal() {
+        let ast = parse_expr("\"hello\"").unwrap();
+        let ir = compile_expr(&ast).unwrap();
+        assert_eq!(ir, IRNode::String("hello".to_string()));
+    }
+
+    // ... port all 22 parser tests
+}
+```
+
+**Builtin tests** (5 tests):
+```rust
+// In dsl-interpreter/src/builtins.rs
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_length_string() {
+        let mut builtins = BuiltinFunctions::new();
+        let result = builtins.call("Length", vec![Value::String("hello".to_string())]).await.unwrap();
+        assert_eq!(result, Value::Int(5));
+    }
+
+    // ... port all 5 builtin tests
+}
+```
+
+### 9.2 IR Round-Trip Tests
+
+```rust
+#[test]
+fn test_ir_msgpack_roundtrip() {
+    let ir = IR {
+        version: "0.1.0".to_string(),
+        types: vec![],
+        enums: vec![],
+        functions: vec![],
+        agents: vec![],
+        entry_expr: IRNode::Int(42),
+    };
+
+    let bytes = ir.to_msgpack().unwrap();
+    let restored = IR::from_msgpack(&bytes).unwrap();
+
+    assert_eq!(ir, restored);
+}
+```
+
+### 9.3 Equivalence Tests
+
+**Critical**: REPL and compiled must match:
+
+```rust
+#[tokio::test]
+async fn test_repl_vs_compiled() {
+    let source = r#"
+        let x = 5
+        let y = 10
+        x + y
+    "#;
+
+    // Run in interpreter
+    let mut interpreter = Interpreter::new();
+    let ir = compile_to_ir(source).unwrap();
+    let repl_result = interpreter.eval(&ir.entry_expr).await.unwrap();
+
+    // Compile and run
+    let rust_code = generate_executable(&ir);
+    let binary_result = run_compiled(rust_code).await.unwrap();
+
+    assert_eq!(repl_result, binary_result);
+}
+```
+
+---
+
+## Phase 10: Extend Grammar for Agents (Week 10-11)
+
+### 10.1 Extend grammar.pest
+
+Add after existing 363 lines:
+
+```pest
+// Agent definition
+agent_def = {
+  "agent" ~ identifier ~ "{" ~
+    state_def? ~
+    tools_list? ~
+    handler_def* ~
+  "}"
+}
+
+state_def = { "state" ~ ":" ~ type_ref }
+tools_list = { "tools" ~ ":" ~ "[" ~ identifier ~ ("," ~ identifier)* ~ "]" }
+
+handler_def = {
+  "on" ~ type_ref ~ "->" ~ type_ref? ~ block
+}
+
+// Message passing
+send_expr = { "send" ~ identifier ~ expr }
+call_expr = { "call" ~ identifier ~ expr ~ timeout_clause? }
+receive_expr = { "receive" ~ "{" ~ receive_case+ ~ "}" }
+broadcast_expr = { "broadcast" ~ "[" ~ identifier_list ~ "]" ~ expr }
+
+timeout_clause = { "timeout" ~ expr }
+receive_case = { pattern ~ "=>" ~ expr }
+
+// Loops
+loop_expr = { "loop" ~ block }
+while_expr = { "while" ~ expr ~ block }
+for_expr = { "for" ~ identifier ~ "in" ~ expr ~ block }
+break_stmt = { "break" ~ expr? }
+continue_stmt = { "continue" }
+
+// Error handling
+try_expr = { "try" ~ block ~ "catch" ~ identifier ~ block }
+throw_expr = { "throw" ~ expr }
+
+block = { "{" ~ statement* ~ expr? ~ "}" }
+statement = { let_stmt | expr ~ ";" }
+let_stmt = { "let" ~ identifier ~ "=" ~ expr }
+```
+
+### 10.2 Update parser/mod.rs
+
+Add new Expr variants:
+```rust
+pub enum Expr {
+    // ... existing 13 variants ...
+
+    // Agent constructs
+    AgentDef {
+        name: String,
+        state_type: Option<Class>,
+        tools: Vec<String>,
+        handlers: Vec<MessageHandler>,
+    },
+    Send {
+        target: String,
+        message: Box<Expr>,
+    },
+    Receive {
+        cases: Vec<(Pattern, Expr)>,
+    },
+
+    // Control flow
+    Loop {
+        body: Box<Expr>,
+    },
+    While {
+        condition: Box<Expr>,
+        body: Box<Expr>,
+    },
+    For {
+        var: String,
+        iterable: Box<Expr>,
+        body: Box<Expr>,
+    },
+    Break {
+        value: Option<Box<Expr>>,
+    },
+    Continue,
+
+    // Error handling
+    Try {
+        body: Box<Expr>,
+        catch_var: String,
+        catch_body: Box<Expr>,
+    },
+    Throw {
+        error: Box<Expr>,
+    },
+}
+```
+
+---
+
+## Phase 11: Analysis and Validation (Week 11-12)
+
+### 11.1 Variable Resolution
+
+**File**: `crates/dsl-ir/src/analysis/variables.rs`
+
+```rust
+pub struct VariableResolver {
+    scopes: Vec<HashSet<String>>,
+    errors: Vec<AnalysisError>,
+}
+
+impl VariableResolver {
+    pub fn resolve(&mut self, ir: &IR) -> Result<SymbolTable> {
+        self.visit_node(&ir.entry_expr)?;
+
+        if !self.errors.is_empty() {
+            return Err(anyhow!("Variable resolution failed"));
+        }
+
+        Ok(/* symbol table */)
+    }
+
+    fn visit_node(&mut self, node: &IRNode) {
+        match node {
+            IRNode::Variable(name) => {
+                if !self.is_defined(name) {
+                    self.errors.push(AnalysisError::UndefinedVariable(name.clone()));
+                }
+            },
+            // ... visit all node types
+            _ => {}
+        }
+    }
+}
+```
+
+### 11.2 Type Inference
+
+**File**: `crates/dsl-ir/src/analysis/types.rs`
+
+```rust
+pub struct TypeInferencer {
+    type_env: HashMap<String, FieldType>,
+    errors: Vec<AnalysisError>,
+}
+
+impl TypeInferencer {
+    pub fn infer(&mut self, ir: &IR) -> Result<TypeEnvironment> {
+        let inferred_type = self.infer_node(&ir.entry_expr)?;
+
+        if !self.errors.is_empty() {
+            return Err(anyhow!("Type inference failed"));
+        }
+
+        Ok(/* type environment */)
+    }
+}
+```
+
+---
+
+## Phase 12: Documentation and Polish (Week 12)
+
+### 12.1 Create Documentation
+
+Files to create:
+- `IR_SPECIFICATION.md` - IR format documentation
+- `LANGUAGE_REFERENCE.md` - DSL syntax guide
+- `REPL_GUIDE.md` - REPL usage
+- `COMPILATION_GUIDE.md` - Building binaries
+- `MIGRATION_GUIDE.md` - Migrating from old evaluator
+
+### 12.2 Create Examples
+
+Directory: `examples/`
+- `hello_world.dsl` - Basic example
+- `http_api.dsl` - HTTP client
+- `data_pipeline.dsl` - Data transformation
+- `llm_extraction.dsl` - Structured extraction
+- `sql_queries.dsl` - Database queries
+- `multi_agent.dsl` - Agent coordination (future)
+
+---
+
+## Preserved Functionality Checklist
+
+### Core Language (13 Expr Types)
+- [x] String literals with escaping
+- [x] Template strings with `${}` interpolation
+- [x] Int, Float, Bool literals
+- [x] List literals
+- [x] Map literals with order preservation
+- [x] Variables
+- [x] Function calls
+- [ ] Type instantiation (TODO)
+- [x] Field access
+- [x] Index access
+- [x] Binary operations
+- [x] Conditional expressions
+- [x] Sequential composition (`|>`)
+- [x] Parallel composition
+
+### Functions (4 Execution Modes)
+- [x] LLM functions
+- [x] HTTP functions
+- [x] SQL functions
+- [x] HTTPWithLLM functions
+
+### Builtin Functions (10)
+- [x] Ask
+- [x] ExtractPerson
+- [x] ExtractAs
+- [x] Length
+- [x] Upper/Lower
+- [x] Join
+- [x] SQL
+- [x] par
+- [x] not
+- [x] RenderMarkdown
+
+### REPL Commands (7)
+- [x] :vars
+- [x] :types
+- [x] :funcs
+- [x] :copy
+- [x] :save
+- [x] :load
+- [x] :debug
+
+---
+
+## Dependencies to Maintain
+
+All workspace dependencies must remain:
+- simplify_baml = "0.1.0"
+- duckdb (workspace)
+- reqwest (workspace)
+- pest/pest_derive (workspace)
+- tokio/futures (workspace)
+- indexmap (workspace)
+- anyhow (workspace)
+- serde/serde_json (workspace)
+
+New dependencies:
+- rmp-serde = "1.1" (MessagePack)
+- clap = "4.0" (CLI)
+
+---
+
+## Success Criteria
+
+### No Regressions
+- [x] All 27 existing tests pass
+- [x] All functionality preserved
+- [x] Same output formatting
+- [x] Same error behavior
+
+### New Capabilities
+- [ ] IR serialization works (MessagePack + JSON)
+- [ ] REPL uses IR pipeline
+- [ ] Can compile to Rust binary
+- [ ] Generated code is idiomatic
+
+### Performance
+- [ ] IR overhead <10%
+- [ ] Compilation <5 seconds for 1000 lines
+- [ ] Binary performance within 2x of hand-written
+
+### Quality
+- [ ] Code is well-documented
+- [ ] Examples work
+- [ ] Migration guide exists
+- [ ] Tests are comprehensive
+
+---
+
+## Timeline Summary
+
+| Phase | Duration | Deliverable |
+|-------|----------|-------------|
+| 1 | Week 1 | dsl-ir crate with serde |
+| 2 | Week 2 | IR with agentic primitives |
+| 3 | Week 2-3 | IR compiler in dsl-core |
+| 4 | Week 3-5 | dsl-interpreter |
+| 5 | Week 5 | REPL using IR |
+| 6 | Week 6-8 | dsl-codegen |
+| 7 | Week 8 | dsl-compiler CLI |
+| 8 | Week 8-9 | dsl-runtime library |
+| 9 | Week 9-10 | Testing & validation |
+| 10 | Week 10-11 | Agent syntax |
+| 11 | Week 11-12 | Analysis passes |
+| 12 | Week 12 | Documentation |
+
+**Total**: 12 weeks for complete implementation

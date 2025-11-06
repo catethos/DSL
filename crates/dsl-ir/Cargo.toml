@@ -1,0 +1,12 @@
+[package]
+name = "dsl-ir"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+rmp-serde = "1.1"
+indexmap = { workspace = true }
+anyhow = { workspace = true }
+simplify_baml = { path = "../../../simplify_baml" }
