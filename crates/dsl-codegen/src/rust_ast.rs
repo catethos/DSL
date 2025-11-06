@@ -50,6 +50,7 @@ pub struct RustFunction {
     pub return_type: RustType,
     pub is_async: bool,
     pub is_public: bool,
+    pub attributes: Vec<String>,
     pub body: Vec<RustStmt>,
 }
 
@@ -303,10 +304,16 @@ impl RustFunction {
             ty => format!(" -> {}", ty.to_string()),
         };
 
-        let mut result = format!(
+        // Add attributes before function signature
+        let mut result = String::new();
+        for attr in &self.attributes {
+            result.push_str(&format!("{}#[{}]\n", ind, attr));
+        }
+
+        result.push_str(&format!(
             "{}{}{}fn {}({}){} {{\n",
             ind, pub_str, async_str, self.name, params, return_str
-        );
+        ));
 
         for stmt in &self.body {
             result.push_str(&stmt.pretty_print(indent + 1));

@@ -7,3 +7,4 @@ edition = "2024"
 dsl-ir = { path = "../dsl-ir" }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
+serde_json = { workspace = true }

@@ -57,6 +57,9 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Clean the build cache
+    Clean,
 }
 
 #[tokio::main]
@@ -80,6 +83,8 @@ async fn main() -> Result<()> {
             output,
             json,
         } => ir(&input, &output, json).await,
+
+        Commands::Clean => clean().await,
     }
 }
 
@@ -114,40 +119,93 @@ async fn build(
         dsl_codegen::generate_executable(&ir)?
     };
 
-    // Create temp file in the same directory as output for better error messages
-    let temp_dir = output.parent().unwrap_or_else(|| std::path::Path::new("."));
-    let temp_file = temp_dir.join("dsl_generated_temp.rs");
-
-    std::fs::write(&temp_file, rust_code)
-        .context("Failed to write temporary Rust file")?;
-
     if let Some(rust_file) = emit_rust {
         println!("Saving Rust code to {}...", rust_file.display());
-        std::fs::copy(&temp_file, rust_file)
+        std::fs::write(rust_file, &rust_code)
             .context(format!("Failed to write Rust file: {}", rust_file.display()))?;
     }
 
-    println!("Compiling with rustc...");
-    let mut cmd = std::process::Command::new("rustc");
-    cmd.arg(&temp_file);
-    cmd.arg("-o").arg(output);
+    // Create a persistent cache directory for faster rebuilds
+    println!("Creating temporary Cargo project...");
+    let cache_dir = std::env::temp_dir().join("dsl_compiler_cache");
+    std::fs::create_dir_all(&cache_dir)
+        .context("Failed to create cache directory")?;
+
+    let temp_dir = cache_dir.join("build");
+    std::fs::create_dir_all(&temp_dir)
+        .context("Failed to create build directory")?;
+
+    // Write Cargo.toml
+    let cargo_toml = format!(
+        r#"[package]
+name = "dsl_generated"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dsl-runtime = {{ path = "{}/crates/dsl-runtime" }}
+dsl-interpreter = {{ path = "{}/crates/dsl-interpreter" }}
+dsl-ir = {{ path = "{}/crates/dsl-ir" }}
+tokio = {{ version = "1", features = ["full"] }}
+anyhow = "1"
+serde_json = "1"
+"#,
+        std::env::current_dir()
+            .context("Failed to get current directory")?
+            .display(),
+        std::env::current_dir()
+            .context("Failed to get current directory")?
+            .display(),
+        std::env::current_dir()
+            .context("Failed to get current directory")?
+            .display()
+    );
+
+    std::fs::write(temp_dir.join("Cargo.toml"), cargo_toml)
+        .context("Failed to write Cargo.toml")?;
+
+    // Create src directory
+    let src_dir = temp_dir.join("src");
+    std::fs::create_dir_all(&src_dir)
+        .context("Failed to create src directory")?;
+
+    // Write main.rs
+    std::fs::write(src_dir.join("main.rs"), rust_code)
+        .context("Failed to write main.rs")?;
+
+    // Build with cargo
+    println!("Compiling with cargo...");
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("build");
+    cmd.arg("--manifest-path");
+    cmd.arg(temp_dir.join("Cargo.toml"));
 
     if release {
-        cmd.arg("-O");
+        cmd.arg("--release");
     }
-
-    // Add common flags for better compilation
-    cmd.arg("--edition").arg("2021");
 
     let status = cmd.status()
-        .context("Failed to run rustc")?;
-
-    // Clean up temp file
-    let _ = std::fs::remove_file(&temp_file);
+        .context("Failed to run cargo build")?;
 
     if !status.success() {
-        return Err(anyhow!("rustc compilation failed"));
+        // Keep temp dir for debugging
+        eprintln!("Build failed. Temp project at: {}", temp_dir.display());
+        return Err(anyhow!("cargo build failed"));
     }
+
+    // Copy the binary to output location
+    let binary_name = "dsl_generated";
+    let binary_path = if release {
+        temp_dir.join("target/release").join(binary_name)
+    } else {
+        temp_dir.join("target/debug").join(binary_name)
+    };
+
+    std::fs::copy(&binary_path, output)
+        .context("Failed to copy binary to output location")?;
+
+    // Keep temp directory for faster incremental builds
+    // The cache is reused across compilations, significantly speeding up subsequent builds
 
     println!("✓ Built successfully: {}", output.display());
     Ok(())
@@ -197,4 +255,26 @@ async fn ir(input: &PathBuf, output: &PathBuf, json: bool) -> Result<()> {
 
     println!("✓ IR saved successfully");
     Ok(())
+}
+
+async fn clean() -> Result<()> {
+    let cache_dir = std::env::temp_dir().join("dsl_compiler_cache");
+
+    if !cache_dir.exists() {
+        println!("No cache to clean");
+        return Ok(());
+    }
+
+    println!("Cleaning build cache at {}...", cache_dir.display());
+
+    match std::fs::remove_dir_all(&cache_dir) {
+        Ok(_) => {
+            println!("✓ Cache cleaned successfully");
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("✗ Failed to clean cache: {}", e);
+            Err(e.into())
+        }
+    }
 }

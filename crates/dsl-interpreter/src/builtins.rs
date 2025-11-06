@@ -187,6 +187,9 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             "join" => self.join(args),
             "par" => Ok(self.par(args)),
             "not" => self.not(args),
+            "generatebarchart" => self.generate_bar_chart(args),
+            "generatelinechart" => self.generate_line_chart(args),
+            "generatepiechart" => self.generate_pie_chart(args),
             _ => Err(anyhow::anyhow!("Unknown function: {}", name)),
         }
     }
@@ -682,6 +685,416 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                 args[0].type_name()
             )),
         }
+    }
+
+    /// generateBarChart() - Generate a bar chart image
+    /// Takes a list of {label: String, value: Number} and optional theme string
+    /// Themes: "blue" (default), "green", "red", "purple", "orange", "dark"
+    fn generate_bar_chart(&self, args: Vec<Value>) -> Result<Value> {
+        use plotters::prelude::*;
+
+        if args.is_empty() {
+            return Err(anyhow::anyhow!(
+                "generateBarChart() requires at least 1 argument (data)"
+            ));
+        }
+
+        // Get optional theme parameter (default: "blue")
+        let theme = args.get(1)
+            .and_then(|v| match v {
+                Value::String(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .unwrap_or("blue");
+
+        // Parse data: expect list of maps with "label" and "value"
+        let data = match &args[0] {
+            Value::List(items) => {
+                let mut chart_data = Vec::new();
+                for item in items {
+                    match item {
+                        Value::Map(m) => {
+                            let label = m.get("label")
+                                .and_then(|v| match v {
+                                    Value::String(s) => Some(s.clone()),
+                                    _ => None,
+                                })
+                                .ok_or_else(|| anyhow::anyhow!("Each item must have a 'label' string field"))?;
+
+                            let value = m.get("value")
+                                .and_then(|v| match v {
+                                    Value::Int(n) => Some(*n as f64),
+                                    Value::Float(f) => Some(*f),
+                                    _ => None,
+                                })
+                                .ok_or_else(|| anyhow::anyhow!("Each item must have a 'value' numeric field"))?;
+
+                            chart_data.push((label, value));
+                        }
+                        _ => return Err(anyhow::anyhow!("generateBarChart() expects a list of maps")),
+                    }
+                }
+                chart_data
+            }
+            _ => return Err(anyhow::anyhow!("generateBarChart() requires a list as first argument")),
+        };
+
+        if data.is_empty() {
+            return Err(anyhow::anyhow!("generateBarChart() requires non-empty data"));
+        }
+
+        // Create temporary file
+        let temp_dir = std::env::temp_dir();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let file_path = temp_dir.join(format!("chart_bar_{}.png", timestamp));
+
+        // Select colors based on theme
+        let (bg_color, bar_color) = match theme {
+            "green" => (WHITE, RGBColor(76, 175, 80)),
+            "red" => (WHITE, RGBColor(244, 67, 54)),
+            "purple" => (WHITE, RGBColor(156, 39, 176)),
+            "orange" => (WHITE, RGBColor(255, 152, 0)),
+            "dark" => (RGBColor(30, 30, 30), RGBColor(66, 165, 245)),
+            _ => (WHITE, BLUE), // default "blue"
+        };
+
+        // Generate chart
+        let root = BitMapBackend::new(&file_path, (800, 600)).into_drawing_area();
+        root.fill(&bg_color)?;
+
+        let max_value = data.iter().map(|(_, v)| *v).fold(0.0f64, f64::max);
+        let y_max = (max_value * 1.2).max(1.0);
+
+        let mut chart = ChartBuilder::on(&root)
+            .caption("Bar Chart", ("sans-serif", 40))
+            .margin(20)
+            .x_label_area_size(40)
+            .y_label_area_size(60)
+            .build_cartesian_2d(
+                (0usize..data.len()).into_segmented(),
+                0f64..y_max,
+            )?;
+
+        chart.configure_mesh()
+            .x_labels(data.len())
+            .x_label_formatter(&|x| {
+                if let SegmentValue::CenterOf(idx) = x {
+                    data.get(*idx).map(|(label, _)| label.clone()).unwrap_or_default()
+                } else {
+                    String::new()
+                }
+            })
+            .draw()?;
+
+        chart.draw_series(
+            data.iter().enumerate().map(|(i, (_, value))| {
+                let x = SegmentValue::CenterOf(i);
+                let mut bar = Rectangle::new([(x.clone(), 0.0), (x, *value)], bar_color.filled());
+                bar.set_margin(0, 0, 5, 5);
+                bar
+            })
+        )?;
+
+        root.present()?;
+
+        Ok(Value::Image(file_path.to_string_lossy().to_string()))
+    }
+
+    /// generateLineChart() - Generate a line chart image
+    /// Takes a list of numbers and optional theme string
+    /// Themes: "blue" (default), "green", "red", "purple", "orange", "dark"
+    fn generate_line_chart(&self, args: Vec<Value>) -> Result<Value> {
+        use plotters::prelude::*;
+
+        if args.is_empty() {
+            return Err(anyhow::anyhow!(
+                "generateLineChart() requires at least 1 argument (data)"
+            ));
+        }
+
+        // Get optional theme parameter (default: "blue")
+        let theme = args.get(1)
+            .and_then(|v| match v {
+                Value::String(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .unwrap_or("blue");
+
+        // Parse data: expect list of numbers
+        let data = match &args[0] {
+            Value::List(items) => {
+                let mut chart_data = Vec::new();
+                for (i, item) in items.iter().enumerate() {
+                    let value = match item {
+                        Value::Int(n) => *n as f64,
+                        Value::Float(f) => *f,
+                        _ => return Err(anyhow::anyhow!("generateLineChart() expects a list of numbers")),
+                    };
+                    chart_data.push((i as f64, value));
+                }
+                chart_data
+            }
+            _ => return Err(anyhow::anyhow!("generateLineChart() requires a list as first argument")),
+        };
+
+        if data.is_empty() {
+            return Err(anyhow::anyhow!("generateLineChart() requires non-empty data"));
+        }
+
+        // Create temporary file
+        let temp_dir = std::env::temp_dir();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let file_path = temp_dir.join(format!("chart_line_{}.png", timestamp));
+
+        // Select colors based on theme
+        let (bg_color, line_color) = match theme {
+            "green" => (WHITE, RGBColor(76, 175, 80)),
+            "red" => (WHITE, RGBColor(244, 67, 54)),
+            "purple" => (WHITE, RGBColor(156, 39, 176)),
+            "orange" => (WHITE, RGBColor(255, 152, 0)),
+            "dark" => (RGBColor(30, 30, 30), RGBColor(66, 165, 245)),
+            _ => (WHITE, BLUE), // default "blue"
+        };
+
+        // Generate chart
+        let root = BitMapBackend::new(&file_path, (800, 600)).into_drawing_area();
+        root.fill(&bg_color)?;
+
+        let max_value = data.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max);
+        let min_value = data.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min);
+        let y_range = max_value - min_value;
+        let y_min = (min_value - y_range * 0.1).min(0.0);
+        let y_max = (max_value + y_range * 0.1).max(1.0);
+
+        let mut chart = ChartBuilder::on(&root)
+            .caption("Line Chart", ("sans-serif", 40))
+            .margin(20)
+            .x_label_area_size(40)
+            .y_label_area_size(60)
+            .build_cartesian_2d(0f64..(data.len() - 1) as f64, y_min..y_max)?;
+
+        chart.configure_mesh().draw()?;
+
+        chart.draw_series(LineSeries::new(data.clone(), &line_color))?;
+
+        chart.draw_series(PointSeries::of_element(
+            data,
+            5,
+            &line_color,
+            &|coord, size, style| {
+                EmptyElement::at(coord) + Circle::new((0, 0), size, style.filled())
+            },
+        ))?;
+
+        root.present()?;
+
+        Ok(Value::Image(file_path.to_string_lossy().to_string()))
+    }
+
+    /// generatePieChart() - Generate a pie chart image
+    /// Takes a list of {label: String, value: Number} and optional theme string
+    /// Themes: "default", "green", "red", "purple", "orange", "dark"
+    fn generate_pie_chart(&self, args: Vec<Value>) -> Result<Value> {
+        use plotters::prelude::*;
+        use std::f64::consts::PI;
+
+        if args.is_empty() {
+            return Err(anyhow::anyhow!(
+                "generatePieChart() requires at least 1 argument (data)"
+            ));
+        }
+
+        // Get optional theme parameter (default: "default")
+        let theme = args.get(1)
+            .and_then(|v| match v {
+                Value::String(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .unwrap_or("default");
+
+        // Parse data: expect list of maps with "label" and "value"
+        let data = match &args[0] {
+            Value::List(items) => {
+                let mut chart_data = Vec::new();
+                for item in items {
+                    match item {
+                        Value::Map(m) => {
+                            let label = m.get("label")
+                                .and_then(|v| match v {
+                                    Value::String(s) => Some(s.clone()),
+                                    _ => None,
+                                })
+                                .ok_or_else(|| anyhow::anyhow!("Each item must have a 'label' string field"))?;
+
+                            let value = m.get("value")
+                                .and_then(|v| match v {
+                                    Value::Int(n) => Some(*n as f64),
+                                    Value::Float(f) => Some(*f),
+                                    _ => None,
+                                })
+                                .ok_or_else(|| anyhow::anyhow!("Each item must have a 'value' numeric field"))?;
+
+                            chart_data.push((label, value));
+                        }
+                        _ => return Err(anyhow::anyhow!("generatePieChart() expects a list of maps")),
+                    }
+                }
+                chart_data
+            }
+            _ => return Err(anyhow::anyhow!("generatePieChart() requires a list as first argument")),
+        };
+
+        if data.is_empty() {
+            return Err(anyhow::anyhow!("generatePieChart() requires non-empty data"));
+        }
+
+        // Create temporary file
+        let temp_dir = std::env::temp_dir();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let file_path = temp_dir.join(format!("chart_pie_{}.png", timestamp));
+
+        // Generate chart
+        let root = BitMapBackend::new(&file_path, (800, 600)).into_drawing_area();
+
+        // Select colors based on theme
+        let (bg_color, colors) = match theme {
+            "green" => (
+                WHITE,
+                vec![
+                    RGBColor(76, 175, 80),   // Green
+                    RGBColor(129, 199, 132),
+                    RGBColor(165, 214, 167),
+                    RGBColor(200, 230, 201),
+                    RGBColor(56, 142, 60),
+                    RGBColor(46, 125, 50),
+                    RGBColor(27, 94, 32),
+                    RGBColor(139, 195, 74),
+                ]
+            ),
+            "red" => (
+                WHITE,
+                vec![
+                    RGBColor(244, 67, 54),   // Red
+                    RGBColor(239, 83, 80),
+                    RGBColor(229, 115, 115),
+                    RGBColor(239, 154, 154),
+                    RGBColor(211, 47, 47),
+                    RGBColor(198, 40, 40),
+                    RGBColor(183, 28, 28),
+                    RGBColor(255, 82, 82),
+                ]
+            ),
+            "purple" => (
+                WHITE,
+                vec![
+                    RGBColor(156, 39, 176),  // Purple
+                    RGBColor(171, 71, 188),
+                    RGBColor(186, 104, 200),
+                    RGBColor(206, 147, 216),
+                    RGBColor(123, 31, 162),
+                    RGBColor(106, 27, 154),
+                    RGBColor(74, 20, 140),
+                    RGBColor(170, 0, 255),
+                ]
+            ),
+            "orange" => (
+                WHITE,
+                vec![
+                    RGBColor(255, 152, 0),   // Orange
+                    RGBColor(255, 167, 38),
+                    RGBColor(255, 183, 77),
+                    RGBColor(255, 204, 128),
+                    RGBColor(251, 140, 0),
+                    RGBColor(245, 124, 0),
+                    RGBColor(230, 81, 0),
+                    RGBColor(255, 171, 64),
+                ]
+            ),
+            "dark" => (
+                RGBColor(30, 30, 30),
+                vec![
+                    RGBColor(66, 165, 245),  // Blue
+                    RGBColor(102, 187, 106), // Green
+                    RGBColor(255, 202, 40),  // Amber
+                    RGBColor(255, 138, 101), // Deep Orange
+                    RGBColor(171, 71, 188),  // Purple
+                    RGBColor(38, 198, 218),  // Cyan
+                    RGBColor(255, 112, 67),  // Deep Orange
+                    RGBColor(126, 87, 194),  // Deep Purple
+                ]
+            ),
+            _ => (
+                WHITE,
+                vec![  // default colorful palette
+                    RGBColor(31, 119, 180),
+                    RGBColor(255, 127, 14),
+                    RGBColor(44, 160, 44),
+                    RGBColor(214, 39, 40),
+                    RGBColor(148, 103, 189),
+                    RGBColor(140, 86, 75),
+                    RGBColor(227, 119, 194),
+                    RGBColor(127, 127, 127),
+                ]
+            )
+        };
+
+        root.fill(&bg_color)?;
+
+        let total: f64 = data.iter().map(|(_, v)| v).sum();
+
+        let center = (400, 300);
+        let radius = 200.0;
+
+        let mut current_angle = -PI / 2.0; // Start from top
+
+        for (i, (label, value)) in data.iter().enumerate() {
+            let angle = (value / total) * 2.0 * PI;
+            let end_angle = current_angle + angle;
+
+            let color = colors[i % colors.len()];
+
+            // Draw pie slice
+            let mut points = vec![center];
+            let steps = 50;
+            for step in 0..=steps {
+                let a = current_angle + (angle * step as f64 / steps as f64);
+                let x = center.0 as f64 + radius * a.cos();
+                let y = center.1 as f64 + radius * a.sin();
+                points.push((x as i32, y as i32));
+            }
+
+            root.draw(&Polygon::new(points, color.filled()))?;
+
+            // Draw label
+            let mid_angle = current_angle + angle / 2.0;
+            let label_radius = radius * 0.7;
+            let label_x = center.0 as f64 + label_radius * mid_angle.cos();
+            let label_y = center.1 as f64 + label_radius * mid_angle.sin();
+
+            let percentage = (value / total * 100.0).round();
+            let text = format!("{}\n{:.0}%", label, percentage);
+
+            root.draw_text(
+                &text,
+                &TextStyle::from(("sans-serif", 15).into_font()).color(&BLACK),
+                (label_x as i32, label_y as i32),
+            )?;
+
+            current_angle = end_angle;
+        }
+
+        root.present()?;
+
+        Ok(Value::Image(file_path.to_string_lossy().to_string()))
     }
 }
 

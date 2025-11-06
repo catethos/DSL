@@ -130,20 +130,42 @@ SQL("SELECT * FROM 'data.csv'")     // Returns Table
 
 ## Variables and Binding
 
-### Variable Binding with `as`
+### Variable Binding
 
-Bind expression results to variables using the `as` keyword.
+The DSL supports two equivalent syntaxes for binding values to variables:
 
-**Syntax:**
+#### Syntax 1: Using `as` (Pipeline Style)
 ```javascript
 expression as variable_name
 ```
 
+#### Syntax 2: Using `let` (Traditional Style)
+```javascript
+let variable_name = expression
+```
+
+Both syntaxes are completely equivalent and compile to the same internal representation.
+
 **Examples:**
 ```javascript
+// Using 'as' (pipeline style)
 42 as answer
 "hello" as greeting
 [1, 2, 3] as numbers
+
+// Using 'let' (traditional style)
+let answer = 42
+let greeting = "hello"
+let numbers = [1, 2, 3]
+```
+
+**List Destructuring (both syntaxes):**
+```javascript
+// Using 'as'
+[1, 2, 3] as [a, b, c]
+
+// Using 'let'
+let [x, y, z] = [1, 2, 3]
 ```
 
 **Rules:**
@@ -151,6 +173,7 @@ expression as variable_name
 - Variables persist in the session
 - Variable names must start with letter or underscore
 - Variables can be used in later expressions
+- Choose the syntax that feels most natural for your use case
 
 ### The Underscore `_` Variable
 
@@ -522,8 +545,13 @@ expr1 |> expr2 |> expr3
 ### Binding Expressions
 
 ```javascript
+// Using 'as'
 expr as name
 (expr1 || expr2) as [a, b]
+
+// Using 'let'
+let name = expr
+let [a, b] = (expr1 || expr2)
 ```
 
 ---

@@ -3,6 +3,7 @@ use crate::output_item::OutputItem;
 use crate::ui::banner;
 use dsl_ir::Value;
 use dsl_interpreter::Interpreter;
+use ratatui_image::picker::Picker;
 use std::time::Duration;
 use tui_textarea::TextArea;
 
@@ -66,6 +67,15 @@ pub struct App {
 
     // Cached render width (updated during rendering)
     pub last_render_width: usize,
+
+    // Image protocol picker for rendering images
+    pub image_picker: Picker,
+
+    // Cached image protocols to avoid recreating on every frame (indexed by output item index)
+    pub image_protocols: std::collections::HashMap<usize, Box<dyn ratatui_image::protocol::StatefulProtocol>>,
+
+    // Toggle to show/hide images (for performance)
+    pub show_images: bool,
 }
 
 impl Default for App {
@@ -78,6 +88,13 @@ impl App {
     pub fn new() -> Self {
         let interpreter = Interpreter::new().expect("Failed to initialize interpreter");
         let autocomplete = AutocompleteState::new_with_runtime(&interpreter.runtime);
+
+        // Initialize image picker for terminal graphics
+        let mut image_picker = Picker::from_termios().unwrap_or_else(|_| {
+            // Fallback to halfblocks if protocol detection fails
+            Picker::new((8, 16))
+        });
+        image_picker.guess_protocol();
 
         let mut app = Self {
             active_pane: WorkspacePane::Repl, // Start with REPL active
@@ -103,6 +120,9 @@ impl App {
             selection_end: None,
             is_selecting: false,
             last_render_width: 80, // Default, will be updated during render
+            image_picker,
+            image_protocols: std::collections::HashMap::new(),
+            show_images: true, // Show images by default
         };
         app.load_history();
         app
@@ -311,6 +331,9 @@ impl App {
         // Clear loading state
         self.is_loading = false;
 
+        // Clear cached image protocols since output indices have changed
+        self.image_protocols.clear();
+
         self.output.push(OutputItem::text(""));
         self.input.clear();
         self.cursor_position = 0;
@@ -500,7 +523,7 @@ impl App {
     }
 
     /// Get the selected text from the output
-    pub fn get_selected_text(&self) -> Option<String> {
+    pub fn get_selected_text(&mut self) -> Option<String> {
         use crate::renderers::OutputRenderer;
 
         let start = self.selection_start?;
@@ -526,7 +549,7 @@ impl App {
         }
 
         // Add output items
-        for output_item in &self.output {
+        for output_item in &mut self.output {
             let lines = output_item.to_lines(80);
             for line in lines {
                 // Convert Line to String (extract text without styling)
@@ -555,7 +578,7 @@ impl App {
     }
 
     /// Copy selected text to clipboard
-    pub fn copy_selection_to_clipboard(&self) -> Result<(), String> {
+    pub fn copy_selection_to_clipboard(&mut self) -> Result<(), String> {
         if let Some(text) = self.get_selected_text() {
             use arboard::Clipboard;
             let mut clipboard = Clipboard::new().map_err(|e| format!("Clipboard error: {}", e))?;
@@ -1027,5 +1050,10 @@ impl App {
     /// Refresh autocomplete providers (call after defining new functions/types)
     pub fn refresh_autocomplete(&mut self) {
         self.autocomplete = AutocompleteState::new_with_runtime(&self.interpreter.runtime);
+    }
+
+    /// Toggle image display on/off (for performance)
+    pub fn toggle_image_display(&mut self) {
+        self.show_images = !self.show_images;
     }
 }

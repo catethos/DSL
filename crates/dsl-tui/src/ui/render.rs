@@ -5,8 +5,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
+use ratatui_image::{StatefulImage, Resize};
 
 use crate::app::{App, WorkspacePane};
+use crate::output_item::OutputItem;
 use crate::renderers::OutputRenderer;
 use crate::ui::{autocomplete, banner};
 
@@ -49,7 +51,7 @@ fn draw_workspace(f: &mut Frame, app: &mut App) -> Rect {
     // Render key bindings at bottom
     render_keybindings(
         f,
-        "Shift+Tab: Switch Pane | Tab: Autocomplete | Ctrl+E: Send Line | Ctrl+R: Run All | Ctrl+S: Save | Ctrl+C: Quit",
+        "Shift+Tab: Switch Pane | Tab: Autocomplete | Ctrl+E: Send Line | Ctrl+R: Run All | Ctrl+S: Save | Ctrl+I: Toggle Image | Ctrl+C: Quit",
     );
 
     // Return the active pane's area
@@ -95,6 +97,18 @@ fn draw_editor_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
 }
 
 fn draw_repl_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
+    // Check if we have any images to display with graphics protocol
+    let has_images = app.show_images && app.output.iter().any(|item| {
+        matches!(item, OutputItem::Image { use_graphics_protocol: true, data: Some(_), .. })
+    });
+
+    // If we have images and images are enabled, split the area to show the last image
+    if has_images {
+        draw_repl_with_images(f, area, app, title);
+        return;
+    }
+
+    // Original text-only rendering
     // Build REPL content with artwork at the top
     let mut repl_text: Vec<Line> = Vec::new();
 
@@ -124,7 +138,7 @@ fn draw_repl_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
 
     let mut current_line = 0;
 
-    for output_item in &app.output {
+    for output_item in &mut app.output {
         let mut lines = output_item.to_lines(repl_width);
 
         // Apply selection highlighting to lines in selection range
@@ -243,6 +257,124 @@ fn draw_repl_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
                     cursor_rel_x,
                     cursor_rel_y,
                 );
+            }
+        }
+    }
+}
+
+fn draw_repl_with_images(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
+    // Find the last image in output
+    let last_image_index = app.output.iter().rposition(|item| {
+        matches!(item, OutputItem::Image { use_graphics_protocol: true, data: Some(_), .. })
+    });
+
+    if let Some(img_idx) = last_image_index {
+        // Split area: top 40% for text history, bottom 60% for image
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+            .split(area);
+
+        // Render text history in top area
+        let mut repl_text: Vec<Line> = Vec::new();
+        let repl_width = chunks[0].width.saturating_sub(2) as usize;
+        app.last_render_width = repl_width;
+
+        // Add all output items except images as text
+        for (idx, output_item) in app.output.iter_mut().enumerate() {
+            if idx == img_idx {
+                // Add a placeholder for the image that shows below
+                repl_text.push(Line::from(vec![
+                    Span::styled("📊 ", Style::default()),
+                    Span::styled("Chart (displayed below)", Style::default().fg(Color::Green)),
+                ]));
+            } else {
+                repl_text.extend(output_item.to_lines(repl_width));
+            }
+        }
+
+        // Add current prompt and input (only if REPL pane is active)
+        if app.active_pane == WorkspacePane::Repl {
+            if app.input.is_empty() {
+                repl_text.push(Line::from(vec![Span::styled(
+                    "flow> ",
+                    Style::default().fg(Color::Green),
+                )]));
+            } else {
+                let input_lines: Vec<&str> = app.input.lines().collect();
+                if let Some(first_line) = input_lines.first() {
+                    repl_text.push(Line::from(vec![
+                        Span::styled("flow> ", Style::default().fg(Color::Green)),
+                        Span::styled(*first_line, Style::default().fg(Color::Yellow)),
+                    ]));
+                }
+                for line in input_lines.iter().skip(1) {
+                    repl_text.push(Line::from(vec![
+                        Span::styled("...> ", Style::default().fg(Color::Green)),
+                        Span::styled(*line, Style::default().fg(Color::Yellow)),
+                    ]));
+                }
+            }
+        }
+
+        let total_lines = repl_text.len();
+        let visible_lines = chunks[0].height.saturating_sub(2) as usize;
+
+        let scroll_offset = if app.auto_scroll_output {
+            total_lines.saturating_sub(visible_lines) as u16
+        } else {
+            app.output_scroll_offset
+                .min(total_lines.saturating_sub(visible_lines) as u16)
+        };
+
+        let paragraph = Paragraph::new(repl_text)
+            .block(Block::default().borders(Borders::ALL).title(title))
+            .scroll((scroll_offset, 0));
+        f.render_widget(paragraph, chunks[0]);
+
+        // Set cursor position if REPL pane is active
+        if app.active_pane == WorkspacePane::Repl {
+            use crate::utf8_utils::safe_prefix;
+            use unicode_width::UnicodeWidthStr;
+
+            let text_before_cursor = safe_prefix(&app.input, app.cursor_position);
+            let cursor_input_line = text_before_cursor.matches('\n').count();
+            let input_line_count = app.input.lines().count().max(1);
+            let cursor_global_line = total_lines.saturating_sub(input_line_count) + cursor_input_line;
+            let cursor_visible_line = cursor_global_line.saturating_sub(scroll_offset as usize);
+
+            let line_start = text_before_cursor
+                .rfind('\n')
+                .map(|pos| pos + 1)
+                .unwrap_or(0);
+
+            let current_line_text = &text_before_cursor[line_start..];
+            let cursor_col_in_input = current_line_text.width();
+            let prompt_width = if cursor_input_line == 0 { 6 } else { 5 };
+            let cursor_x = chunks[0].x + 1 + prompt_width + cursor_col_in_input as u16;
+            let cursor_y = chunks[0].y + 1 + cursor_visible_line as u16;
+
+            if cursor_visible_line < visible_lines && cursor_y < chunks[0].y + chunks[0].height.saturating_sub(1) {
+                f.set_cursor_position((cursor_x, cursor_y));
+            }
+        }
+
+        // Render the image in bottom area
+        if let OutputItem::Image { data, .. } = &app.output[img_idx] {
+            if let Some(img_data) = data {
+                // Use the full bottom chunk area for the image (no border)
+                let image_area = chunks[1];
+
+                // Get or create cached protocol for this image
+                let protocol = app.image_protocols.entry(img_idx).or_insert_with(|| {
+                    app.image_picker.new_resize_protocol(img_data.as_ref().clone())
+                });
+
+                // Create StatefulImage widget with fit resize
+                let image_widget = StatefulImage::new(None).resize(Resize::Fit(None));
+
+                // Render with the protocol
+                f.render_stateful_widget(image_widget, image_area, protocol);
             }
         }
     }

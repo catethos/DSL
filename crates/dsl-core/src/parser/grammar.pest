@@ -134,7 +134,12 @@ workflow_decl = {
 // Expressions (Runtime Constructs)
 // ============================================
 
-expr = { conditional }
+expr = { let_binding | conditional }
+
+// Let binding: let x = expr or let [a, b] = expr
+let_binding = {
+    "let" ~ (list_binding | identifier) ~ "=" ~ conditional
+}
 
 conditional = {
     sequential ~ ("?" ~ sequential ~ ":" ~ sequential)?
@@ -144,6 +149,7 @@ sequential = {
     logical_or ~ (binding)? ~ ("|>" ~ logical_or ~ (binding)?)*
 }
 
+// As binding: expr as x or expr as [a, b]
 binding = {
     "as" ~ (list_binding | identifier)
 }

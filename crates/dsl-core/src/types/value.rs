@@ -17,6 +17,8 @@ pub enum Value {
     Null,
     /// Markdown-formatted string for rich text rendering
     Markdown(String),
+    /// Image file path for rendering images in TUI
+    Image(String),
 }
 
 impl Value {
@@ -30,6 +32,7 @@ impl Value {
             Value::Map(_) => "Map",
             Value::Null => "Null",
             Value::Markdown(_) => "Markdown",
+            Value::Image(_) => "Image",
         }
     }
 
@@ -71,6 +74,9 @@ impl Value {
             Value::Null => "null".to_string(),
             Value::Markdown(s) => {
                 format!("[Markdown: {}...]", s.chars().take(50).collect::<String>())
+            }
+            Value::Image(path) => {
+                format!("[Image: {}]", path)
             }
         }
     }
@@ -239,6 +245,7 @@ impl Value {
             }
             Value::Null => "null".to_string(),
             Value::Markdown(s) => s.clone(),
+            Value::Image(path) => format!("[Image: {}]", path),
         }
     }
 

@@ -136,6 +136,13 @@ fn generate_template_string(segments: &[IRTemplateSegment]) -> Result<RustExpr> 
         return Ok(RustExpr::Literal(RustLiteral::String(String::new())));
     }
 
+    // Optimize: if there's only one segment and it's plain text, just return a string literal
+    if segments.len() == 1 {
+        if let IRTemplateSegment::Text(t) = &segments[0] {
+            return Ok(RustExpr::Literal(RustLiteral::String(t.clone())));
+        }
+    }
+
     let mut format_str = String::new();
     let mut args = Vec::new();
 
@@ -226,7 +233,7 @@ fn generate_sequential(
                 stmts.push(RustStmt::Let {
                     name: name.clone(),
                     ty: None,
-                    value: RustExpr::Await(Box::new(left_expr)),
+                    value: left_expr,
                     is_mut: false,
                 });
             }
@@ -234,23 +241,58 @@ fn generate_sequential(
                 stmts.push(RustStmt::Let {
                     name: format!("({})", names.join(", ")),
                     ty: None,
-                    value: RustExpr::Await(Box::new(left_expr)),
+                    value: left_expr,
                     is_mut: false,
                 });
             }
         }
     } else {
+        // No binding - store in underscore variable for pipeline
         stmts.push(RustStmt::Let {
-            name: "_".to_string(),
+            name: "_underscore".to_string(),
             ty: None,
-            value: RustExpr::Await(Box::new(left_expr)),
+            value: left_expr,
             is_mut: false,
         });
     }
 
+    // Generate right expression and replace _ with _underscore
     let right_expr = generate_expr(right)?;
+    let right_expr_substituted = substitute_underscore(right_expr);
 
-    Ok(RustExpr::Block(stmts, Some(Box::new(right_expr))))
+    Ok(RustExpr::Block(stmts, Some(Box::new(right_expr_substituted))))
+}
+
+fn substitute_underscore(expr: RustExpr) -> RustExpr {
+    match expr {
+        RustExpr::Variable(name) if name == "_" => {
+            RustExpr::Variable("_underscore".to_string())
+        }
+        RustExpr::Call { func, args } => RustExpr::Call {
+            func: Box::new(substitute_underscore(*func)),
+            args: args.into_iter().map(substitute_underscore).collect(),
+        },
+        RustExpr::MethodCall { receiver, method, args } => RustExpr::MethodCall {
+            receiver: Box::new(substitute_underscore(*receiver)),
+            method,
+            args: args.into_iter().map(substitute_underscore).collect(),
+        },
+        RustExpr::FieldAccess { base, field } => RustExpr::FieldAccess {
+            base: Box::new(substitute_underscore(*base)),
+            field,
+        },
+        RustExpr::BinaryOp { left, op, right } => RustExpr::BinaryOp {
+            left: Box::new(substitute_underscore(*left)),
+            op,
+            right: Box::new(substitute_underscore(*right)),
+        },
+        RustExpr::Block(stmts, ret) => RustExpr::Block(
+            stmts,
+            ret.map(|r| Box::new(substitute_underscore(*r))),
+        ),
+        // For other variants, return as-is
+        other => other,
+    }
 }
 
 fn generate_parallel(exprs: &[IRNode], binding: &Option<IRBinding>) -> Result<RustExpr> {

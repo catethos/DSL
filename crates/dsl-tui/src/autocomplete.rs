@@ -179,6 +179,20 @@ impl EvaluatorFunctionSource {
             Some("(String, Type) -> Type".to_string()),
         ));
         functions.push(("SQL".to_string(), Some("(String) -> Table".to_string())));
+        functions.push(("Par".to_string(), Some("(...) -> List".to_string())));
+        functions.push(("Not".to_string(), Some("(Bool) -> Bool".to_string())));
+        functions.push((
+            "GenerateBarChart".to_string(),
+            Some("(List, String?) -> Image".to_string()),
+        ));
+        functions.push((
+            "GenerateLineChart".to_string(),
+            Some("(List, String?) -> Image".to_string()),
+        ));
+        functions.push((
+            "GeneratePieChart".to_string(),
+            Some("(List, String?) -> Image".to_string()),
+        ));
 
         // Add user-defined functions
         for (name, func_def) in evaluator.functions.iter() {
@@ -290,6 +304,20 @@ impl RuntimeFunctionSource {
             Some("(String, Type) -> Type".to_string()),
         ));
         functions.push(("SQL".to_string(), Some("(String) -> Table".to_string())));
+        functions.push(("Par".to_string(), Some("(...) -> List".to_string())));
+        functions.push(("Not".to_string(), Some("(Bool) -> Bool".to_string())));
+        functions.push((
+            "GenerateBarChart".to_string(),
+            Some("(List, String?) -> Image".to_string()),
+        ));
+        functions.push((
+            "GenerateLineChart".to_string(),
+            Some("(List, String?) -> Image".to_string()),
+        ));
+        functions.push((
+            "GeneratePieChart".to_string(),
+            Some("(List, String?) -> Image".to_string()),
+        ));
 
         // Add user-defined functions
         for (name, func_def) in runtime.functions.iter() {

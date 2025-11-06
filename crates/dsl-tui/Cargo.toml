@@ -47,3 +47,7 @@ serde_json = { workspace = true }
 
 # IndexMap for ordered maps
 indexmap = { workspace = true }
+
+# Image rendering in TUI
+ratatui-image = { workspace = true }
+image = { workspace = true }

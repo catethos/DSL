@@ -7,3 +7,4 @@ pub mod interpreter;
 pub use runtime::Runtime;
 pub use type_registry::TypeRegistry;
 pub use interpreter::Interpreter;
+pub use builtins::BuiltinFunctions;

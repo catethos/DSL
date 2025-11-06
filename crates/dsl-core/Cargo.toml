@@ -31,3 +31,7 @@ serde_json = { workspace = true }
 # Collections and utilities
 indexmap = { workspace = true }
 anyhow = { workspace = true }
+
+# Chart generation
+plotters = { workspace = true }
+image = { workspace = true }

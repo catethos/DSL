@@ -33,7 +33,7 @@ fn generate_ask() -> RustItem {
         ),
         is_async: true,
         is_public: true,
-        attributes: vec![],        body: vec![
+        body: vec![
             RustStmt::Expr(RustExpr::Comment("Call dsl_interpreter::builtins::ask".to_string())),
             RustStmt::Expr(RustExpr::Macro {
                 name: "unimplemented".to_string(),
@@ -66,7 +66,7 @@ fn generate_extract_as() -> RustItem {
         ),
         is_async: true,
         is_public: true,
-        attributes: vec![],        body: vec![
+        body: vec![
             RustStmt::Expr(RustExpr::Comment("Call dsl_interpreter::builtins::extract_as".to_string())),
             RustStmt::Expr(RustExpr::Macro {
                 name: "unimplemented".to_string(),
@@ -91,7 +91,7 @@ fn generate_extract_person() -> RustItem {
         ),
         is_async: true,
         is_public: true,
-        attributes: vec![],        body: vec![
+        body: vec![
             RustStmt::Expr(RustExpr::Comment("Call dsl_interpreter::builtins::extract_person".to_string())),
             RustStmt::Expr(RustExpr::Macro {
                 name: "unimplemented".to_string(),
@@ -116,7 +116,7 @@ fn generate_length() -> RustItem {
         ),
         is_async: false,
         is_public: true,
-        attributes: vec![],        body: vec![
+        body: vec![
             RustStmt::Expr(RustExpr::Match {
                 expr: Box::new(RustExpr::Variable("value".to_string())),
                 arms: vec![
@@ -181,7 +181,6 @@ fn generate_upper() -> RustItem {
         return_type: RustType::Named("String".to_string()),
         is_async: false,
         is_public: true,
-        attributes: vec![],
         body: vec![RustStmt::Expr(RustExpr::MethodCall {
             receiver: Box::new(RustExpr::Variable("s".to_string())),
             method: "to_uppercase".to_string(),
@@ -202,7 +201,6 @@ fn generate_lower() -> RustItem {
         return_type: RustType::Named("String".to_string()),
         is_async: false,
         is_public: true,
-        attributes: vec![],
         body: vec![RustStmt::Expr(RustExpr::MethodCall {
             receiver: Box::new(RustExpr::Variable("s".to_string())),
             method: "to_lowercase".to_string(),
@@ -237,7 +235,6 @@ fn generate_join() -> RustItem {
         return_type: RustType::Named("String".to_string()),
         is_async: false,
         is_public: true,
-        attributes: vec![],
         body: vec![RustStmt::Expr(RustExpr::MethodCall {
             receiver: Box::new(RustExpr::Variable("list".to_string())),
             method: "join".to_string(),
@@ -261,7 +258,7 @@ fn generate_sql() -> RustItem {
         ),
         is_async: true,
         is_public: true,
-        attributes: vec![],        body: vec![
+        body: vec![
             RustStmt::Expr(RustExpr::Comment("Call dsl_interpreter::sql::execute".to_string())),
             RustStmt::Expr(RustExpr::Macro {
                 name: "unimplemented".to_string(),
@@ -292,7 +289,7 @@ fn generate_par() -> RustItem {
         ),
         is_async: true,
         is_public: true,
-        attributes: vec![],        body: vec![
+        body: vec![
             RustStmt::Expr(RustExpr::Comment("Execute tasks in parallel using tokio::join!".to_string())),
             RustStmt::Expr(RustExpr::Macro {
                 name: "unimplemented".to_string(),
@@ -314,7 +311,6 @@ fn generate_not() -> RustItem {
         return_type: RustType::Named("bool".to_string()),
         is_async: false,
         is_public: true,
-        attributes: vec![],
         body: vec![RustStmt::Expr(RustExpr::UnaryOp {
             op: "!".to_string(),
             expr: Box::new(RustExpr::Variable("value".to_string())),
@@ -334,7 +330,6 @@ fn generate_render_markdown() -> RustItem {
         return_type: RustType::Named("Value".to_string()),
         is_async: false,
         is_public: true,
-        attributes: vec![],
         body: vec![RustStmt::Expr(RustExpr::Call {
             func: Box::new(RustExpr::Variable("Value::Markdown".to_string())),
             args: vec![RustExpr::Variable("content".to_string())],

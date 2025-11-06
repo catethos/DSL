@@ -106,7 +106,6 @@ fn generate_llm_function(
         ),
         is_async: true,
         is_public: true,
-        attributes: vec![],
         body,
     })
 }
@@ -170,7 +169,6 @@ fn generate_http_function(
         ),
         is_async: true,
         is_public: true,
-        attributes: vec![],
         body: stmts,
     })
 }
@@ -210,7 +208,6 @@ fn generate_sql_function(func: &IRFunction, query: &str) -> Result<RustFunction>
         ),
         is_async: true,
         is_public: true,
-        attributes: vec![],
         body,
     })
 }
@@ -262,7 +259,6 @@ fn generate_http_llm_function(
         ),
         is_async: true,
         is_public: true,
-        attributes: vec![],
         body,
     })
 }

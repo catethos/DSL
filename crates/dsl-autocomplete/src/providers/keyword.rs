@@ -28,6 +28,9 @@ impl KeywordProvider {
             Suggestion::new("as", SuggestionKind::Keyword)
                 .detail("Variable binding")
                 .priority(SuggestionKind::Keyword.default_priority()),
+            Suggestion::new("let", SuggestionKind::Keyword)
+                .detail("Variable binding (let x = expr)")
+                .priority(SuggestionKind::Keyword.default_priority()),
             // Function execution blocks
             Suggestion::new("prompt:", SuggestionKind::Keyword)
                 .detail("LLM prompt block")
@@ -131,6 +134,8 @@ mod tests {
 
         assert!(suggestions.iter().any(|s| s.label == "def"));
         assert!(suggestions.iter().any(|s| s.label == "String"));
+        assert!(suggestions.iter().any(|s| s.label == "let"));
+        assert!(suggestions.iter().any(|s| s.label == "as"));
     }
 
     #[test]

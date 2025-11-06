@@ -192,9 +192,38 @@ fn parse_binding(pair: pest::iterators::Pair<Rule>) -> Result<Binding, String> {
 fn build_expr(pair: pest::iterators::Pair<Rule>) -> Result<Expr, String> {
     match pair.as_rule() {
         Rule::expr => {
-            // Descend to conditional
+            // Descend to let_binding or conditional
             let inner = pair.into_inner().next().ok_or("Empty expression")?;
             build_expr(inner)
+        }
+        Rule::let_binding => {
+            // Parse: let x = expr or let [a, b] = expr
+            let mut inner = pair.into_inner();
+
+            // First element is the binding pattern (identifier or list_binding)
+            let binding_pair = inner.next().ok_or("Missing binding pattern in let")?;
+            let binding = match binding_pair.as_rule() {
+                Rule::identifier => Binding::Single(binding_pair.as_str().to_string()),
+                Rule::list_binding => {
+                    let vars: Vec<String> = binding_pair
+                        .into_inner()
+                        .map(|p| p.as_str().to_string())
+                        .collect();
+                    Binding::List(vars)
+                }
+                _ => return Err(format!("Unexpected binding pattern: {:?}", binding_pair.as_rule())),
+            };
+
+            // Second element is the expression
+            let expr_pair = inner.next().ok_or("Missing expression in let")?;
+            let expr = build_expr(expr_pair)?;
+
+            // Wrap in a Parallel node with a single expression to handle the binding
+            // This is the same representation as "expr as x"
+            Ok(Expr::Parallel {
+                exprs: vec![expr],
+                binding: Some(binding),
+            })
         }
         Rule::conditional => {
             let mut inner = pair.into_inner();
@@ -1585,6 +1614,100 @@ mod tests {
             assert_eq!(entries.len(), 2);
         } else {
             panic!("Expected map literal, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_parse_let_binding() {
+        // Test basic let binding: let x = 5
+        let result = parse_expr("let x = 5").unwrap();
+        if let Expr::Parallel { exprs, binding } = result {
+            assert_eq!(exprs.len(), 1);
+            assert!(matches!(exprs[0], Expr::Int(5)));
+            assert!(matches!(binding, Some(Binding::Single(ref name)) if name == "x"));
+        } else {
+            panic!("Expected Parallel with binding, got: {:?}", result);
+        }
+
+        // Test let binding with expression
+        let result = parse_expr("let result = 1 + 2").unwrap();
+        if let Expr::Parallel { exprs, binding } = result {
+            assert_eq!(exprs.len(), 1);
+            assert!(matches!(exprs[0], Expr::BinaryOp { .. }));
+            assert!(matches!(binding, Some(Binding::Single(ref name)) if name == "result"));
+        } else {
+            panic!("Expected Parallel with binding, got: {:?}", result);
+        }
+
+        // Test let binding with list destructuring
+        let result = parse_expr("let [a, b, c] = [1, 2, 3]").unwrap();
+        if let Expr::Parallel { exprs, binding } = result {
+            assert_eq!(exprs.len(), 1);
+            assert!(matches!(exprs[0], Expr::List(_)));
+            if let Some(Binding::List(vars)) = binding {
+                assert_eq!(vars.len(), 3);
+                assert_eq!(vars[0], "a");
+                assert_eq!(vars[1], "b");
+                assert_eq!(vars[2], "c");
+            } else {
+                panic!("Expected list binding");
+            }
+        } else {
+            panic!("Expected Parallel with binding, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_let_vs_as_equivalence() {
+        // Test that "let x = 5" and "5 as x" produce the same IR structure
+        let let_result = parse_expr("let x = 5").unwrap();
+        let as_result = parse_expr("5 as x").unwrap();
+
+        // Both should be Parallel with single expression and binding
+        match (let_result, as_result) {
+            (
+                Expr::Parallel {
+                    exprs: let_exprs,
+                    binding: let_binding,
+                },
+                Expr::Parallel {
+                    exprs: as_exprs,
+                    binding: as_binding,
+                },
+            ) => {
+                assert_eq!(let_exprs.len(), as_exprs.len());
+                assert!(matches!(let_exprs[0], Expr::Int(5)));
+                assert!(matches!(as_exprs[0], Expr::Int(5)));
+                assert!(matches!(let_binding, Some(Binding::Single(ref name)) if name == "x"));
+                assert!(matches!(as_binding, Some(Binding::Single(ref name)) if name == "x"));
+            }
+            _ => panic!("Expected both to be Parallel expressions with bindings"),
+        }
+
+        // Test list destructuring equivalence
+        let let_result = parse_expr("let [a, b] = [1, 2]").unwrap();
+        let as_result = parse_expr("[1, 2] as [a, b]").unwrap();
+
+        match (let_result, as_result) {
+            (
+                Expr::Parallel {
+                    binding: let_binding,
+                    ..
+                },
+                Expr::Parallel {
+                    binding: as_binding,
+                    ..
+                },
+            ) => {
+                if let (Some(Binding::List(let_vars)), Some(Binding::List(as_vars))) =
+                    (let_binding, as_binding)
+                {
+                    assert_eq!(let_vars, as_vars);
+                } else {
+                    panic!("Expected both to have list bindings");
+                }
+            }
+            _ => panic!("Expected both to be Parallel expressions"),
         }
     }
 }

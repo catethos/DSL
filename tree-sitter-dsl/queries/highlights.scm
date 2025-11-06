@@ -5,6 +5,7 @@
   "def"
   "workflow"
   "as"
+  "let"
   "prompt"
   "sql"
   "http"

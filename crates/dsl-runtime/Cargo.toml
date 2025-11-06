@@ -1,13 +1,13 @@
 [package]
-name = "dsl-interpreter"
+name = "dsl-runtime"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 dsl-ir = { path = "../dsl-ir" }
-dsl-core = { path = "../dsl-core" }  # For parsing interpolated expressions
-simplify_baml = { path = "../../../simplify_baml" }
+dsl-interpreter = { path = "../dsl-interpreter" }
 tokio = { workspace = true }
+simplify_baml = { path = "/Users/catethos/workspace/simplify_baml" }
 reqwest = { workspace = true }
 duckdb = { workspace = true }
 indexmap = { workspace = true }
@@ -15,7 +15,3 @@ anyhow = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-# Chart generation
-plotters = { workspace = true }
-image = { workspace = true }

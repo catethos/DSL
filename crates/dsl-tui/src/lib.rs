@@ -96,6 +96,7 @@ fn format_value_for_output(value: &dsl_ir::Value) -> String {
             format!("{{{}}}", entries.join(", "))
         }
         Value::Markdown(s) => s.clone(),
+        Value::Image(path) => format!("[Image: {}]", path),
     }
 }
 
@@ -384,6 +385,11 @@ async fn handle_workspace_input(app: &mut App, key: event::KeyEvent) {
         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             // Run all editor content
             app.send_all_to_repl().await;
+            return;
+        }
+        KeyCode::Char('i') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Toggle image display
+            app.toggle_image_display();
             return;
         }
         _ => {}

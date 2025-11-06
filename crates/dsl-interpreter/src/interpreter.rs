@@ -311,54 +311,103 @@ impl Interpreter {
     fn apply_binary_op(&self, op: &str, left: Value, right: Value) -> Result<Value, String> {
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => {
-                let result = match op {
-                    "+" => a + b,
-                    "-" => a - b,
-                    "*" => a * b,
+                match op {
+                    // Arithmetic
+                    "+" => Ok(Value::Int(a + b)),
+                    "-" => Ok(Value::Int(a - b)),
+                    "*" => Ok(Value::Int(a * b)),
                     "/" => {
                         if b == 0 {
                             return Err("Division by zero".to_string());
                         }
-                        a / b
+                        Ok(Value::Int(a / b))
                     }
-                    _ => return Err(format!("Unknown operator: {}", op)),
-                };
-                Ok(Value::Int(result))
+                    // Comparison
+                    "==" => Ok(Value::Bool(a == b)),
+                    "!=" => Ok(Value::Bool(a != b)),
+                    "<" => Ok(Value::Bool(a < b)),
+                    ">" => Ok(Value::Bool(a > b)),
+                    "<=" => Ok(Value::Bool(a <= b)),
+                    ">=" => Ok(Value::Bool(a >= b)),
+                    _ => Err(format!("Unknown operator: {}", op)),
+                }
             }
             (Value::Float(a), Value::Float(b)) => {
-                let result = match op {
-                    "+" => a + b,
-                    "-" => a - b,
-                    "*" => a * b,
-                    "/" => a / b,
-                    _ => return Err(format!("Unknown operator: {}", op)),
-                };
-                Ok(Value::Float(result))
+                match op {
+                    // Arithmetic
+                    "+" => Ok(Value::Float(a + b)),
+                    "-" => Ok(Value::Float(a - b)),
+                    "*" => Ok(Value::Float(a * b)),
+                    "/" => Ok(Value::Float(a / b)),
+                    // Comparison
+                    "==" => Ok(Value::Bool(a == b)),
+                    "!=" => Ok(Value::Bool(a != b)),
+                    "<" => Ok(Value::Bool(a < b)),
+                    ">" => Ok(Value::Bool(a > b)),
+                    "<=" => Ok(Value::Bool(a <= b)),
+                    ">=" => Ok(Value::Bool(a >= b)),
+                    _ => Err(format!("Unknown operator: {}", op)),
+                }
             }
             // Mixed Int/Float operations - promote to Float
             (Value::Int(a), Value::Float(b)) => {
-                let result = match op {
-                    "+" => a as f64 + b,
-                    "-" => a as f64 - b,
-                    "*" => a as f64 * b,
-                    "/" => a as f64 / b,
-                    _ => return Err(format!("Unknown operator: {}", op)),
-                };
-                Ok(Value::Float(result))
+                match op {
+                    // Arithmetic
+                    "+" => Ok(Value::Float(a as f64 + b)),
+                    "-" => Ok(Value::Float(a as f64 - b)),
+                    "*" => Ok(Value::Float(a as f64 * b)),
+                    "/" => Ok(Value::Float(a as f64 / b)),
+                    // Comparison
+                    "==" => Ok(Value::Bool((a as f64) == b)),
+                    "!=" => Ok(Value::Bool((a as f64) != b)),
+                    "<" => Ok(Value::Bool((a as f64) < b)),
+                    ">" => Ok(Value::Bool((a as f64) > b)),
+                    "<=" => Ok(Value::Bool((a as f64) <= b)),
+                    ">=" => Ok(Value::Bool((a as f64) >= b)),
+                    _ => Err(format!("Unknown operator: {}", op)),
+                }
             }
             (Value::Float(a), Value::Int(b)) => {
-                let result = match op {
-                    "+" => a + b as f64,
-                    "-" => a - b as f64,
-                    "*" => a * b as f64,
-                    "/" => a / b as f64,
-                    _ => return Err(format!("Unknown operator: {}", op)),
-                };
-                Ok(Value::Float(result))
+                match op {
+                    // Arithmetic
+                    "+" => Ok(Value::Float(a + b as f64)),
+                    "-" => Ok(Value::Float(a - b as f64)),
+                    "*" => Ok(Value::Float(a * b as f64)),
+                    "/" => Ok(Value::Float(a / b as f64)),
+                    // Comparison
+                    "==" => Ok(Value::Bool(a == (b as f64))),
+                    "!=" => Ok(Value::Bool(a != (b as f64))),
+                    "<" => Ok(Value::Bool(a < (b as f64))),
+                    ">" => Ok(Value::Bool(a > (b as f64))),
+                    "<=" => Ok(Value::Bool(a <= (b as f64))),
+                    ">=" => Ok(Value::Bool(a >= (b as f64))),
+                    _ => Err(format!("Unknown operator: {}", op)),
+                }
             }
-            // String concatenation
-            (Value::String(a), Value::String(b)) if op == "+" => {
-                Ok(Value::String(format!("{}{}", a, b)))
+            // String operations
+            (Value::String(a), Value::String(b)) => {
+                match op {
+                    // Concatenation
+                    "+" => Ok(Value::String(format!("{}{}", a, b))),
+                    // Comparison
+                    "==" => Ok(Value::Bool(a == b)),
+                    "!=" => Ok(Value::Bool(a != b)),
+                    "<" => Ok(Value::Bool(a < b)),
+                    ">" => Ok(Value::Bool(a > b)),
+                    "<=" => Ok(Value::Bool(a <= b)),
+                    ">=" => Ok(Value::Bool(a >= b)),
+                    _ => Err(format!("Operator '{}' not supported for strings", op)),
+                }
+            }
+            // Boolean operations
+            (Value::Bool(a), Value::Bool(b)) => {
+                match op {
+                    "==" => Ok(Value::Bool(a == b)),
+                    "!=" => Ok(Value::Bool(a != b)),
+                    "&&" | "and" => Ok(Value::Bool(a && b)),
+                    "||" | "or" => Ok(Value::Bool(a || b)),
+                    _ => Err(format!("Operator '{}' not supported for booleans", op)),
+                }
             }
             (left_val, right_val) => Err(format!(
                 "Type mismatch in operation: {} {} {}",
@@ -678,5 +727,226 @@ impl Interpreter {
 impl Default for Interpreter {
     fn default() -> Self {
         Self::new().expect("Failed to create default interpreter")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_interpreter() -> Interpreter {
+        Interpreter::new().expect("Failed to create interpreter")
+    }
+
+    #[tokio::test]
+    async fn test_string_comparison_equal() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::String("hello".to_string())),
+            op: "==".to_string(),
+            right: Box::new(IRNode::String("hello".to_string())),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn test_string_comparison_not_equal() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::String("hello".to_string())),
+            op: "==".to_string(),
+            right: Box::new(IRNode::String("world".to_string())),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Bool(false));
+    }
+
+    #[tokio::test]
+    async fn test_string_not_equal_operator() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::String("hello".to_string())),
+            op: "!=".to_string(),
+            right: Box::new(IRNode::String("world".to_string())),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn test_string_less_than() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::String("apple".to_string())),
+            op: "<".to_string(),
+            right: Box::new(IRNode::String("banana".to_string())),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn test_int_comparison() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::Int(5)),
+            op: "<".to_string(),
+            right: Box::new(IRNode::Int(10)),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn test_int_equality() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::Int(42)),
+            op: "==".to_string(),
+            right: Box::new(IRNode::Int(42)),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn test_bool_and() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::Bool(true)),
+            op: "&&".to_string(),
+            right: Box::new(IRNode::Bool(true)),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn test_bool_or() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::Bool(false)),
+            op: "||".to_string(),
+            right: Box::new(IRNode::Bool(true)),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn test_mixed_int_float_comparison() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::Int(5)),
+            op: "==".to_string(),
+            right: Box::new(IRNode::Float(5.0)),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn test_string_concatenation() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::BinaryOp {
+            left: Box::new(IRNode::String("hello".to_string())),
+            op: "+".to_string(),
+            right: Box::new(IRNode::String(" world".to_string())),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::String("hello world".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_conditional_true_branch() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::Conditional {
+            condition: Box::new(IRNode::Bool(true)),
+            then_expr: Box::new(IRNode::String("yes".to_string())),
+            else_expr: Box::new(IRNode::String("no".to_string())),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::String("yes".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_conditional_false_branch() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::Conditional {
+            condition: Box::new(IRNode::Bool(false)),
+            then_expr: Box::new(IRNode::String("yes".to_string())),
+            else_expr: Box::new(IRNode::String("no".to_string())),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::String("no".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_variable_binding() {
+        let mut interp = create_test_interpreter();
+        interp.runtime.set_var("x".to_string(), Value::Int(42));
+        let node = IRNode::Variable("x".to_string());
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Int(42));
+    }
+
+    #[tokio::test]
+    async fn test_list_creation() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::List(vec![
+            IRNode::Int(1),
+            IRNode::Int(2),
+            IRNode::Int(3),
+        ]);
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(
+            result,
+            Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_map_creation() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::Map(vec![
+            ("name".to_string(), IRNode::String("Alice".to_string())),
+            ("age".to_string(), IRNode::Int(30)),
+        ]);
+        let result = interp.eval(&node).await.unwrap();
+        if let Value::Map(map) = result {
+            assert_eq!(map.get("name"), Some(&Value::String("Alice".to_string())));
+            assert_eq!(map.get("age"), Some(&Value::Int(30)));
+        } else {
+            panic!("Expected Map value");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_field_access() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::FieldAccess {
+            base: Box::new(IRNode::Map(vec![
+                ("name".to_string(), IRNode::String("Bob".to_string())),
+            ])),
+            field: "name".to_string(),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::String("Bob".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_index_access_list() {
+        let mut interp = create_test_interpreter();
+        let node = IRNode::IndexAccess {
+            base: Box::new(IRNode::List(vec![
+                IRNode::String("a".to_string()),
+                IRNode::String("b".to_string()),
+                IRNode::String("c".to_string()),
+            ])),
+            index: Box::new(IRNode::Int(1)),
+        };
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::String("b".to_string()));
     }
 }

@@ -21,8 +21,9 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 | **10-HTTP-Client.md** | 7.9K | API integration and HTTP requests |
 | **11-Advanced-Features.md** | 7.4K | Advanced patterns and techniques |
 | **12-Implementation-Details.md** | 9.9K | Technical architecture and internals |
+| **13-Compiling-to-Binary.md** | 25K | Compiling DSL programs to native executables |
 
-**Total:** 125.4 KB across 13 files
+**Total:** 150.4 KB across 14 files
 
 ## What Each Document Covers
 
@@ -44,9 +45,10 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 - **09-SQL-DuckDB.md** - Data processing with SQL queries
 - **10-HTTP-Client.md** - Calling REST APIs
 
-### Advanced Topics (11-12)
+### Advanced Topics (11-13)
 - **11-Advanced-Features.md** - Advanced patterns, debugging, optimization
 - **12-Implementation-Details.md** - Technical architecture, code structure
+- **13-Compiling-to-Binary.md** - Compiling DSL to native executables, command-line arguments
 
 ### Navigation (README)
 - **README.md** - Index with reading paths and quick links
@@ -54,9 +56,9 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 ## Key Features Documented
 
 ### Language Features
-- Variables and binding with `as`
+- Variables and binding with `as` or `let`
 - Underscore `_` variable for last result
-- Sequential composition with `>>`
+- Sequential composition with `|>`
 - Parallel execution with `||`
 - Template strings with `${variable}`
 - Field and index access

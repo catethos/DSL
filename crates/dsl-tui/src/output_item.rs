@@ -1,5 +1,7 @@
 use dsl_ir::Value;
+use ratatui::text::Line;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Represents different types of output that can be displayed in the REPL
 #[derive(Clone, Debug)]
@@ -27,6 +29,16 @@ pub enum OutputItem {
 
     /// Markdown formatted text with syntax highlighting
     Markdown(String),
+
+    /// Image file path with loaded image data for rendering
+    Image {
+        path: String,
+        data: Option<Arc<image::DynamicImage>>,
+        /// Cached rendered lines to avoid re-rendering on every frame (for fallback text)
+        cached_lines: Option<Vec<Line<'static>>>,
+        /// Whether to use graphics protocol (vs fallback to halfblocks)
+        use_graphics_protocol: bool,
+    },
 
     /// Chart/visualization placeholder (for future)
     Chart { chart_type: ChartType, data: Value },
@@ -69,6 +81,15 @@ impl OutputItem {
             Self::from_tree_value(value, "root", true)
         } else if let Value::Markdown(s) = value {
             Self::Markdown(s.clone())
+        } else if let Value::Image(path) = value {
+            // Try to load the image
+            let data = image::open(path).ok().map(Arc::new);
+            Self::Image {
+                path: path.clone(),
+                data,
+                cached_lines: None, // Will be rendered on first display
+                use_graphics_protocol: true, // Try graphics protocol first
+            }
         } else {
             Self::Text(value.display())
         }

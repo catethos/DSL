@@ -5,7 +5,7 @@ members = [
     "crates/dsl-autocomplete",
     "crates/dsl-tui",
     "crates/dsl-repl",
-    "tree-sitter-dsl", "crates/dsl-ir", "crates/dsl-interpreter", "crates/dsl-codegen", "crates/dsl-compiler",
+    "tree-sitter-dsl", "crates/dsl-ir", "crates/dsl-interpreter", "crates/dsl-codegen", "crates/dsl-compiler", "crates/dsl-runtime",
 ]
 
 [workspace.dependencies]
@@ -44,3 +44,12 @@ csv = "1.3"
 
 # Configuration (for later phases)
 toml = "0.8"
+
+# Chart generation and image handling
+plotters = "0.3"
+image = "0.25"
+ratatui-image = "1.0"
+
+[profile.release]
+# Optimize for size and strip debug symbols
+strip = true        # Strip symbols from binary
