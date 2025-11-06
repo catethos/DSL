@@ -64,6 +64,68 @@ pub enum IRNode {
         exprs: Vec<IRNode>,
         binding: Option<IRBinding>,
     },
+
+    // Agent primitives (Phase 2)
+    /// Spawn a new agent instance
+    SpawnAgent {
+        agent_type: String,
+        init_state: Box<IRNode>,
+    },
+    /// Send a message to an agent (fire-and-forget)
+    SendMessage {
+        target: String,
+        message: Box<IRNode>,
+    },
+    /// Call an agent and wait for reply
+    CallAgent {
+        target: String,
+        message: Box<IRNode>,
+        timeout_ms: Option<u32>,
+    },
+    /// Receive a message matching a pattern
+    ReceiveMessage {
+        pattern: IRPattern,
+    },
+    /// Broadcast message to multiple agents
+    Broadcast {
+        targets: Vec<String>,
+        message: Box<IRNode>,
+    },
+
+    // Control flow (Phase 2)
+    /// Infinite loop
+    Loop {
+        body: Box<IRNode>,
+    },
+    /// While loop with condition
+    While {
+        condition: Box<IRNode>,
+        body: Box<IRNode>,
+    },
+    /// For loop over iterable
+    For {
+        var: String,
+        iterable: Box<IRNode>,
+        body: Box<IRNode>,
+    },
+    /// Break from loop with optional value
+    Break {
+        value: Option<Box<IRNode>>,
+    },
+    /// Continue to next iteration
+    Continue,
+
+    // Error handling (Phase 2)
+    /// Try-catch block
+    TryBlock {
+        body: Box<IRNode>,
+        catch_var: String,
+        catch_body: Box<IRNode>,
+    },
+    /// Throw an error
+    Throw {
+        error: Box<IRNode>,
+    },
 }
 
 /// Template string segments
@@ -172,4 +234,24 @@ pub struct IRMessageHandler {
     pub message_type: FieldType,
     pub reply_type: Option<FieldType>,
     pub body: IRNode,
+}
+
+/// Pattern matching for message reception (Phase 2)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum IRPattern {
+    /// Match by type
+    Type(FieldType),
+    /// Bind to variable with pattern
+    Binding(String, Box<IRPattern>),
+    /// Match any message
+    Any,
+}
+
+/// Context store for shared agent state (Phase 2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IRContextStore {
+    pub name: String,
+    pub schema: Class,
+    pub read_permissions: Vec<String>,
+    pub write_permissions: Vec<String>,
 }

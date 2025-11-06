@@ -5,8 +5,8 @@ pub mod value;
 
 // Re-export main types
 pub use ir::{
-    IRAgent, IRBinding, IRExecution, IRFunction, IRMessageHandler, IRNode, IRProperty,
-    IRTemplateSegment, IR,
+    IRAgent, IRBinding, IRContextStore, IRExecution, IRFunction, IRMessageHandler, IRNode,
+    IRPattern, IRProperty, IRTemplateSegment, IR,
 };
 pub use types::{Class, Enum, Field, FieldType};
 pub use value::Value;

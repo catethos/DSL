@@ -8,8 +8,11 @@ edition = "2021"
 pest = { workspace = true }
 pest_derive = { workspace = true }
 
+# IR
+dsl-ir = { path = "../dsl-ir" }
+
 # LLM and structured extraction
-simplify_baml = "0.1.0"
+simplify_baml = { path = "../../../simplify_baml" }
 
 # Database
 duckdb = { workspace = true }

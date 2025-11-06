@@ -817,10 +817,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "dsl-codegen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dsl-ir",
+ "indexmap 2.12.0",
+]
+
+[[package]]
+name = "dsl-compiler"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dsl-codegen",
+ "dsl-core",
+ "dsl-ir",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "dsl-core"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "dsl-ir",
  "duckdb",
  "futures",
  "indexmap 2.12.0",
@@ -829,7 +853,24 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "simplify_baml 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "simplify_baml",
+ "tokio",
+]
+
+[[package]]
+name = "dsl-interpreter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dsl-core",
+ "dsl-ir",
+ "duckdb",
+ "futures",
+ "indexmap 2.12.0",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "simplify_baml",
  "tokio",
 ]
 
@@ -842,7 +883,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
- "simplify_baml 0.1.0",
+ "simplify_baml",
 ]
 
 [[package]]
@@ -867,8 +908,13 @@ dependencies = [
  "crossterm",
  "dsl-autocomplete",
  "dsl-core",
+ "dsl-interpreter",
+ "dsl-ir",
+ "indexmap 2.12.0",
  "pulldown-cmark",
  "ratatui 0.29.0",
+ "serde",
+ "serde_json",
  "tokio",
  "tree-sitter",
  "tree-sitter-dsl",
@@ -3018,23 +3064,6 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 [[package]]
 name = "simplify_baml"
 version = "0.1.0"
-dependencies = [
- "anyhow",
- "futures",
- "genai",
- "minijinja",
- "reqwest",
- "serde",
- "serde_json",
- "simplify_baml_macros",
- "tokio",
-]
-
-[[package]]
-name = "simplify_baml"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae757b7bff84b64f6908d47c33ac74ecbaedad89706c203abbe35c8af0c93ecc"
 dependencies = [
  "anyhow",
  "futures",

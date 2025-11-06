@@ -27,10 +27,11 @@ pub use app::App;
 
 /// Run the TUI in non-interactive mode, reading from stdin
 pub async fn run_stdin() -> io::Result<()> {
-    use dsl_core::Evaluator;
+    use dsl_core::{parse_expr, compile_expr};
+    use dsl_interpreter::Interpreter;
     use std::io::{BufRead, BufReader};
 
-    let mut evaluator = Evaluator::new();
+    let mut interpreter = Interpreter::new().expect("Failed to initialize interpreter");
     let stdin = io::stdin();
     let reader = BufReader::new(stdin);
 
@@ -43,19 +44,29 @@ pub async fn run_stdin() -> io::Result<()> {
             continue;
         }
 
-        // Execute the line
-        match evaluator.eval(trimmed).await {
-            Ok((value, var_name)) => {
-                if let Some(name) = var_name {
-                    println!("✓ Bound '{}' : {}", name, value.type_name());
-                } else {
-                    println!("✓ {}", value.type_name());
+        // Execute the line using IR pipeline
+        match parse_expr(trimmed) {
+            Ok(ast) => {
+                match compile_expr(&ast) {
+                    Ok(ir_node) => {
+                        match interpreter.eval(&ir_node).await {
+                            Ok(value) => {
+                                println!("✓ {}", value.type_name());
+                                // Print the value
+                                println!("{}", format_value_for_output(&value));
+                            }
+                            Err(err) => {
+                                eprintln!("Error: {}", err);
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("Compile error: {}", err);
+                    }
                 }
-                // Print the value
-                println!("{}", format_value_for_output(&value));
             }
             Err(err) => {
-                eprintln!("Error: {}", err);
+                eprintln!("Parse error: {}", err);
             }
         }
     }
@@ -64,8 +75,8 @@ pub async fn run_stdin() -> io::Result<()> {
 }
 
 /// Format a value for output in non-interactive mode
-fn format_value_for_output(value: &dsl_core::Value) -> String {
-    use dsl_core::Value;
+fn format_value_for_output(value: &dsl_ir::Value) -> String {
+    use dsl_ir::Value;
 
     match value {
         Value::Null => "null".to_string(),

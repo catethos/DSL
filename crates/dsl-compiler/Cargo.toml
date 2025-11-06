@@ -1,0 +1,16 @@
+[package]
+name = "dsl-compiler"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dsl-core = { path = "../dsl-core" }
+dsl-ir = { path = "../dsl-ir" }
+dsl-codegen = { path = "../dsl-codegen" }
+clap = { version = "4.0", features = ["derive"] }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.8"
+serde_json = { workspace = true }

@@ -1,7 +1,8 @@
 use crate::autocomplete::AutocompleteState;
 use crate::output_item::OutputItem;
 use crate::ui::banner;
-use dsl_core::{Evaluator, Value};
+use dsl_ir::Value;
+use dsl_interpreter::Interpreter;
 use std::time::Duration;
 use tui_textarea::TextArea;
 
@@ -35,7 +36,7 @@ pub struct App {
     // REPL state
     pub input: String,
     pub output: Vec<OutputItem>,
-    pub evaluator: Evaluator,
+    pub interpreter: Interpreter,
     pub show_banner: bool,
     pub is_loading: bool,
     pub cursor_position: usize,
@@ -75,14 +76,14 @@ impl Default for App {
 
 impl App {
     pub fn new() -> Self {
-        let evaluator = Evaluator::new();
-        let autocomplete = AutocompleteState::new(&evaluator);
+        let interpreter = Interpreter::new().expect("Failed to initialize interpreter");
+        let autocomplete = AutocompleteState::new_with_runtime(&interpreter.runtime);
 
         let mut app = Self {
             active_pane: WorkspacePane::Repl, // Start with REPL active
             input: String::new(),
             output: vec![],
-            evaluator,
+            interpreter,
             show_banner: true,
             is_loading: false,
             cursor_position: 0,
@@ -280,7 +281,8 @@ impl App {
         // Set loading state
         self.is_loading = true;
 
-        match self.evaluator.eval(&input_text).await {
+        // New IR pipeline: parse -> compile -> interpret
+        match self.eval_with_ir(&input_text).await {
             Ok((value, var_name)) => {
                 let type_str = value.type_name();
 
@@ -841,8 +843,8 @@ impl App {
 
             let start = Instant::now();
 
-            // Execute the line
-            match self.evaluator.eval(line).await {
+            // Execute the line using IR pipeline
+            match self.eval_with_ir(line).await {
                 Ok((value, _var_name)) => {
                     let duration = start.elapsed();
                     if let Some(step) = self.preview_steps.last_mut() {
@@ -863,6 +865,121 @@ impl App {
         }
 
         Ok(())
+    }
+
+    // ========================================
+    // IR Pipeline Evaluation
+    // ========================================
+
+    /// Evaluate input using the IR pipeline (parse -> compile -> interpret)
+    async fn eval_with_ir(&mut self, input: &str) -> Result<(Value, Option<String>), String> {
+        use dsl_core::{parse_expr, compile_expr};
+
+        let input = input.trim();
+
+        // Check for special commands first
+        if input == ":vars" {
+            return self.handle_vars_command();
+        }
+        if input == ":types" {
+            return self.handle_types_command();
+        }
+        if input == ":funcs" || input == ":functions" {
+            return self.handle_funcs_command();
+        }
+        if input.starts_with(":copy ") {
+            return self.handle_copy_command(&input[6..]);
+        }
+        if input.starts_with(":save ") {
+            return self.handle_save_command(&input[6..]);
+        }
+        if input.starts_with(":load ") {
+            return self.handle_load_command(&input[6..]).await;
+        }
+        if input == ":debug" {
+            return self.handle_debug_command();
+        }
+
+        // Parse the input to AST
+        let ast = parse_expr(input).map_err(|e| format!("Parse error: {}", e))?;
+
+        // Compile AST to IR
+        let ir_node = compile_expr(&ast).map_err(|e| format!("Compile error: {}", e))?;
+
+        // Evaluate IR
+        let value = self.interpreter.eval(&ir_node).await?;
+
+        // Check if this was a variable binding
+        // For now, we don't track variable names in IR (future enhancement)
+        // The interpreter handles bindings internally
+        Ok((value, None))
+    }
+
+    /// Handle :vars command
+    fn handle_vars_command(&self) -> Result<(Value, Option<String>), String> {
+        let mut result = String::new();
+        for (name, value) in &self.interpreter.runtime.vars {
+            result.push_str(&format!("{} = {}\n", name, value.display()));
+        }
+        Ok((Value::String(result), None))
+    }
+
+    /// Handle :types command
+    fn handle_types_command(&self) -> Result<(Value, Option<String>), String> {
+        let mut result = String::new();
+        for class in self.interpreter.runtime.types.all_classes() {
+            result.push_str(&format!("{} {{\n", class.name));
+            for field in &class.fields {
+                result.push_str(&format!("  {}: {:?}\n", field.name, field.field_type));
+            }
+            result.push_str("}\n");
+        }
+        Ok((Value::String(result), None))
+    }
+
+    /// Handle :funcs command
+    fn handle_funcs_command(&self) -> Result<(Value, Option<String>), String> {
+        let mut result = String::new();
+        for (name, func) in &self.interpreter.runtime.functions {
+            result.push_str(&format!(
+                "{}({}) -> {:?}\n",
+                name,
+                func.params.join(", "),
+                func.return_type
+            ));
+        }
+        Ok((Value::String(result), None))
+    }
+
+    /// Handle :copy command
+    fn handle_copy_command(&self, _filename: &str) -> Result<(Value, Option<String>), String> {
+        // This would need access to last_result - not implemented yet
+        Err(":copy command not yet implemented in IR mode".to_string())
+    }
+
+    /// Handle :save command
+    fn handle_save_command(&self, filename: &str) -> Result<(Value, Option<String>), String> {
+        use std::fs;
+        let json = serde_json::to_string_pretty(&self.interpreter.runtime.vars)
+            .map_err(|e| format!("Serialization error: {}", e))?;
+        fs::write(filename, json).map_err(|e| format!("Write error: {}", e))?;
+        Ok((Value::String(format!("Session saved to {}", filename)), None))
+    }
+
+    /// Handle :load command
+    async fn handle_load_command(&mut self, filename: &str) -> Result<(Value, Option<String>), String> {
+        use std::fs;
+        let json = fs::read_to_string(filename).map_err(|e| format!("Read error: {}", e))?;
+        let vars: std::collections::HashMap<String, Value> = serde_json::from_str(&json)
+            .map_err(|e| format!("Deserialization error: {}", e))?;
+        self.interpreter.runtime.vars = vars;
+        Ok((Value::String(format!("Session loaded from {}", filename)), None))
+    }
+
+    /// Handle :debug command
+    fn handle_debug_command(&self) -> Result<(Value, Option<String>), String> {
+        // This would need access to last_prompt from builtins - not implemented yet
+        Err(":debug command not yet implemented in IR mode".to_string())
     }
 
     // ========================================
@@ -909,6 +1026,6 @@ impl App {
 
     /// Refresh autocomplete providers (call after defining new functions/types)
     pub fn refresh_autocomplete(&mut self) {
-        self.autocomplete = AutocompleteState::new(&self.evaluator);
+        self.autocomplete = AutocompleteState::new_with_runtime(&self.interpreter.runtime);
     }
 }

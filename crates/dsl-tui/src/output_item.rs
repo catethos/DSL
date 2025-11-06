@@ -1,4 +1,4 @@
-use dsl_core::Value;
+use dsl_ir::Value;
 use std::collections::HashMap;
 
 /// Represents different types of output that can be displayed in the REPL

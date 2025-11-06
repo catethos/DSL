@@ -7,6 +7,12 @@ edition = "2021"
 # Core DSL engine
 dsl-core = { path = "../dsl-core" }
 
+# IR layer
+dsl-ir = { path = "../dsl-ir" }
+
+# IR interpreter
+dsl-interpreter = { path = "../dsl-interpreter" }
+
 # Autocomplete engine
 dsl-autocomplete = { path = "../dsl-autocomplete" }
 
@@ -34,3 +40,10 @@ unicode-width = "0.1"
 
 # Markdown rendering
 pulldown-cmark = "0.13"
+
+# Serialization for save/load commands
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# IndexMap for ordered maps
+indexmap = { workspace = true }

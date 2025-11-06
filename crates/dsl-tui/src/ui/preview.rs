@@ -116,7 +116,7 @@ pub fn render_preview_with_title(f: &mut Frame, area: Rect, app: &App, title: &s
 }
 
 pub fn render_type_explorer(f: &mut Frame, area: Rect, app: &App) {
-    let types = app.evaluator.types.all();
+    let types = app.interpreter.runtime.types.all();
 
     if types.is_empty() {
         let empty_msg = Paragraph::new("No types defined yet.\n\nDefine types in the editor or REPL:\n\n  type Person {\n    name: String\n    age: Int\n  }")

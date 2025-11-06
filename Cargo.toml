@@ -5,7 +5,7 @@ members = [
     "crates/dsl-autocomplete",
     "crates/dsl-tui",
     "crates/dsl-repl",
-    "tree-sitter-dsl", "crates/dsl-ir",
+    "tree-sitter-dsl", "crates/dsl-ir", "crates/dsl-interpreter", "crates/dsl-codegen", "crates/dsl-compiler",
 ]
 
 [workspace.dependencies]
