@@ -35,6 +35,7 @@ mod tests {
             types: vec![],
             enums: vec![],
             functions: vec![],
+            function_groups: vec![],
             agents: vec![],
             entry_expr: IRNode::Int(42),
         };
@@ -55,6 +56,7 @@ mod tests {
             types: vec![],
             enums: vec![],
             functions: vec![],
+            function_groups: vec![],
             agents: vec![],
             entry_expr: IRNode::String("hello".to_string()),
         };

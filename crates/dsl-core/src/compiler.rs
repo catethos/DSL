@@ -1,19 +1,35 @@
 use anyhow::Result;
 use dsl_ir::{
-    IRBinding, IRExecution, IRFunction, IRNode, IRProperty, IRTemplateSegment, IR,
+    IRBinding, IRExecution, IRFunction, IRFunctionClause, IRFunctionGroup, IRMatchCase, IRNode,
+    IRPattern, IRProperty, IRTemplateSegment, IR,
 };
 use std::collections::HashMap;
 
 use crate::parser::{
-    parse_expr, Binding, Expr, FunctionDef, FunctionExecution, PropertyValue, TemplateSegment,
+    parse_expr, parse_program, Binding, Expr, FunctionDef, FunctionExecution, MatchCase, Pattern,
+    PatternFunctionClause, PatternFunctionDef, Program, PropertyValue, TemplateSegment,
 };
 
 /// Compile DSL source code to IR
+/// Handles both full programs (with types, enums, functions) and standalone expressions
 pub fn compile_to_ir(source: &str) -> Result<IR> {
-    // For now, just compile a single expression
-    // In the future, this will parse the full program with types, enums, and functions
-    let expr = parse_expr(source).map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+    // Try parsing as a program first (handles types, enums, and functions)
+    if let Ok(program) = parse_program(source) {
+        // Check if the program has any meaningful content (declarations or entry expression)
+        let has_content = !program.types.is_empty()
+            || !program.enums.is_empty()
+            || !program.functions.is_empty()
+            || !program.pattern_functions.is_empty()
+            || program.entry_expr.is_some();
 
+        if has_content {
+            return compile_program_to_ir(&program);
+        }
+        // If parse_program succeeded but found nothing, fall through to try parse_expr
+    }
+
+    // Fall back to parsing as a standalone expression
+    let expr = parse_expr(source).map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
     let entry_expr = compile_expr(&expr)?;
 
     Ok(IR {
@@ -21,6 +37,50 @@ pub fn compile_to_ir(source: &str) -> Result<IR> {
         types: Vec::new(),
         enums: Vec::new(),
         functions: Vec::new(),
+        function_groups: Vec::new(),
+        agents: Vec::new(),
+        entry_expr,
+    })
+}
+
+/// Compile a complete program to IR
+pub fn compile_program(source: &str) -> Result<IR> {
+    let program = parse_program(source).map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+
+    compile_program_to_ir(&program)
+}
+
+/// Compile a parsed program to IR
+pub fn compile_program_to_ir(program: &Program) -> Result<IR> {
+    // Compile traditional functions
+    let functions: Result<Vec<IRFunction>> = program
+        .functions
+        .iter()
+        .map(compile_function)
+        .collect();
+    let functions = functions?;
+
+    // Compile pattern-based functions to function groups
+    let function_groups: Result<Vec<IRFunctionGroup>> = program
+        .pattern_functions
+        .iter()
+        .map(compile_pattern_function)
+        .collect();
+    let function_groups = function_groups?;
+
+    // Compile entry expression if present
+    let entry_expr = if let Some(expr) = &program.entry_expr {
+        compile_expr(expr)?
+    } else {
+        IRNode::Int(0) // Default: return 0 if no entry expression
+    };
+
+    Ok(IR {
+        version: "0.1.0".to_string(),
+        types: program.types.clone(),
+        enums: program.enums.clone(),
+        functions,
+        function_groups,
         agents: Vec::new(),
         entry_expr,
     })
@@ -129,6 +189,18 @@ pub fn compile_expr(expr: &Expr) -> Result<IRNode> {
                 binding: binding.as_ref().map(compile_binding).transpose()?,
             })
         }
+
+        Expr::Match { scrutinee, cases } => {
+            let ir_scrutinee = Box::new(compile_expr(scrutinee)?);
+            let ir_cases = cases
+                .iter()
+                .map(compile_match_case)
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRNode::Match {
+                scrutinee: ir_scrutinee,
+                cases: ir_cases,
+            })
+        }
     }
 }
 
@@ -140,12 +212,105 @@ fn compile_binding(binding: &Binding) -> Result<IRBinding> {
     }
 }
 
+/// Compile a match case
+fn compile_match_case(case: &MatchCase) -> Result<IRMatchCase> {
+    Ok(IRMatchCase {
+        pattern: compile_pattern(&case.pattern)?,
+        guard: case.guard.as_ref().map(compile_expr).transpose()?.map(Box::new),
+        body: Box::new(compile_expr(&case.body)?),
+    })
+}
+
+/// Compile a pattern
+fn compile_pattern(pattern: &Pattern) -> Result<IRPattern> {
+    match pattern {
+        Pattern::Any => Ok(IRPattern::Any),
+
+        Pattern::Literal(expr) => {
+            let ir_node = compile_expr(expr)?;
+            Ok(IRPattern::Literal(Box::new(ir_node)))
+        }
+
+        Pattern::Variable(name) => Ok(IRPattern::Variable(name.clone())),
+
+        Pattern::Binding(name, nested) => Ok(IRPattern::Binding(
+            name.clone(),
+            Box::new(compile_pattern(nested)?),
+        )),
+
+        Pattern::Type { type_name, inner } => Ok(IRPattern::Type {
+            type_name: type_name.clone(),
+            inner: inner.as_ref().map(|p| compile_pattern(p)).transpose()?.map(Box::new),
+        }),
+
+        Pattern::List { patterns, rest } => {
+            let ir_patterns = patterns
+                .iter()
+                .map(compile_pattern)
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRPattern::List {
+                patterns: ir_patterns,
+                rest: rest.clone(),
+            })
+        }
+
+        Pattern::Map { fields, strict } => {
+            let ir_fields = fields
+                .iter()
+                .map(|(name, pat)| Ok((name.clone(), compile_pattern(pat)?)))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRPattern::Map {
+                fields: ir_fields,
+                strict: *strict,
+            })
+        }
+
+        Pattern::Tuple(patterns) => {
+            let ir_patterns = patterns
+                .iter()
+                .map(compile_pattern)
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRPattern::Tuple(ir_patterns))
+        }
+    }
+}
+
 /// Compile a template segment
 fn compile_template_segment(segment: &TemplateSegment) -> Result<IRTemplateSegment> {
     match segment {
         TemplateSegment::Text(t) => Ok(IRTemplateSegment::Text(t.clone())),
         TemplateSegment::Interpolation(expr) => Ok(IRTemplateSegment::Interpolation(expr.clone())),
     }
+}
+
+/// Compile a pattern-based function to IRFunctionGroup
+pub fn compile_pattern_function(func: &PatternFunctionDef) -> Result<IRFunctionGroup> {
+    let clauses: Result<Vec<IRFunctionClause>> = func
+        .clauses
+        .iter()
+        .map(compile_pattern_function_clause)
+        .collect();
+
+    Ok(IRFunctionGroup {
+        name: func.name.clone(),
+        clauses: clauses?,
+        return_type: func.return_type.clone(),
+    })
+}
+
+/// Compile a pattern function clause to IRFunctionClause
+fn compile_pattern_function_clause(clause: &PatternFunctionClause) -> Result<IRFunctionClause> {
+    let param_patterns: Result<Vec<IRPattern>> = clause
+        .param_patterns
+        .iter()
+        .map(compile_pattern)
+        .collect();
+
+    Ok(IRFunctionClause {
+        param_patterns: param_patterns?,
+        guard: clause.guard.as_ref().map(compile_expr).transpose()?.map(Box::new),
+        body: Box::new(compile_expr(&clause.body)?),
+    })
 }
 
 /// Compile a function definition to IR

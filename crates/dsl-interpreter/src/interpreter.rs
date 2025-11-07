@@ -1,4 +1,5 @@
 use crate::builtins::BuiltinFunctions;
+use crate::pattern::PatternMatcher;
 use crate::runtime::Runtime;
 use dsl_ir::{IRNode, IRTemplateSegment, IRBinding, IRExecution, IRFunction, Value, IR};
 use indexmap::IndexMap;
@@ -35,10 +36,20 @@ impl Interpreter {
             interpreter.runtime.functions.insert(func.name.clone(), func.clone());
         }
 
+        // Register all function groups (overloaded functions)
+        for func_group in &ir.function_groups {
+            interpreter.runtime.function_groups.insert(func_group.name.clone(), func_group.clone());
+        }
+
         // Rebuild BAML runtime with new types
         interpreter.builtins.rebuild_runtime(&interpreter.runtime.types)?;
 
         Ok(interpreter)
+    }
+
+    /// Rebuild the BAML runtime with current types
+    pub fn rebuild_runtime(&mut self) -> Result<()> {
+        self.builtins.rebuild_runtime(&self.runtime.types)
     }
 
     /// Main evaluation method - evaluates an IRNode and returns a Value
@@ -176,9 +187,12 @@ impl Interpreter {
 
             // ===== Function Calls =====
             IRNode::FunctionCall { name, args } => {
-                // Check if it's a user-defined function
-                if let Some(func_def) = self.runtime.functions.get(name).cloned() {
-                    // User-defined function
+                // Check for overloaded function first (function groups)
+                if let Some(func_group) = self.runtime.function_groups.get(name).cloned() {
+                    // Overloaded function - try pattern matching
+                    self.call_overloaded_function(&func_group, args).await
+                } else if let Some(func_def) = self.runtime.functions.get(name).cloned() {
+                    // Regular user-defined function
                     self.call_user_function(&func_def, args).await
                 } else {
                     // Evaluate all arguments
@@ -193,6 +207,58 @@ impl Interpreter {
                         .await
                         .map_err(|e| e.to_string())
                 }
+            }
+
+            // ===== Pattern Matching (Phase 10B) =====
+            IRNode::Match { scrutinee, cases } => {
+                let value = Box::pin(self.eval(scrutinee)).await?;
+
+                // Save current variable scope
+                let saved_vars = self.runtime.vars.clone();
+
+                for case in cases {
+                    // Check if pattern matches
+                    if PatternMatcher::matches(&case.pattern, &value) {
+                        // Check guard if present
+                        if let Some(guard) = &case.guard {
+                            // Temporarily add bindings for guard evaluation
+                            let bindings = PatternMatcher::extract_bindings(&case.pattern, &value)
+                                .map_err(|e| format!("Pattern binding error: {}", e))?;
+
+                            for (name, val) in &bindings {
+                                self.runtime.set_var(name.clone(), val.clone());
+                            }
+
+                            let guard_result = Box::pin(self.eval(guard)).await?;
+
+                            // Restore variables
+                            self.runtime.vars = saved_vars.clone();
+
+                            // If guard fails, try next case
+                            if !matches!(guard_result, Value::Bool(true)) {
+                                continue;
+                            }
+                        }
+
+                        // Extract bindings and add to scope
+                        let bindings = PatternMatcher::extract_bindings(&case.pattern, &value)
+                            .map_err(|e| format!("Pattern binding error: {}", e))?;
+
+                        for (name, val) in bindings {
+                            self.runtime.set_var(name, val);
+                        }
+
+                        // Execute body
+                        let result = Box::pin(self.eval(&case.body)).await;
+
+                        // Restore variables
+                        self.runtime.vars = saved_vars;
+
+                        return result;
+                    }
+                }
+
+                Err("No matching pattern in match expression".to_string())
             }
 
             // ===== Type Instantiation (TODO) =====
@@ -450,6 +516,10 @@ impl Interpreter {
 
         // Execute based on function type
         let result = match &func.execution {
+            IRExecution::Expression { body } => {
+                // Simple expression evaluation (for helper functions, recursion, etc.)
+                Box::pin(self.eval(body)).await?
+            }
             IRExecution::LLM {
                 prompt,
                 model,
@@ -564,6 +634,7 @@ impl Interpreter {
     }
 
     /// Execute LLM with pre-fetched input data
+    #[allow(clippy::too_many_arguments)]
     async fn execute_llm_with_input(
         &mut self,
         func: &IRFunction,
@@ -599,6 +670,7 @@ impl Interpreter {
     }
 
     /// Execute an HTTP request
+    #[allow(clippy::too_many_arguments)]
     async fn execute_http_function(
         &mut self,
         func: &IRFunction,
@@ -721,6 +793,79 @@ impl Interpreter {
         }
 
         Ok(result)
+    }
+
+    /// Call an overloaded function with pattern matching
+    async fn call_overloaded_function(
+        &mut self,
+        func_group: &dsl_ir::IRFunctionGroup,
+        args: &[IRNode],
+    ) -> Result<Value, String> {
+        // Evaluate all arguments
+        let mut arg_values = Vec::new();
+        for arg in args {
+            arg_values.push(Box::pin(self.eval(arg)).await?);
+        }
+
+        // Save current variable scope
+        let saved_vars = self.runtime.vars.clone();
+
+        // Try each clause in order
+        for clause in &func_group.clauses {
+            // Check if patterns match arguments
+            if clause.param_patterns.len() != arg_values.len() {
+                continue;
+            }
+
+            let mut all_match = true;
+            let mut bindings = std::collections::HashMap::new();
+
+            // Check if all patterns match
+            for (pattern, value) in clause.param_patterns.iter().zip(arg_values.iter()) {
+                if !PatternMatcher::matches(pattern, value) {
+                    all_match = false;
+                    break;
+                }
+
+                // Extract bindings from this pattern
+                let pattern_bindings = PatternMatcher::extract_bindings(pattern, value)
+                    .map_err(|e| format!("Pattern binding error: {}", e))?;
+                bindings.extend(pattern_bindings);
+            }
+
+            if !all_match {
+                continue;
+            }
+
+            // Add bindings to scope
+            for (name, val) in &bindings {
+                self.runtime.set_var(name.clone(), val.clone());
+            }
+
+            // Check guard if present
+            if let Some(guard) = &clause.guard {
+                let guard_result = Box::pin(self.eval(guard)).await?;
+                if !matches!(guard_result, Value::Bool(true)) {
+                    // Restore and try next clause
+                    self.runtime.vars = saved_vars.clone();
+                    continue;
+                }
+            }
+
+            // Execute body
+            let result = Box::pin(self.eval(&clause.body)).await;
+
+            // Restore scope
+            self.runtime.vars = saved_vars;
+
+            return result;
+        }
+
+        Err(format!(
+            "No matching clause for function '{}' with {} arguments",
+            func_group.name,
+            arg_values.len()
+        ))
     }
 }
 
@@ -948,5 +1093,366 @@ mod tests {
         };
         let result = interp.eval(&node).await.unwrap();
         assert_eq!(result, Value::String("b".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_expression_execution_mode() {
+        let mut interp = create_test_interpreter();
+
+        // Define a simple function with expression body: double(x) = x * 2
+        let func = IRFunction {
+            name: "double".to_string(),
+            params: vec!["x".to_string()],
+            return_type: None,
+            properties: std::collections::HashMap::new(),
+            execution: IRExecution::Expression {
+                body: Box::new(IRNode::BinaryOp {
+                    left: Box::new(IRNode::Variable("x".to_string())),
+                    op: "*".to_string(),
+                    right: Box::new(IRNode::Int(2)),
+                }),
+            },
+        };
+
+        // Register the function
+        interp.runtime.functions.insert("double".to_string(), func);
+
+        // Call the function with argument 21
+        let call_node = IRNode::FunctionCall {
+            name: "double".to_string(),
+            args: vec![IRNode::Int(21)],
+        };
+
+        let result = interp.eval(&call_node).await.unwrap();
+        assert_eq!(result, Value::Int(42));
+    }
+
+    #[tokio::test]
+    async fn test_expression_execution_recursive() {
+        let mut interp = create_test_interpreter();
+
+        // Define factorial function: fact(n) = if n == 0 { 1 } else { n * fact(n - 1) }
+        let func = IRFunction {
+            name: "fact".to_string(),
+            params: vec!["n".to_string()],
+            return_type: None,
+            properties: std::collections::HashMap::new(),
+            execution: IRExecution::Expression {
+                body: Box::new(IRNode::Conditional {
+                    condition: Box::new(IRNode::BinaryOp {
+                        left: Box::new(IRNode::Variable("n".to_string())),
+                        op: "==".to_string(),
+                        right: Box::new(IRNode::Int(0)),
+                    }),
+                    then_expr: Box::new(IRNode::Int(1)),
+                    else_expr: Box::new(IRNode::BinaryOp {
+                        left: Box::new(IRNode::Variable("n".to_string())),
+                        op: "*".to_string(),
+                        right: Box::new(IRNode::FunctionCall {
+                            name: "fact".to_string(),
+                            args: vec![IRNode::BinaryOp {
+                                left: Box::new(IRNode::Variable("n".to_string())),
+                                op: "-".to_string(),
+                                right: Box::new(IRNode::Int(1)),
+                            }],
+                        }),
+                    }),
+                }),
+            },
+        };
+
+        // Register the function
+        interp.runtime.functions.insert("fact".to_string(), func);
+
+        // Call fact(5) should return 120
+        let call_node = IRNode::FunctionCall {
+            name: "fact".to_string(),
+            args: vec![IRNode::Int(5)],
+        };
+
+        let result = interp.eval(&call_node).await.unwrap();
+        assert_eq!(result, Value::Int(120));
+    }
+
+    #[tokio::test]
+    async fn test_match_expression() {
+        use dsl_ir::{IRMatchCase, IRPattern};
+
+        let mut interp = create_test_interpreter();
+
+        // match 42 { 0 => "zero", 42 => "answer", _ => "other" }
+        let node = IRNode::Match {
+            scrutinee: Box::new(IRNode::Int(42)),
+            cases: vec![
+                IRMatchCase {
+                    pattern: IRPattern::Literal(Box::new(IRNode::Int(0))),
+                    guard: None,
+                    body: Box::new(IRNode::String("zero".to_string())),
+                },
+                IRMatchCase {
+                    pattern: IRPattern::Literal(Box::new(IRNode::Int(42))),
+                    guard: None,
+                    body: Box::new(IRNode::String("answer".to_string())),
+                },
+                IRMatchCase {
+                    pattern: IRPattern::Any,
+                    guard: None,
+                    body: Box::new(IRNode::String("other".to_string())),
+                },
+            ],
+        };
+
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::String("answer".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_match_with_binding() {
+        use dsl_ir::{IRMatchCase, IRPattern};
+
+        let mut interp = create_test_interpreter();
+
+        // match 42 { x => x * 2 }
+        let node = IRNode::Match {
+            scrutinee: Box::new(IRNode::Int(42)),
+            cases: vec![IRMatchCase {
+                pattern: IRPattern::Variable("x".to_string()),
+                guard: None,
+                body: Box::new(IRNode::BinaryOp {
+                    left: Box::new(IRNode::Variable("x".to_string())),
+                    op: "*".to_string(),
+                    right: Box::new(IRNode::Int(2)),
+                }),
+            }],
+        };
+
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::Int(84));
+    }
+
+    #[tokio::test]
+    async fn test_match_with_guard() {
+        use dsl_ir::{IRMatchCase, IRPattern};
+
+        let mut interp = create_test_interpreter();
+
+        // match 42 { x if x > 40 => "big", x => "small" }
+        let node = IRNode::Match {
+            scrutinee: Box::new(IRNode::Int(42)),
+            cases: vec![
+                IRMatchCase {
+                    pattern: IRPattern::Variable("x".to_string()),
+                    guard: Some(Box::new(IRNode::BinaryOp {
+                        left: Box::new(IRNode::Variable("x".to_string())),
+                        op: ">".to_string(),
+                        right: Box::new(IRNode::Int(40)),
+                    })),
+                    body: Box::new(IRNode::String("big".to_string())),
+                },
+                IRMatchCase {
+                    pattern: IRPattern::Variable("x".to_string()),
+                    guard: None,
+                    body: Box::new(IRNode::String("small".to_string())),
+                },
+            ],
+        };
+
+        let result = interp.eval(&node).await.unwrap();
+        assert_eq!(result, Value::String("big".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_function_overloading_factorial() {
+        use dsl_ir::{IRFunctionClause, IRFunctionGroup, IRPattern};
+
+        let mut interp = create_test_interpreter();
+
+        // Define factorial with two clauses:
+        // function factorial(0) { 1 }
+        // function factorial(n) { n * factorial(n - 1) }
+        let func_group = IRFunctionGroup {
+            name: "factorial".to_string(),
+            clauses: vec![
+                // Base case: factorial(0) = 1
+                IRFunctionClause {
+                    param_patterns: vec![IRPattern::Literal(Box::new(IRNode::Int(0)))],
+                    guard: None,
+                    body: Box::new(IRNode::Int(1)),
+                },
+                // Recursive case: factorial(n) = n * factorial(n - 1)
+                IRFunctionClause {
+                    param_patterns: vec![IRPattern::Variable("n".to_string())],
+                    guard: None,
+                    body: Box::new(IRNode::BinaryOp {
+                        left: Box::new(IRNode::Variable("n".to_string())),
+                        op: "*".to_string(),
+                        right: Box::new(IRNode::FunctionCall {
+                            name: "factorial".to_string(),
+                            args: vec![IRNode::BinaryOp {
+                                left: Box::new(IRNode::Variable("n".to_string())),
+                                op: "-".to_string(),
+                                right: Box::new(IRNode::Int(1)),
+                            }],
+                        }),
+                    }),
+                },
+            ],
+            return_type: None,
+        };
+
+        // Register the function group
+        interp.runtime.function_groups.insert("factorial".to_string(), func_group);
+
+        // Test factorial(0) = 1
+        let call_0 = IRNode::FunctionCall {
+            name: "factorial".to_string(),
+            args: vec![IRNode::Int(0)],
+        };
+        let result_0 = interp.eval(&call_0).await.unwrap();
+        assert_eq!(result_0, Value::Int(1));
+
+        // Test factorial(5) = 120
+        let call_5 = IRNode::FunctionCall {
+            name: "factorial".to_string(),
+            args: vec![IRNode::Int(5)],
+        };
+        let result_5 = interp.eval(&call_5).await.unwrap();
+        assert_eq!(result_5, Value::Int(120));
+    }
+
+    #[tokio::test]
+    async fn test_function_overloading_list_length() {
+        use dsl_ir::{IRFunctionClause, IRFunctionGroup, IRPattern};
+
+        let mut interp = create_test_interpreter();
+
+        // Define length with two clauses:
+        // function length([]) { 0 }
+        // function length([_, ...tail]) { 1 + length(tail) }
+        let func_group = IRFunctionGroup {
+            name: "length".to_string(),
+            clauses: vec![
+                // Base case: length([]) = 0
+                IRFunctionClause {
+                    param_patterns: vec![IRPattern::List {
+                        patterns: vec![],
+                        rest: None,
+                    }],
+                    guard: None,
+                    body: Box::new(IRNode::Int(0)),
+                },
+                // Recursive case: length([_, ...tail]) = 1 + length(tail)
+                IRFunctionClause {
+                    param_patterns: vec![IRPattern::List {
+                        patterns: vec![IRPattern::Any],
+                        rest: Some("tail".to_string()),
+                    }],
+                    guard: None,
+                    body: Box::new(IRNode::BinaryOp {
+                        left: Box::new(IRNode::Int(1)),
+                        op: "+".to_string(),
+                        right: Box::new(IRNode::FunctionCall {
+                            name: "length".to_string(),
+                            args: vec![IRNode::Variable("tail".to_string())],
+                        }),
+                    }),
+                },
+            ],
+            return_type: None,
+        };
+
+        // Register the function group
+        interp.runtime.function_groups.insert("length".to_string(), func_group);
+
+        // Test length([]) = 0
+        let call_empty = IRNode::FunctionCall {
+            name: "length".to_string(),
+            args: vec![IRNode::List(vec![])],
+        };
+        let result_empty = interp.eval(&call_empty).await.unwrap();
+        assert_eq!(result_empty, Value::Int(0));
+
+        // Test length([1, 2, 3]) = 3
+        let call_list = IRNode::FunctionCall {
+            name: "length".to_string(),
+            args: vec![IRNode::List(vec![
+                IRNode::Int(1),
+                IRNode::Int(2),
+                IRNode::Int(3),
+            ])],
+        };
+        let result_list = interp.eval(&call_list).await.unwrap();
+        assert_eq!(result_list, Value::Int(3));
+    }
+
+    #[tokio::test]
+    async fn test_function_overloading_with_guard() {
+        use dsl_ir::{IRFunctionClause, IRFunctionGroup, IRPattern};
+
+        let mut interp = create_test_interpreter();
+
+        // Define classify with guards:
+        // function classify(n) if n < 0 { "negative" }
+        // function classify(0) { "zero" }
+        // function classify(n) if n > 0 { "positive" }
+        let func_group = IRFunctionGroup {
+            name: "classify".to_string(),
+            clauses: vec![
+                // classify(n) if n < 0 = "negative"
+                IRFunctionClause {
+                    param_patterns: vec![IRPattern::Variable("n".to_string())],
+                    guard: Some(Box::new(IRNode::BinaryOp {
+                        left: Box::new(IRNode::Variable("n".to_string())),
+                        op: "<".to_string(),
+                        right: Box::new(IRNode::Int(0)),
+                    })),
+                    body: Box::new(IRNode::String("negative".to_string())),
+                },
+                // classify(0) = "zero"
+                IRFunctionClause {
+                    param_patterns: vec![IRPattern::Literal(Box::new(IRNode::Int(0)))],
+                    guard: None,
+                    body: Box::new(IRNode::String("zero".to_string())),
+                },
+                // classify(n) if n > 0 = "positive"
+                IRFunctionClause {
+                    param_patterns: vec![IRPattern::Variable("n".to_string())],
+                    guard: Some(Box::new(IRNode::BinaryOp {
+                        left: Box::new(IRNode::Variable("n".to_string())),
+                        op: ">".to_string(),
+                        right: Box::new(IRNode::Int(0)),
+                    })),
+                    body: Box::new(IRNode::String("positive".to_string())),
+                },
+            ],
+            return_type: None,
+        };
+
+        // Register the function group
+        interp.runtime.function_groups.insert("classify".to_string(), func_group);
+
+        // Test classify(-5) = "negative"
+        let call_neg = IRNode::FunctionCall {
+            name: "classify".to_string(),
+            args: vec![IRNode::Int(-5)],
+        };
+        let result_neg = interp.eval(&call_neg).await.unwrap();
+        assert_eq!(result_neg, Value::String("negative".to_string()));
+
+        // Test classify(0) = "zero"
+        let call_zero = IRNode::FunctionCall {
+            name: "classify".to_string(),
+            args: vec![IRNode::Int(0)],
+        };
+        let result_zero = interp.eval(&call_zero).await.unwrap();
+        assert_eq!(result_zero, Value::String("zero".to_string()));
+
+        // Test classify(42) = "positive"
+        let call_pos = IRNode::FunctionCall {
+            name: "classify".to_string(),
+            args: vec![IRNode::Int(42)],
+        };
+        let result_pos = interp.eval(&call_pos).await.unwrap();
+        assert_eq!(result_pos, Value::String("positive".to_string()));
     }
 }

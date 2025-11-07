@@ -994,39 +994,15 @@ dependencies = [
 
 [[package]]
 name = "dsl-autocomplete"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "nucleo-matcher",
  "prefix-tree-rs",
 ]
 
 [[package]]
-name = "dsl-codegen"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dsl-ir",
- "indexmap 2.12.0",
- "serde_json",
-]
-
-[[package]]
-name = "dsl-compiler"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "dsl-codegen",
- "dsl-core",
- "dsl-ir",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "dsl-core"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "dsl-ir",
@@ -1068,6 +1044,7 @@ name = "dsl-ir"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "duckdb",
  "indexmap 2.12.0",
  "rmp-serde",
  "serde",
@@ -1077,10 +1054,12 @@ dependencies = [
 
 [[package]]
 name = "dsl-repl"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "dsl-core",
+ "dsl-interpreter",
+ "dsl-ir",
  "dsl-tui",
  "reqwest",
  "serde",
@@ -1090,25 +1069,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsl-runtime"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dsl-interpreter",
- "dsl-ir",
- "duckdb",
- "futures",
- "indexmap 2.12.0",
- "reqwest",
- "serde",
- "serde_json",
- "simplify_baml",
- "tokio",
-]
-
-[[package]]
 name = "dsl-tui"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "arboard",
  "crossterm",

@@ -93,7 +93,7 @@ pub async fn self_update(current_version: &str) -> Result<(), Box<dyn std::error
     // Extract the archive
     println!("Extracting...");
     let status = Command::new("tar")
-        .args(&["xzf", &archive_name])
+        .args(["xzf", &archive_name])
         .current_dir(temp_dir.path())
         .status()?;
 
@@ -116,7 +116,7 @@ pub async fn self_update(current_version: &str) -> Result<(), Box<dyn std::error
     if needs_sudo {
         println!("This operation requires administrator privileges.");
         let status = Command::new("sudo")
-            .args(&["mv", "-f"])
+            .args(["mv", "-f"])
             .arg(&new_binary)
             .arg(&current_exe)
             .status()?;

@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_suggestion_ordering() {
-        let mut suggestions = vec![
+        let mut suggestions = [
             Suggestion::new("foo", SuggestionKind::Variable),
             Suggestion::new("bar", SuggestionKind::Function).priority(10),
             Suggestion::new("baz", SuggestionKind::Keyword),

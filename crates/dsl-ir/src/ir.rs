@@ -65,6 +65,13 @@ pub enum IRNode {
         binding: Option<IRBinding>,
     },
 
+    // Pattern matching (Phase 10B)
+    /// Match expression: match value { pattern => expr, ... }
+    Match {
+        scrutinee: Box<IRNode>,
+        cases: Vec<IRMatchCase>,
+    },
+
     // Agent primitives (Phase 2)
     /// Spawn a new agent instance
     SpawnAgent {
@@ -146,9 +153,19 @@ pub enum IRBinding {
     List(Vec<String>),
 }
 
+/// Match case with pattern, optional guard, and body
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IRMatchCase {
+    pub pattern: IRPattern,
+    pub guard: Option<Box<IRNode>>, // Optional: if condition
+    pub body: Box<IRNode>,
+}
+
 /// Function execution modes
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum IRExecution {
+    /// Expression-based execution (general-purpose functions)
+    Expression { body: Box<IRNode> },
     /// LLM-based execution with prompt
     LLM {
         prompt: String,
@@ -201,6 +218,22 @@ pub enum IRProperty {
     Bool(bool),
 }
 
+/// Function with multiple clauses (overloading/pattern matching)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IRFunctionGroup {
+    pub name: String,
+    pub clauses: Vec<IRFunctionClause>,
+    pub return_type: Option<FieldType>,
+}
+
+/// Single clause in an overloaded function
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IRFunctionClause {
+    pub param_patterns: Vec<IRPattern>,
+    pub guard: Option<Box<IRNode>>,
+    pub body: Box<IRNode>,
+}
+
 /// Complete IR container for a DSL program
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IR {
@@ -212,6 +245,8 @@ pub struct IR {
     pub enums: Vec<Enum>,
     /// User-defined functions
     pub functions: Vec<IRFunction>,
+    /// Overloaded functions (multiple clauses with pattern matching)
+    pub function_groups: Vec<IRFunctionGroup>,
     /// Agent definitions (future extension)
     pub agents: Vec<IRAgent>,
     /// Entry point expression
@@ -236,15 +271,41 @@ pub struct IRMessageHandler {
     pub body: IRNode,
 }
 
-/// Pattern matching for message reception (Phase 2)
+/// Pattern matching - general language feature
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum IRPattern {
-    /// Match by type
-    Type(FieldType),
-    /// Bind to variable with pattern
-    Binding(String, Box<IRPattern>),
-    /// Match any message
+    /// Wildcard pattern: _
     Any,
+
+    /// Literal pattern: 0, "hello", true
+    Literal(Box<IRNode>),
+
+    /// Variable binding: x, name
+    Variable(String),
+
+    /// Binding with nested pattern: x @ pattern
+    Binding(String, Box<IRPattern>),
+
+    /// Type pattern: String, Int(x), Person(p)
+    Type {
+        type_name: String,
+        inner: Option<Box<IRPattern>>,
+    },
+
+    /// List pattern: [], [a], [a, b], [head, ...tail]
+    List {
+        patterns: Vec<IRPattern>,
+        rest: Option<String>, // For ...tail
+    },
+
+    /// Map pattern: {}, {x}, {x, y}, {name, age}
+    Map {
+        fields: Vec<(String, IRPattern)>,
+        strict: bool, // true = must match exactly, false = can have extra fields
+    },
+
+    /// Tuple pattern: (a, b, c)
+    Tuple(Vec<IRPattern>),
 }
 
 /// Context store for shared agent state (Phase 2)

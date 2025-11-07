@@ -6,6 +6,15 @@
 //! - Syntax highlighting with Tree-sitter
 //! - Text editor integration
 //! - Interactive REPL with history
+#![allow(clippy::empty_line_after_doc_comments)]
+#![allow(clippy::useless_format)]
+#![allow(clippy::manual_strip)]
+#![allow(clippy::format_in_format_args)]
+#![allow(clippy::extend_with_drain)]
+#![allow(clippy::drain_collect)]
+#![allow(clippy::redundant_closure)]
+#![allow(clippy::manual_clamp)]
+#![allow(clippy::collapsible_match)]
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},

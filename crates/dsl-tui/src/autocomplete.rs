@@ -7,7 +7,6 @@ use dsl_autocomplete::{
     },
     AutocompleteEngine, Suggestion,
 };
-use dsl_core::Evaluator;
 use dsl_interpreter::Runtime;
 use std::sync::Arc;
 
@@ -20,38 +19,8 @@ pub struct AutocompleteState {
 }
 
 impl AutocompleteState {
-    /// Create a new autocomplete state (deprecated - use new_with_runtime)
-    pub fn new(evaluator: &Evaluator) -> Self {
-        let mut engine = AutocompleteEngine::new();
-
-        // Register keyword provider
-        engine.register_provider(Box::new(KeywordProvider::new()));
-
-        // Register command provider
-        engine.register_provider(Box::new(CommandProvider::new()));
-
-        // Register function provider
-        let func_source = Arc::new(EvaluatorFunctionSource::new(evaluator));
-        engine.register_provider(Box::new(FunctionProvider::new(func_source)));
-
-        // Register variable provider
-        let var_source = Arc::new(EvaluatorVariableSource::new(evaluator));
-        engine.register_provider(Box::new(VariableProvider::new(var_source)));
-
-        // Register type provider
-        let type_source = Arc::new(EvaluatorTypeSource::new(evaluator));
-        engine.register_provider(Box::new(TypeProvider::new(type_source)));
-
-        Self {
-            engine,
-            suggestions: Vec::new(),
-            selected_index: 0,
-            show_popup: false,
-        }
-    }
-
     /// Create a new autocomplete state from Runtime
-    pub fn new_with_runtime(runtime: &Runtime) -> Self {
+    pub fn new(runtime: &Runtime) -> Self {
         let mut engine = AutocompleteEngine::new();
 
         // Register keyword provider
@@ -148,131 +117,6 @@ impl AutocompleteState {
     }
 }
 
-/// Item source that reads from Evaluator functions
-struct EvaluatorFunctionSource {
-    functions: Vec<(String, Option<String>)>,
-}
-
-impl EvaluatorFunctionSource {
-    fn new(evaluator: &Evaluator) -> Self {
-        let mut functions = Vec::new();
-
-        // Add builtin functions (case-insensitive, but we show them with capital first letter)
-        functions.push(("Upper".to_string(), Some("(String) -> String".to_string())));
-        functions.push(("Lower".to_string(), Some("(String) -> String".to_string())));
-        functions.push(("Length".to_string(), Some("(String) -> Int".to_string())));
-        functions.push((
-            "Join".to_string(),
-            Some("(List, String) -> String".to_string()),
-        ));
-        functions.push(("Ask".to_string(), Some("(String) -> String".to_string())));
-        functions.push((
-            "RenderMarkdown".to_string(),
-            Some("(String) -> Markdown".to_string()),
-        ));
-        functions.push((
-            "ExtractPerson".to_string(),
-            Some("(String) -> Person".to_string()),
-        ));
-        functions.push((
-            "ExtractAs".to_string(),
-            Some("(String, Type) -> Type".to_string()),
-        ));
-        functions.push(("SQL".to_string(), Some("(String) -> Table".to_string())));
-        functions.push(("Par".to_string(), Some("(...) -> List".to_string())));
-        functions.push(("Not".to_string(), Some("(Bool) -> Bool".to_string())));
-        functions.push((
-            "GenerateBarChart".to_string(),
-            Some("(List, String?) -> Image".to_string()),
-        ));
-        functions.push((
-            "GenerateLineChart".to_string(),
-            Some("(List, String?) -> Image".to_string()),
-        ));
-        functions.push((
-            "GeneratePieChart".to_string(),
-            Some("(List, String?) -> Image".to_string()),
-        ));
-
-        // Add user-defined functions
-        for (name, func_def) in evaluator.functions.iter() {
-            let detail = if let Some(return_type) = &func_def.return_type {
-                Some(format!(
-                    "({}) -> {}",
-                    func_def.params.join(", "),
-                    format!("{:?}", return_type)
-                ))
-            } else {
-                Some(format!("({})", func_def.params.join(", ")))
-            };
-            functions.push((name.clone(), detail));
-        }
-
-        Self { functions }
-    }
-}
-
-impl ItemSource for EvaluatorFunctionSource {
-    fn items(&self) -> Vec<(String, Option<String>)> {
-        self.functions.clone()
-    }
-}
-
-/// Item source that reads from Evaluator variables
-struct EvaluatorVariableSource {
-    variables: Vec<(String, Option<String>)>,
-}
-
-impl EvaluatorVariableSource {
-    fn new(evaluator: &Evaluator) -> Self {
-        let variables = evaluator
-            .vars
-            .iter()
-            .map(|(name, value)| {
-                let detail = Some(value.type_name().to_string());
-                (name.clone(), detail)
-            })
-            .collect();
-
-        Self { variables }
-    }
-}
-
-impl ItemSource for EvaluatorVariableSource {
-    fn items(&self) -> Vec<(String, Option<String>)> {
-        self.variables.clone()
-    }
-}
-
-/// Item source that reads from Evaluator types
-struct EvaluatorTypeSource {
-    types: Vec<(String, Option<String>)>,
-}
-
-impl EvaluatorTypeSource {
-    fn new(evaluator: &Evaluator) -> Self {
-        let mut types = Vec::new();
-
-        // Add classes
-        for class in evaluator.types.all_classes() {
-            types.push((class.name.clone(), Some("type".to_string())));
-        }
-
-        // Add enums
-        for enum_def in evaluator.types.all_enums() {
-            types.push((enum_def.name.clone(), Some("enum".to_string())));
-        }
-
-        Self { types }
-    }
-}
-
-impl ItemSource for EvaluatorTypeSource {
-    fn items(&self) -> Vec<(String, Option<String>)> {
-        self.types.clone()
-    }
-}
-
 /// Item source that reads from Runtime functions
 struct RuntimeFunctionSource {
     functions: Vec<(String, Option<String>)>,
@@ -280,47 +124,26 @@ struct RuntimeFunctionSource {
 
 impl RuntimeFunctionSource {
     fn new(runtime: &Runtime) -> Self {
-        let mut functions = Vec::new();
-
-        // Add builtin functions (case-insensitive, but we show them with capital first letter)
-        functions.push(("Upper".to_string(), Some("(String) -> String".to_string())));
-        functions.push(("Lower".to_string(), Some("(String) -> String".to_string())));
-        functions.push(("Length".to_string(), Some("(String) -> Int".to_string())));
-        functions.push((
-            "Join".to_string(),
-            Some("(List, String) -> String".to_string()),
-        ));
-        functions.push(("Ask".to_string(), Some("(String) -> String".to_string())));
-        functions.push((
-            "RenderMarkdown".to_string(),
-            Some("(String) -> Markdown".to_string()),
-        ));
-        functions.push((
-            "ExtractPerson".to_string(),
-            Some("(String) -> Person".to_string()),
-        ));
-        functions.push((
-            "ExtractAs".to_string(),
-            Some("(String, Type) -> Type".to_string()),
-        ));
-        functions.push(("SQL".to_string(), Some("(String) -> Table".to_string())));
-        functions.push(("Par".to_string(), Some("(...) -> List".to_string())));
-        functions.push(("Not".to_string(), Some("(Bool) -> Bool".to_string())));
-        functions.push((
-            "GenerateBarChart".to_string(),
-            Some("(List, String?) -> Image".to_string()),
-        ));
-        functions.push((
-            "GenerateLineChart".to_string(),
-            Some("(List, String?) -> Image".to_string()),
-        ));
-        functions.push((
-            "GeneratePieChart".to_string(),
-            Some("(List, String?) -> Image".to_string()),
-        ));
+        let mut functions = vec![
+            ("Upper".to_string(), Some("(String) -> String".to_string())),
+            ("Lower".to_string(), Some("(String) -> String".to_string())),
+            ("Length".to_string(), Some("(String) -> Int".to_string())),
+            ("Join".to_string(), Some("(List, String) -> String".to_string())),
+            ("Ask".to_string(), Some("(String) -> String".to_string())),
+            ("RenderMarkdown".to_string(), Some("(String) -> Markdown".to_string())),
+            ("ExtractPerson".to_string(), Some("(String) -> Person".to_string())),
+            ("ExtractAs".to_string(), Some("(String, Type) -> Type".to_string())),
+            ("SQL".to_string(), Some("(String) -> Table".to_string())),
+            ("Par".to_string(), Some("(...) -> List".to_string())),
+            ("Not".to_string(), Some("(Bool) -> Bool".to_string())),
+            ("GenerateBarChart".to_string(), Some("(List, String?) -> Image".to_string())),
+            ("GenerateLineChart".to_string(), Some("(List, String?) -> Image".to_string())),
+            ("GeneratePieChart".to_string(), Some("(List, String?) -> Image".to_string())),
+        ];
 
         // Add user-defined functions
         for (name, func_def) in runtime.functions.iter() {
+            #[allow(clippy::format_in_format_args)]
             let detail = if let Some(return_type) = &func_def.return_type {
                 Some(format!(
                     "({}) -> {}",

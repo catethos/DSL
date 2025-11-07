@@ -406,6 +406,182 @@ Analyze(clean)  // Final step
 | `:save <file>` | Save session |
 | `:load <file>` | Load session |
 
+## Pattern Matching ✅
+
+**Status**: ✅ **Fully Functional** - Grammar, parser, and runtime all working!
+
+Pattern matching is now available in the DSL, enabling powerful data destructuring, conditional logic, and elegant function definitions.
+
+### Match Expressions
+
+Match expressions provide a clean way to handle different cases:
+
+```javascript
+match 5 {
+    0 => "zero",
+    1 => "one",
+    n => "other"
+}
+// Returns: "other"
+
+match factorial(5) {
+    120 => "correct!",
+    n => "wrong: got " + n
+}
+// Returns: "correct!"
+```
+
+### Pattern Types
+
+The following patterns are supported:
+
+| Pattern | Example | Description |
+|---------|---------|-------------|
+| **Wildcard** | `_` | Matches anything |
+| **Literal** | `0`, `"hello"`, `true` | Matches specific values |
+| **Variable** | `x`, `name` | Binds to a variable |
+| **Binding** | `x @ pattern` | Bind and match nested pattern |
+| **Type** | `Int(x)`, `String(s)` | Type-based matching |
+| **List** | `[head, ...tail]` | List destructuring |
+| **Map** | `{name, age}` | Map destructuring |
+| **Tuple** | `(a, b, c)` | Tuple destructuring |
+
+### Guards
+
+Patterns can include guards for additional conditions:
+
+```javascript
+match x {
+    n if n < 0 => "negative"
+    n if n > 0 => "positive"
+    _ => "zero"
+}
+```
+
+### List Destructuring
+
+Extract elements from lists with rest patterns:
+
+```javascript
+match numbers {
+    [] => "empty"
+    [x] => "single element"
+    [x, y] => "pair"
+    [head, ...tail] => "head and rest"
+}
+```
+
+### Map Destructuring
+
+Extract fields from maps:
+
+```javascript
+match user {
+    {name, age} => "User with name and age"
+    {name} => "User with only name"
+    _ => "Unknown structure"
+}
+```
+
+### Expression Functions
+
+Functions can now have expression bodies for general-purpose computation:
+
+```javascript
+// Simple expression function
+function double(x) { x * 2 }
+function square(x) { x * x }
+
+// Recursive expression function
+function factorial(n) {
+    if n == 0 { 1 } else { n * factorial(n - 1) }
+}
+```
+
+### Multi-Arm Function Definitions ✅
+
+Pattern matching enables elegant function overloading with multiple arms:
+
+```javascript
+// Factorial using pattern matching
+def factorial(0) { 1 }
+def factorial(n) { n * factorial(n - 1) }
+
+factorial(5)  // 120
+factorial(0)  // 1
+
+// FizzBuzz with patterns
+def fizzbuzz(n) if n % 15 == 0 { "FizzBuzz" }
+def fizzbuzz(n) if n % 3 == 0  { "Fizz" }
+def fizzbuzz(n) if n % 5 == 0  { "Buzz" }
+def fizzbuzz(n) { n }
+```
+
+**How it works:**
+- Each `def` with the same name adds a new clause to the function
+- The interpreter tries clauses **in order** until one matches
+- First matching clause is executed
+- If no clause matches, an error is thrown
+
+### Implementation Status
+
+- ✅ **IR Types**: IRPattern, IRMatchCase, IRFunctionGroup
+- ✅ **Pattern Matcher**: Full pattern matching engine
+- ✅ **Match Evaluation**: Match expressions work in interpreter
+- ✅ **Grammar**: Pattern syntax fully integrated
+- ✅ **Parser**: Parses multi-arm function definitions
+- ✅ **Function Overloading**: Full runtime support with clause merging
+- ✅ **TUI Integration**: REPL merges clauses correctly
+
+**All pattern matching features are now fully functional!** 🎉
+
+### Example Use Cases
+
+Pattern matching enables many powerful patterns:
+
+1. **Cleaner Conditionals** - Replace nested if/else with match
+```javascript
+match statusCode {
+    200 => "OK",
+    404 => "Not Found",
+    500 => "Server Error",
+    code => "Unknown: " + code
+}
+```
+
+2. **Recursive Algorithms** - Elegant function definitions
+```javascript
+def sum([]) { 0 }
+def sum([x, ...rest]) { x + sum(rest) }
+
+def fibonacci(0) { 0 }
+def fibonacci(1) { 1 }
+def fibonacci(n) { fibonacci(n-1) + fibonacci(n-2) }
+```
+
+3. **Type-based Dispatch** - Different behavior for different inputs
+```javascript
+def process(0) { "zero special case" }
+def process(n) if n < 0 { "negative: " + n }
+def process(n) { "positive: " + n }
+```
+
+4. **Data Validation** - Pattern guards for constraints
+```javascript
+def validateAge(age) if age < 0 { "Error: negative age" }
+def validateAge(age) if age > 150 { "Error: unrealistic age" }
+def validateAge(age) { "Valid age: " + age }
+```
+
+5. **State Machines** - Clear state transitions
+```javascript
+def transition("idle", "start") { "running" }
+def transition("running", "pause") { "paused" }
+def transition("paused", "resume") { "running" }
+def transition("running", "stop") { "idle" }
+def transition(state, action) { "Invalid: " + state + " -> " + action }
+```
+
 ## Next Steps
 
 - **[12-Implementation-Details.md](12-Implementation-Details.md)** - Technical internals

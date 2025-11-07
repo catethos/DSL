@@ -1,10 +1,10 @@
-pub mod type_registry;
 pub mod runtime;
-pub mod sql;
 pub mod builtins;
 pub mod interpreter;
+pub mod pattern;
 
 pub use runtime::Runtime;
-pub use type_registry::TypeRegistry;
+pub use dsl_ir::{TypeRegistry, SQLExecutor};
 pub use interpreter::Interpreter;
 pub use builtins::BuiltinFunctions;
+pub use pattern::PatternMatcher;

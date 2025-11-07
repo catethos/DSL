@@ -87,7 +87,7 @@ impl Default for App {
 impl App {
     pub fn new() -> Self {
         let interpreter = Interpreter::new().expect("Failed to initialize interpreter");
-        let autocomplete = AutocompleteState::new_with_runtime(&interpreter.runtime);
+        let autocomplete = AutocompleteState::new(&interpreter.runtime);
 
         // Initialize image picker for terminal graphics
         let mut image_picker = Picker::from_termios().unwrap_or_else(|_| {
@@ -923,6 +923,11 @@ impl App {
             return self.handle_debug_command();
         }
 
+        // Check for declarations (type, enum, def)
+        if input.starts_with("type ") || input.starts_with("enum ") || input.starts_with("def ") {
+            return self.handle_declaration(input).await;
+        }
+
         // Parse the input to AST
         let ast = parse_expr(input).map_err(|e| format!("Parse error: {}", e))?;
 
@@ -936,6 +941,80 @@ impl App {
         // For now, we don't track variable names in IR (future enhancement)
         // The interpreter handles bindings internally
         Ok((value, None))
+    }
+
+    /// Handle declarations (type, enum, def)
+    async fn handle_declaration(&mut self, input: &str) -> Result<(Value, Option<String>), String> {
+        use dsl_core::{parse_program, compile_program_to_ir};
+
+        // Parse the declaration as a program
+        let program = parse_program(input).map_err(|e| format!("Parse error: {}", e))?;
+
+        // Compile to IR
+        let ir = compile_program_to_ir(&program).map_err(|e| format!("Compile error: {}", e))?;
+
+        // Register types
+        for class in &ir.types {
+            self.interpreter.runtime.types.register_class(class.clone());
+        }
+
+        // Register enums
+        for enum_def in &ir.enums {
+            self.interpreter.runtime.types.register_enum(enum_def.clone());
+        }
+
+        // Rebuild BAML runtime with new types
+        if !ir.types.is_empty() || !ir.enums.is_empty() {
+            self.interpreter.rebuild_runtime()
+                .map_err(|e| format!("Failed to rebuild runtime: {}", e))?;
+        }
+
+        // Register traditional functions
+        for func in &ir.functions {
+            self.interpreter.runtime.functions.insert(func.name.clone(), func.clone());
+        }
+
+        // Register pattern-based functions (function groups)
+        // Merge clauses if a function group with the same name already exists
+        for func_group in &ir.function_groups {
+            if let Some(existing_group) = self.interpreter.runtime.function_groups.get_mut(&func_group.name) {
+                // Merge clauses into existing function group
+                existing_group.clauses.extend(func_group.clauses.clone());
+            } else {
+                // Create new function group
+                self.interpreter.runtime.function_groups.insert(func_group.name.clone(), func_group.clone());
+            }
+        }
+
+        // Generate a summary message
+        let mut messages = Vec::new();
+        if !ir.types.is_empty() {
+            messages.push(format!("{} type(s) registered", ir.types.len()));
+        }
+        if !ir.enums.is_empty() {
+            messages.push(format!("{} enum(s) registered", ir.enums.len()));
+        }
+        if !ir.functions.is_empty() {
+            messages.push(format!("{} function(s) defined", ir.functions.len()));
+        }
+        if !ir.function_groups.is_empty() {
+            for func_group in &ir.function_groups {
+                // Show the total clause count (after merging)
+                let total_clauses = self.interpreter.runtime.function_groups
+                    .get(&func_group.name)
+                    .map(|g| g.clauses.len())
+                    .unwrap_or(0);
+                messages.push(format!("Function '{}' defined with {} clause(s)", func_group.name, total_clauses));
+            }
+        }
+
+        let message = if messages.is_empty() {
+            "Declaration processed".to_string()
+        } else {
+            messages.join(", ")
+        };
+
+        Ok((Value::String(message), None))
     }
 
     /// Handle :vars command
@@ -1049,7 +1128,7 @@ impl App {
 
     /// Refresh autocomplete providers (call after defining new functions/types)
     pub fn refresh_autocomplete(&mut self) {
-        self.autocomplete = AutocompleteState::new_with_runtime(&self.interpreter.runtime);
+        self.autocomplete = AutocompleteState::new(&self.interpreter.runtime);
     }
 
     /// Toggle image display on/off (for performance)

@@ -1,11 +1,11 @@
-use crate::type_registry::TypeRegistry;
-use dsl_ir::{Value, IRFunction};
+use dsl_ir::{TypeRegistry, Value, IRFunction, IRFunctionGroup};
 use std::collections::HashMap;
 
 pub struct Runtime {
     pub vars: HashMap<String, Value>,
     pub types: TypeRegistry,
     pub functions: HashMap<String, IRFunction>,
+    pub function_groups: HashMap<String, IRFunctionGroup>,
 }
 
 impl Runtime {
@@ -14,6 +14,7 @@ impl Runtime {
             vars: HashMap::new(),
             types: TypeRegistry::new(),
             functions: HashMap::new(),
+            function_groups: HashMap::new(),
         }
     }
 

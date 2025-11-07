@@ -6,6 +6,8 @@
   "workflow"
   "as"
   "let"
+  "match"
+  "if"
   "prompt"
   "sql"
   "http"
@@ -67,16 +69,27 @@
 
 ; Operators
 [
-  ">>"
+  "|>"
+  "&&"
   "||"
+  "=="
+  "!="
+  "<="
+  ">="
+  "<"
+  ">"
   "?"
   ":"
+  "=>"
+  "@"
   "->"
   ":="
+  "="
   "+"
   "-"
   "*"
   "/"
+  "!"
 ] @operator
 
 ; Delimiters
@@ -116,6 +129,22 @@
 
 ; Comments
 (comment) @comment
+
+; Pattern matching
+(pattern_wildcard) @constant.builtin
+(pattern_variable) @variable
+(pattern_binding
+  name: (identifier) @variable)
+
+; Match expressions
+(match_expr
+  "match" @keyword)
+(match_case
+  "=>" @operator)
+
+; Type instantiation
+(type_instantiation
+  type: (identifier) @type)
 
 ; Identifiers (catch-all)
 (identifier) @variable

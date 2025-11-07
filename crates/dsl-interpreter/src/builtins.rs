@@ -1,6 +1,4 @@
-use crate::sql::SQLExecutor;
-use crate::type_registry::TypeRegistry;
-use dsl_ir::Value;
+use dsl_ir::{SQLExecutor, TypeRegistry, Value};
 use anyhow::Result;
 use simplify_baml::*;
 use std::collections::HashMap;
@@ -251,16 +249,42 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             .await
             .map_err(|e| anyhow::anyhow!("LLM call failed: {}", e))?;
 
-        let result = parse_llm_response_with_ir(runtime.ir(), &raw_response, &output_type)
+        // Strip markdown code fences if present
+        let cleaned_response = Self::strip_markdown_fences(&raw_response);
+
+        let result = parse_llm_response_with_ir(runtime.ir(), &cleaned_response, &output_type)
             .map_err(|e| {
                 anyhow::anyhow!(
-                    "Failed to parse LLM response:\n  Error: {}\n  Raw response: {}",
+                    "Failed to parse LLM response using IR\n  Error: {}\n  IR Raw response: {}",
                     e,
-                    raw_response
+                    cleaned_response
                 )
             })?;
 
         Ok(Self::baml_value_to_value(result))
+    }
+
+    /// Strip markdown code fences from LLM responses
+    /// Handles both ```json ... ``` and ``` ... ``` formats
+    fn strip_markdown_fences(response: &str) -> String {
+        let trimmed = response.trim();
+
+        // Check if response is wrapped in code fences
+        if trimmed.starts_with("```") {
+            // Find the first newline (end of opening fence)
+            if let Some(start) = trimmed.find('\n') {
+                // Find the closing fence
+                if let Some(end) = trimmed.rfind("```") {
+                    if end > start {
+                        // Extract content between fences
+                        return trimmed[start + 1..end].trim().to_string();
+                    }
+                }
+            }
+        }
+
+        // No fences found, return as-is
+        response.to_string()
     }
 
     /// Create an LLM client with the specified model, base_url, and api_key_env
@@ -382,18 +406,21 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             .await
             .map_err(|e| anyhow::anyhow!("LLM call failed: {}", e))?;
 
+        // Strip markdown code fences if present
+        let cleaned_response = Self::strip_markdown_fences(&raw_response);
+
         // Try to parse using the IR
         let result = parse_llm_response_with_ir(
             runtime.ir(),
-            &raw_response,
+            &cleaned_response,
             &FieldType::Class("Person".to_string()),
         )
         .map_err(|e| {
             // Show both the error and the raw response for debugging
             anyhow::anyhow!(
-                "Failed to parse LLM response:\n  Error: {}\n  Raw response: {}",
+                "Failed to parse LLM response:\n  Error: {}\n  Cleaned response: {}",
                 e,
-                raw_response
+                cleaned_response
             )
         })?;
 
@@ -461,13 +488,16 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             .await
             .map_err(|e| anyhow::anyhow!("LLM call failed: {}", e))?;
 
+        // Strip markdown code fences if present
+        let cleaned_response = Self::strip_markdown_fences(&raw_response);
+
         // Parse using the IR
-        let result = parse_llm_response_with_ir(runtime.ir(), &raw_response, &output_type)
+        let result = parse_llm_response_with_ir(runtime.ir(), &cleaned_response, &output_type)
             .map_err(|e| {
                 anyhow::anyhow!(
-                    "Failed to parse LLM response:\n  Error: {}\n  Raw response: {}",
+                    "Failed to parse LLM response:\n  Error: {}\n  Cleaned response: {}",
                     e,
-                    raw_response
+                    cleaned_response
                 )
             })?;
 

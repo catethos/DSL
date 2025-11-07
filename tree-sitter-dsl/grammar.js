@@ -14,6 +14,8 @@ module.exports = grammar({
   conflicts: $ => [
     [$.block, $.map_literal],
     [$.property, $.map_entry],
+    [$.def_parameter, $.pattern_variable],
+    [$.primary, $.type_instantiation],
   ],
 
   rules: {
@@ -95,7 +97,7 @@ module.exports = grammar({
       ')',
       optional(seq('->', field('return_type', $.field_type))),
       '{',
-      optional(field('body', $.function_body)),
+      optional(field('body', choice($.function_body, $.expr))),
       '}',
     ),
 
@@ -104,9 +106,10 @@ module.exports = grammar({
       repeat(seq(',', $.def_parameter)),
     ),
 
-    def_parameter: $ => seq(
-      field('name', $.identifier),
-      optional(seq(':', field('type', $.field_type))),
+    def_parameter: $ => choice(
+      seq(field('name', $.identifier), ':', field('type', $.field_type)),
+      $.pattern,
+      $.identifier,
     ),
 
     function_body: $ => repeat1(choice(
@@ -174,6 +177,69 @@ module.exports = grammar({
     ),
 
     // ============================================
+    // Pattern Matching
+    // ============================================
+
+    pattern: $ => choice(
+      $.pattern_literal,
+      $.pattern_wildcard,
+      $.pattern_binding,
+      $.pattern_list,
+      $.pattern_map,
+      $.pattern_tuple,
+      $.pattern_type,
+      $.pattern_variable,
+    ),
+
+    pattern_literal: $ => choice(
+      $.boolean,
+      $.float,
+      $.integer,
+      $.string_literal,
+    ),
+
+    pattern_wildcard: _ => '_',
+
+    pattern_binding: $ => seq(
+      field('name', $.identifier),
+      '@',
+      field('pattern', $.pattern),
+    ),
+
+    pattern_list: $ => choice(
+      seq('[', ']'),
+      seq('[', $.pattern, repeat(seq(',', $.pattern)), optional(seq(',', '...', $.identifier)), optional(','), ']'),
+      seq('[', '...', $.identifier, ']'),
+    ),
+
+    pattern_map: $ => choice(
+      seq('{', '}'),
+      seq('{', $.pattern_map_field, repeat(seq(',', $.pattern_map_field)), optional(','), '}'),
+    ),
+
+    pattern_map_field: $ => seq(
+      field('name', $.identifier),
+      optional(seq(':', $.pattern)),
+    ),
+
+    pattern_tuple: $ => seq(
+      '(',
+      $.pattern,
+      repeat1(seq(',', $.pattern)),
+      optional(','),
+      ')',
+    ),
+
+    pattern_type: $ => seq(
+      field('type', $.identifier),
+      '(',
+      field('inner', $.pattern),
+      ')',
+    ),
+
+    pattern_variable: $ => $.identifier,
+
+    // ============================================
     // Workflow Definitions
     // ============================================
 
@@ -192,7 +258,20 @@ module.exports = grammar({
     // Expressions
     // ============================================
 
-    expr: $ => $.conditional,
+    expr: $ => choice(
+      $.let_binding,
+      $.conditional,
+    ),
+
+    let_binding: $ => seq(
+      'let',
+      choice(
+        seq('[', $.identifier, repeat(seq(',', $.identifier)), ']'),
+        $.identifier
+      ),
+      '=',
+      $.conditional,
+    ),
 
     conditional: $ => prec.right(1, seq(
       $.sequential,
@@ -200,15 +279,9 @@ module.exports = grammar({
     )),
 
     sequential: $ => prec.left(2, seq(
-      $.parallel,
+      $.logical_or,
       optional($.binding),
-      repeat(seq('>>', $.parallel, optional($.binding))),
-    )),
-
-    parallel: $ => prec.left(3, seq(
-      $.additive,
-      repeat(seq('||', $.additive)),
-      optional($.binding),
+      repeat(seq('|>', $.logical_or, optional($.binding))),
     )),
 
     binding: $ => seq(
@@ -226,24 +299,83 @@ module.exports = grammar({
       ']',
     ),
 
+    logical_or: $ => prec.left(3, seq(
+      $.logical_and,
+      repeat(seq('||', $.logical_and)),
+    )),
+
+    logical_and: $ => prec.left(4, seq(
+      $.comparison,
+      repeat(seq('&&', $.comparison)),
+    )),
+
+    comparison: $ => prec.left(5, seq(
+      $.additive,
+      optional(seq(
+        field('op', choice('==', '!=', '<=', '>=', '<', '>')),
+        $.additive,
+      )),
+    )),
+
     // Arithmetic expressions
-    additive: $ => prec.left(4, choice(
+    additive: $ => prec.left(6, choice(
       seq($.additive, choice('+', '-'), $.multiplicative),
       $.multiplicative,
     )),
 
-    multiplicative: $ => prec.left(5, choice(
-      seq($.multiplicative, choice('*', '/'), $.primary),
+    multiplicative: $ => prec.left(7, choice(
+      seq($.multiplicative, choice('*', '/'), $.unary),
+      $.unary,
+    )),
+
+    unary: $ => prec.right(8, choice(
+      seq(choice('!', '-'), $.unary),
       $.primary,
     )),
 
     primary: $ => choice(
+      $.match_expr,
       $.paren_expr,
+      $.type_instantiation,
       $.function_call,
       $.access_chain,
       $.block,
       $.literal,
       $.identifier,
+    ),
+
+    match_expr: $ => seq(
+      'match',
+      field('scrutinee', $.expr),
+      '{',
+      $.match_case,
+      repeat(seq(',', $.match_case)),
+      optional(','),
+      '}',
+    ),
+
+    match_case: $ => seq(
+      field('pattern', $.pattern),
+      optional(seq('if', field('guard', $.expr))),
+      '=>',
+      field('body', $.expr),
+    ),
+
+    type_instantiation: $ => seq(
+      field('type', $.identifier),
+      '{',
+      optional(seq(
+        $.type_field_assignment,
+        repeat(seq(',', $.type_field_assignment)),
+        optional(','),
+      )),
+      '}',
+    ),
+
+    type_field_assignment: $ => seq(
+      field('field', $.identifier),
+      ':',
+      field('value', $.expr),
     ),
 
     paren_expr: $ => seq('(', $.expr, ')'),

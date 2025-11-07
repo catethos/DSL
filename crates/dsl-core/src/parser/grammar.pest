@@ -5,7 +5,9 @@
 // Program Structure
 // ============================================
 
-program = _{ SOI ~ declaration* ~ EOI }
+program = _{ SOI ~ declaration* ~ entry_expr? ~ EOI }
+
+entry_expr = { expr }
 
 declaration = {
     type_decl
@@ -58,12 +60,18 @@ enum_variant = { identifier }
 // ============================================
 
 function_decl = {
-    "def" ~ identifier ~ "(" ~ def_parameters ~ ")" ~ ("->" ~ field_type)? ~ "{" ~ function_body ~ "}"
+    "def" ~ identifier ~ "(" ~ def_parameters ~ ")" ~ ("->" ~ field_type)? ~ function_decl_body
 }
 
 def_parameters = { (def_parameter ~ ("," ~ def_parameter)*)? }
 
-def_parameter = { identifier ~ (":" ~ field_type)? }
+def_parameter = { (identifier ~ ":" ~ field_type) | pattern | identifier }
+
+// Function body can be either traditional (with properties/blocks) or expression-based
+function_decl_body = {
+    "{" ~ function_body ~ "}"
+    | "{" ~ expr ~ "}"
+}
 
 function_body = { (prompt_block | sql_block | http_block | property)* }
 
@@ -121,6 +129,60 @@ template_expr = {
 template_expr_inner = @{
     (!"}" ~ ANY)+
 }
+
+// ============================================
+// Pattern Matching
+// ============================================
+
+pattern = {
+    pattern_literal
+    | pattern_wildcard
+    | pattern_binding
+    | pattern_list
+    | pattern_map
+    | pattern_tuple
+    | pattern_type
+    | pattern_variable
+}
+
+// Literal patterns (must come first to avoid ambiguity)
+pattern_literal = {
+    boolean
+    | float
+    | integer
+    | string_literal
+}
+
+// Wildcard pattern: _
+pattern_wildcard = { "_" }
+
+// Binding with nested pattern: x @ pattern
+pattern_binding = { identifier ~ "@" ~ pattern }
+
+// List pattern: [], [a], [a, b], [head, ...tail]
+pattern_list = {
+    "[" ~ "]"
+    | "[" ~ pattern ~ ("," ~ pattern)* ~ ("," ~ "..." ~ identifier)? ~ ","? ~ "]"
+    | "[" ~ "..." ~ identifier ~ "]"
+}
+
+// Map pattern: {}, {x}, {x, y}, {name, age}
+pattern_map = {
+    "{" ~ "}"
+    | "{" ~ pattern_map_field ~ ("," ~ pattern_map_field)* ~ ","? ~ "}"
+}
+
+pattern_map_field = { identifier ~ (":" ~ pattern)? }
+
+// Tuple pattern: (a, b, c) - must have at least 2 elements
+pattern_tuple = { "(" ~ pattern ~ ("," ~ pattern)+ ~ ","? ~ ")" }
+
+// Type pattern with constructor: Int(x), Person(p)
+// Note: Bare type names without parens are treated as variables
+pattern_type = { identifier ~ "(" ~ pattern ~ ")" }
+
+// Variable binding: x, name (must come last)
+pattern_variable = { identifier }
 
 // ============================================
 // Workflow Definitions (for future use)
@@ -198,13 +260,23 @@ unary = {
 unary_op = { "!" | "-" }
 
 primary = _{
-    paren_expr
+    match_expr
+    | paren_expr
     | type_instantiation
     | function_call
     | access_chain
     | block
     | literal
     | identifier
+}
+
+// Match expression: match value { pattern => expr, ... }
+match_expr = {
+    "match" ~ expr ~ "{" ~ match_case ~ ("," ~ match_case)* ~ ","? ~ "}"
+}
+
+match_case = {
+    pattern ~ ("if" ~ expr)? ~ "=>" ~ expr
 }
 
 // Type instantiation: TypeName { field: value, ... }

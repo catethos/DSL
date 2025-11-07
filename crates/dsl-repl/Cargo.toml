@@ -1,6 +1,6 @@
 [package]
 name = "dsl-repl"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 build = "build.rs"
 
@@ -11,6 +11,8 @@ path = "src/main.rs"
 [dependencies]
 # Core DSL engine and TUI
 dsl-core = { path = "../dsl-core" }
+dsl-ir = { path = "../dsl-ir" }
+dsl-interpreter = { path = "../dsl-interpreter" }
 dsl-tui = { path = "../dsl-tui" }
 
 # Async runtime

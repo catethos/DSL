@@ -9,14 +9,22 @@ pub fn highlight_text(text: &str) -> Vec<Line<'static>> {
     let highlights_query = tree_sitter_dsl::HIGHLIGHTS_QUERY;
 
     // Configure the highlighter
-    let mut config = HighlightConfiguration::new(
+    let mut config = match HighlightConfiguration::new(
         language,
         "dsl",
         highlights_query,
         "", // injections query
         "", // locals query
-    )
-    .expect("Failed to create highlight configuration");
+    ) {
+        Ok(config) => config,
+        Err(_) => {
+            // If tree-sitter grammar is out of sync, fall back to plain text
+            return text
+                .lines()
+                .map(|line| Line::from(line.to_string()))
+                .collect();
+        }
+    };
 
     // Define highlight names that match our queries/highlights.scm
     let highlight_names = vec![

@@ -1,7 +1,3 @@
-mod builtin;
-mod evaluator;
-mod sql;
-
-pub use builtin::BuiltinFunctions;
-pub use evaluator::Evaluator;
-pub use sql::SQLExecutor;
+// Legacy evaluation module - now empty, all functionality moved to dsl-interpreter
+// This module is kept only for backward compatibility with imports
+pub use dsl_ir::SQLExecutor;

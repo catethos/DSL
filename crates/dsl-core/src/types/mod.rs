@@ -1,5 +1,2 @@
-mod registry;
-mod value;
-
-pub use registry::TypeRegistry;
-pub use value::Value;
+// Re-export types from dsl-ir
+pub use dsl_ir::{TypeRegistry, Value};

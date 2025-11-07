@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::Value;
 use duckdb::Connection;
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -47,7 +47,7 @@ impl SQLExecutor {
                 rows.as_ref()
                     .and_then(|r| r.column_name(i).ok())
                     .map(|s| s.to_string())
-                    .unwrap_or_else(|| String::new())
+                    .unwrap_or_else(String::new)
             })
             .collect();
 
@@ -71,7 +71,7 @@ impl SQLExecutor {
         }
 
         // Convert to list of maps
-        let list: Vec<Value> = result_rows.into_iter().map(|m| Value::Map(m)).collect();
+        let list: Vec<Value> = result_rows.into_iter().map(Value::Map).collect();
 
         Ok(Value::List(list))
     }
