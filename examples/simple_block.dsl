@@ -7,4 +7,4 @@ type People {
 def test(x) -> People {
 prompt: "extract the  information from ${x}"}
 
-test("regina is 30 yo living in Sydney, with email regina@example.com") |> _.name
+test("regina is 30 yo living in Sydney, with email regina@example.com")

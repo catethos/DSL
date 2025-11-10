@@ -95,24 +95,32 @@ impl EditorPane {
 
             ui.separator();
 
-            // Editor with syntax highlighting
+            // Editor with syntax highlighting in a scrollable area
             let color_scheme = self.color_scheme.clone();
-            let response = ui.add_sized(
-                egui::vec2(ui.available_width(), ui.available_height()),
-                egui::TextEdit::multiline(&mut self.content)
-                    .font(egui::TextStyle::Monospace)
-                    .code_editor()
-                    .layouter(&mut |ui, text, _wrap_width| {
-                        // Create a syntax-highlighted layout job
-                        let font_id = egui::FontId::monospace(14.0);
-                        let job = highlight_code(text, font_id, &color_scheme);
-                        ui.fonts(|f| f.layout_job(job))
-                    }),
-            );
+            let available_height = ui.available_height();
 
-            if response.changed() {
-                self.modified = true;
-            }
+            egui::ScrollArea::vertical()
+                .id_salt("editor_scroll_area")
+                .max_height(available_height)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let response = ui.add(
+                        egui::TextEdit::multiline(&mut self.content)
+                            .desired_width(f32::INFINITY)
+                            .font(egui::TextStyle::Monospace)
+                            .code_editor()
+                            .layouter(&mut |ui, text, _wrap_width| {
+                                // Create a syntax-highlighted layout job
+                                let font_id = egui::FontId::monospace(14.0);
+                                let job = highlight_code(text, font_id, &color_scheme);
+                                ui.fonts(|f| f.layout_job(job))
+                            }),
+                    );
+
+                    if response.changed() {
+                        self.modified = true;
+                    }
+                });
         });
     }
 

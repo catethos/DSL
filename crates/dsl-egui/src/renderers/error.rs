@@ -7,7 +7,7 @@ pub fn render_error(ui: &mut egui::Ui, error: &mut ErrorDetail) {
         .fill(egui::Color32::from_rgb(40, 30, 30))        // Dark red background
         .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgb(200, 60, 60)))
         .inner_margin(12.0)
-        .rounding(4.0)
+        .corner_radius(4.0)
         .show(ui, |ui| {
             ui.vertical(|ui| {
                 // Header: Error Type and Location
@@ -106,7 +106,7 @@ fn render_type_error_details(ui: &mut egui::Ui, expected: &str, got: &str) {
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(30, 25, 25))
         .inner_margin(8.0)
-        .rounding(2.0)
+        .corner_radius(2.0)
         .show(ui, |ui| {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("Type Mismatch:")
@@ -160,7 +160,7 @@ fn render_http_error_details(
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(30, 25, 25))
         .inner_margin(8.0)
-        .rounding(2.0)
+        .corner_radius(2.0)
         .show(ui, |ui| {
             ui.vertical(|ui| {
                 if let Some(m) = method {
@@ -231,7 +231,7 @@ fn render_expandable_section(
         egui::Frame::default()
             .fill(egui::Color32::from_rgb(20, 20, 20))
             .inner_margin(8.0)
-            .rounding(2.0)
+            .corner_radius(2.0)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
                     .max_height(150.0)
@@ -271,7 +271,7 @@ fn render_suggestions_section(ui: &mut egui::Ui, error: &mut ErrorDetail) {
         egui::Frame::default()
             .fill(egui::Color32::from_rgb(30, 28, 20))
             .inner_margin(8.0)
-            .rounding(2.0)
+            .corner_radius(2.0)
             .show(ui, |ui| {
                 ui.vertical(|ui| {
                     for suggestion in &error.suggestions {
@@ -314,7 +314,7 @@ fn render_source_context_section(ui: &mut egui::Ui, error: &mut ErrorDetail) {
             egui::Frame::default()
                 .fill(egui::Color32::from_rgb(30, 25, 25))
                 .inner_margin(8.0)
-                .rounding(2.0)
+                .corner_radius(2.0)
                 .show(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.horizontal(|ui| {

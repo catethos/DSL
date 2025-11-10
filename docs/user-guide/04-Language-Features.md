@@ -919,12 +919,74 @@ Analyze(data) as score
 
 ---
 
+## 🧪 Experimental Features
+
+The following features are currently in development and may change. Use with caution in production code.
+
+### Pattern Matching (Phase 10B - 60% Complete)
+
+Pattern matching allows you to match values against patterns and extract data.
+
+#### Match Expressions
+
+```javascript
+// Match with literals
+match value {
+    0 => "zero"
+    42 => "answer"
+    _ => "other"
+}
+
+// Match with variable binding
+match numbers {
+    [] => "empty"
+    [x] => "single: ${x}"
+    [x, y] => "pair: ${x}, ${y}"
+    _ => "many"
+}
+
+// Match with guards
+match x {
+    n if n < 0 => "negative"
+    n if n > 0 => "positive"
+    _ => "zero"
+}
+```
+
+#### Expression Functions
+
+Functions can now contain arbitrary DSL expressions:
+
+```javascript
+// Simple expression function
+function double(x) { x * 2 }
+function square(x) { x * x }
+
+// Recursive functions
+function factorial(n) {
+    if n == 0 { 1 } else { n * factorial(n - 1) }
+}
+```
+
+#### Status
+
+- ✅ Expression execution mode (complete)
+- ✅ Match expressions (complete)
+- ✅ Basic pattern matching (complete)
+- 🚧 Function overloading (in progress)
+- 🚧 Grammar extensions (in progress)
+- 📋 Advanced destructuring (planned)
+
+**Note:** Pattern matching syntax may require the expression mode or IR evaluation. Check the [implementation details](../advanced/12-Implementation-Details.md) for current status.
+
+---
+
 ## Next Steps
 
 - **[05-Type-System.md](05-Type-System.md)** - Define custom types
-- **[06-Functions.md](06-Functions.md)** - Built-in and user-defined functions
+- **[06-Builtin-Functions.md](06-Builtin-Functions.md)** - Built-in and user-defined functions
 - **[07-Workflow-Constructs.md](07-Workflow-Constructs.md)** - Advanced workflows
-- **[examples/](../examples/)** - Try example code
+- **[examples/](../../examples/)** - Try example code
 
 ---
 

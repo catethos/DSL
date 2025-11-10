@@ -64,6 +64,9 @@ pub struct ReplPane {
 
     /// Persistent symbol table for resolver (thread-safe)
     symbol_table: Arc<Mutex<SymbolTable>>,
+
+    /// Cache for markdown rendering
+    markdown_cache: egui_commonmark::CommonMarkCache,
 }
 
 #[derive(Debug)]
@@ -119,6 +122,7 @@ impl ReplPane {
             autocomplete,
             accepting_suggestion: false,
             symbol_table: Arc::new(Mutex::new(SymbolTable::new())),
+            markdown_cache: egui_commonmark::CommonMarkCache::default(),
         }
     }
 
@@ -172,7 +176,9 @@ impl ReplPane {
         ui.vertical(|ui| {
             // Output area - account for input area and separators (approx 100px)
             let output_height = (total_height - 100.0).max(100.0);
+
             egui::ScrollArea::vertical()
+                .id_salt("repl_output_scroll_area")
                 .min_scrolled_height(output_height)
                 .max_height(output_height)
                 .auto_shrink([false, false])
@@ -428,7 +434,7 @@ impl ReplPane {
             }
             OutputItem::Markdown(md) => {
                 // Use the dedicated markdown renderer
-                renderers::render_markdown(ui, md);
+                renderers::render_markdown(ui, &mut self.markdown_cache, md);
             }
             OutputItem::Image { path, data } => {
                 // Lazy load: Load the image now if not already loaded
@@ -540,9 +546,68 @@ impl ReplPane {
                                     match compile_function_group(group) {
                                         Ok((ir_func, ir_group)) => {
                                             if let Some(func) = ir_func {
-                                                // Trivial function
-                                                interp.runtime.functions.insert(func.name.clone(), func.clone());
-                                                messages.push(format!("Defined function: {}/{}", func.name, func.params.len()));
+                                                // Trivial function - check if we need to convert to function_group
+                                                let func_name = &func.name;
+
+                                                // Check if there's already a function or function_group with this name
+                                                let has_existing_func = interp.runtime.functions.contains_key(func_name);
+                                                let has_existing_group = interp.runtime.function_groups.contains_key(func_name);
+
+                                                if has_existing_func || has_existing_group {
+                                                    // Need to convert to function_group to support multiple arities
+                                                    use dsl_ir::{IRFunctionClause, IRPattern, IRFunctionGroup};
+
+                                                    // Get or create function group
+                                                    let mut func_group = if let Some(existing_group) = interp.runtime.function_groups.get(func_name) {
+                                                        existing_group.clone()
+                                                    } else if let Some(existing_func) = interp.runtime.functions.remove(func_name) {
+                                                        // Convert existing IRFunction to IRFunctionGroup
+                                                        let param_patterns: Vec<IRPattern> = existing_func.params.iter()
+                                                            .map(|p| IRPattern::Variable(p.clone()))
+                                                            .collect();
+
+                                                        let body = match &existing_func.execution {
+                                                            dsl_ir::IRExecution::Expression { body } => *body.clone(),
+                                                            _ => return Err("Cannot convert non-expression function to group".to_string()),
+                                                        };
+
+                                                        IRFunctionGroup {
+                                                            name: existing_func.name.clone(),
+                                                            clauses: vec![IRFunctionClause {
+                                                                param_patterns,
+                                                                guard: None,
+                                                                body: Box::new(body),
+                                                            }],
+                                                            return_type: existing_func.return_type,
+                                                        }
+                                                    } else {
+                                                        return Err(format!("Internal error: function {} not found", func_name));
+                                                    };
+
+                                                    // Add new clause from current function
+                                                    let new_param_patterns: Vec<IRPattern> = func.params.iter()
+                                                        .map(|p| IRPattern::Variable(p.clone()))
+                                                        .collect();
+
+                                                    let new_body = match &func.execution {
+                                                        dsl_ir::IRExecution::Expression { body } => *body.clone(),
+                                                        _ => return Err("Cannot convert non-expression function to group".to_string()),
+                                                    };
+
+                                                    func_group.clauses.push(IRFunctionClause {
+                                                        param_patterns: new_param_patterns.clone(),
+                                                        guard: None,
+                                                        body: Box::new(new_body),
+                                                    });
+
+                                                    // Store as function group
+                                                    interp.runtime.function_groups.insert(func_name.clone(), func_group.clone());
+                                                    messages.push(format!("Defined function: {}/{}", func_name, func.params.len()));
+                                                } else {
+                                                    // No existing function with this name, register as simple function
+                                                    interp.runtime.functions.insert(func.name.clone(), func.clone());
+                                                    messages.push(format!("Defined function: {}/{}", func.name, func.params.len()));
+                                                }
                                             }
 
                                             if let Some(func_group) = ir_group {
@@ -555,13 +620,40 @@ impl ReplPane {
                                                         func_group.clauses[0].param_patterns.len(),
                                                         func_group.clauses.len()));
                                                 } else {
-                                                    // Create new
-                                                    interp.runtime.function_groups.insert(func_group.name.clone(), func_group.clone());
-                                                    messages.push(format!("Pattern function {}/{} defined ({} clause{})",
-                                                        func_group.name,
-                                                        func_group.clauses[0].param_patterns.len(),
-                                                        func_group.clauses.len(),
-                                                        if func_group.clauses.len() == 1 { "" } else { "s" }));
+                                                    // Create new - but check if there's a simple function first
+                                                    if let Some(existing_func) = interp.runtime.functions.remove(&func_group.name) {
+                                                        // Convert existing IRFunction to a clause and merge
+                                                        use dsl_ir::{IRFunctionClause, IRPattern};
+
+                                                        let param_patterns: Vec<IRPattern> = existing_func.params.iter()
+                                                            .map(|p| IRPattern::Variable(p.clone()))
+                                                            .collect();
+
+                                                        let body = match &existing_func.execution {
+                                                            dsl_ir::IRExecution::Expression { body } => *body.clone(),
+                                                            _ => return Err("Cannot convert non-expression function to group".to_string()),
+                                                        };
+
+                                                        let mut merged_group = func_group.clone();
+                                                        merged_group.clauses.insert(0, IRFunctionClause {
+                                                            param_patterns,
+                                                            guard: None,
+                                                            body: Box::new(body),
+                                                        });
+
+                                                        interp.runtime.function_groups.insert(merged_group.name.clone(), merged_group.clone());
+                                                        messages.push(format!("Pattern function {}/{} defined ({} clauses)",
+                                                            func_group.name,
+                                                            func_group.clauses[0].param_patterns.len(),
+                                                            merged_group.clauses.len()));
+                                                    } else {
+                                                        interp.runtime.function_groups.insert(func_group.name.clone(), func_group.clone());
+                                                        messages.push(format!("Pattern function {}/{} defined ({} clause{})",
+                                                            func_group.name,
+                                                            func_group.clauses[0].param_patterns.len(),
+                                                            func_group.clauses.len(),
+                                                            if func_group.clauses.len() == 1 { "" } else { "s" }));
+                                                    }
                                                 }
                                             }
                                         }

@@ -22,8 +22,10 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 | **11-Advanced-Features.md** | 7.4K | Advanced patterns and techniques |
 | **12-Implementation-Details.md** | 9.9K | Technical architecture and internals |
 | **08-egui-Migration-Guide.md** | 45K | Desktop GUI with rich display system (v2.0) |
+| **EGUI-UPGRADE-PLAN.md** | 28K | Comprehensive plan for upgrading egui ecosystem |
+| **Markdown-Rendering-Guide.md** | 11K | Guide to markdown rendering in egui |
 
-**Total:** 170.4 KB across 14 files
+**Total:** 209.4 KB across 16 files
 
 ## What Each Document Covers
 

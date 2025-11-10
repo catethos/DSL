@@ -517,11 +517,42 @@ dsl-types (foundation)
 
 ## 📖 Documentation
 
-- **[BUILD.md](BUILD.md)** - Comprehensive build and compilation guide
-- **[DESIGN.md](DESIGN.md)** - Complete language specification
-- **[REPL_FIRST_PLAN.md](REPL_FIRST_PLAN.md)** - Incremental development plan
-- **[PROGRESS.md](PROGRESS.md)** - Detailed progress tracking
-- **[examples/README.md](examples/README.md)** - Example workflows guide
+### Quick Links
+
+- **[Documentation Index](docs/README.md)** - Complete documentation guide
+- **[Getting Started](docs/user-guide/02-Getting-Started.md)** - Start here!
+- **[Language Features](docs/user-guide/04-Language-Features.md)** - Full language reference
+- **[Developer Guide](docs/developer/architecture.md)** - System architecture
+
+### Documentation Structure
+
+- **[`docs/user-guide/`](docs/user-guide/)** - User documentation
+  - Overview, getting started, language features, types, builtins, workflows, LLM, SQL, HTTP
+- **[`docs/gui/`](docs/gui/)** - GUI documentation
+  - [egui Desktop GUI](docs/gui/egui-desktop-gui.md) - Modern desktop interface
+  - [TUI Interface](docs/gui/tui-interface.md) - Terminal UI
+- **[`docs/advanced/`](docs/advanced/)** - Advanced topics
+  - Advanced features, chart generation, tracing and debugging
+- **[`docs/developer/`](docs/developer/)** - Developer documentation
+  - [Architecture](docs/developer/architecture.md) - IR-based system design
+  - [Error Handling](docs/developer/error-handling.md) - Error system internals
+  - [Known Issues](docs/developer/known-issues.md) - Current limitations and fixes
+  - [egui Implementation](docs/developer/egui-implementation.md) - GUI development guide
+  - [Building](docs/developer/building.md) - Build and compilation guide
+- **[`docs/references/`](docs/references/)** - Reference materials
+  - DSPy comparison, operator changes
+- **[`docs/migration-guides/`](docs/migration-guides/)** - Migration guides
+  - [Autocomplete](docs/migration-guides/autocomplete.md) - Autocomplete system guide
+
+### LLM Integration
+
+For details on the simplify_baml LLM integration framework:
+- **[`crates/simplify_baml/README.md`](crates/simplify_baml/README.md)** - Framework documentation
+- Related docs in that directory
+
+### Historical Documentation
+
+- **[`historical/README.md`](historical/README.md)** - Development history and phase summaries
 
 ## 🧪 Examples
 

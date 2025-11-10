@@ -121,60 +121,20 @@ pub fn validate_balanced_delimiters(input: &str) -> Result<(), ValidationError> 
     let mut in_comment = false;
 
     while i < chars.len() {
-        // Handle line comments
-        if !in_comment && i + 1 < chars.len() && chars[i] == '#' {
-            // Skip to end of line
-            while i < chars.len() && chars[i] != '\n' {
-                i += 1;
-            }
-            continue;
-        }
-
-        // Handle block comments
-        if !in_comment && i + 1 < chars.len() && chars[i] == '/' && chars[i + 1] == '*' {
-            in_comment = true;
-            i += 2;
-            continue;
-        }
-
-        if in_comment && i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '/' {
-            in_comment = false;
-            i += 2;
-            continue;
-        }
-
-        if in_comment {
-            i += 1;
-            continue;
-        }
-
-        // Check for triple quotes first
-        if i + 2 < chars.len()
-            && chars[i] == '"'
-            && chars[i + 1] == '"'
-            && chars[i + 2] == '"'
-        {
-            if let Some(top) = stack.last() {
-                if top.delimiter == Delimiter::TripleQuote {
-                    stack.pop();
-                    i += 3;
-                    continue;
-                }
-            } else {
-                stack.push(DelimiterFrame {
-                    delimiter: Delimiter::TripleQuote,
-                    position: i,
-                });
-                i += 3;
-                continue;
-            }
-        }
-
-        // Skip content inside strings
+        // Skip content inside strings first (before processing comments)
         if let Some(top) = stack.last() {
             match top.delimiter {
                 Delimiter::TripleQuote => {
-                    // Already handled above
+                    // Check for triple quotes to close
+                    if i + 2 < chars.len()
+                        && chars[i] == '"'
+                        && chars[i + 1] == '"'
+                        && chars[i + 2] == '"'
+                    {
+                        stack.pop();
+                        i += 3;
+                        continue;
+                    }
                     i += 1;
                     continue;
                 }
@@ -208,6 +168,47 @@ pub fn validate_balanced_delimiters(input: &str) -> Result<(), ValidationError> 
                 }
                 _ => {}
             }
+        }
+
+        // Handle line comments
+        if !in_comment && i + 1 < chars.len() && chars[i] == '#' {
+            // Skip to end of line
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+
+        // Handle block comments
+        if !in_comment && i + 1 < chars.len() && chars[i] == '/' && chars[i + 1] == '*' {
+            in_comment = true;
+            i += 2;
+            continue;
+        }
+
+        if in_comment && i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '/' {
+            in_comment = false;
+            i += 2;
+            continue;
+        }
+
+        if in_comment {
+            i += 1;
+            continue;
+        }
+
+        // Check for triple quotes first (only when not already inside a string)
+        if i + 2 < chars.len()
+            && chars[i] == '"'
+            && chars[i + 1] == '"'
+            && chars[i + 2] == '"'
+        {
+            stack.push(DelimiterFrame {
+                delimiter: Delimiter::TripleQuote,
+                position: i,
+            });
+            i += 3;
+            continue;
         }
 
         // Handle delimiters
@@ -416,5 +417,14 @@ mod tests {
     fn test_comments_ignored() {
         assert!(validate_balanced_delimiters("foo() # unclosed (").is_ok());
         assert!(validate_balanced_delimiters("foo() /* unclosed ( */").is_ok());
+    }
+
+    #[test]
+    fn test_hash_inside_string() {
+        // Regression test: '#' inside a string should not be treated as a comment
+        assert!(validate_balanced_delimiters(r#"RenderMarkdown(" # Hello ")"#).is_ok());
+        assert!(validate_balanced_delimiters("\"# not a comment\"").is_ok());
+        assert!(validate_balanced_delimiters("'# also not a comment'").is_ok());
+        assert!(validate_balanced_delimiters("\"\"\"# triple quote not a comment\"\"\"").is_ok());
     }
 }

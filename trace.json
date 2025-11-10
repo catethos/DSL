@@ -2,16 +2,35 @@
   "events": [
     {
       "step": 0,
-      "node_type": "Sequential",
-      "description": "Sequential composition",
-      "inputs": [],
+      "node_type": "FunctionCall",
+      "description": "Call test(...) with 1 args",
+      "inputs": [
+        {
+          "String": "regina is 30 yo living in Sydney, with email regina@example.com"
+        }
+      ],
       "output": {
-        "String": "Regina"
+        "Map": {
+          "email": {
+            "String": "regina@example.com"
+          },
+          "name": {
+            "String": "Regina"
+          },
+          "age": {
+            "Int": 30
+          },
+          "address": {
+            "String": "Sydney"
+          }
+        }
       },
       "error": null,
-      "duration_micros": 1723694,
+      "duration_micros": 1346019,
       "depth": 1,
       "variables": null,
+      "llm_prompt": "extract the  information from regina is 30 yo living in Sydney, with email regina@example.com\n\nAnswer in JSON using this schema:\n{\n  name: string,\n  age: int,\n  address: string,\n  email: string,\n}",
+      "llm_response": "```json\n{\n  \"name\": \"Regina\",\n  \"age\": 30,\n  \"address\": \"Sydney\",\n  \"email\": \"regina@example.com\"\n}\n```",
       "children": [
         {
           "step": 1,
@@ -22,57 +41,9 @@
             "String": "regina is 30 yo living in Sydney, with email regina@example.com"
           },
           "error": null,
-          "duration_micros": 4,
-          "depth": 2,
-          "variables": null,
-          "children": []
-        },
-        {
-          "step": 2,
-          "node_type": "FunctionCall",
-          "description": "Call test(...) with 1 args",
-          "inputs": [
-            {
-              "String": "regina is 30 yo living in Sydney, with email regina@example.com"
-            }
-          ],
-          "output": {
-            "Map": {
-              "email": {
-                "String": "regina@example.com"
-              },
-              "address": {
-                "String": "Sydney"
-              },
-              "name": {
-                "String": "Regina"
-              },
-              "age": {
-                "Int": 30
-              }
-            }
-          },
-          "error": null,
-          "duration_micros": 1723668,
-          "depth": 2,
-          "variables": null,
-          "llm_prompt": "extract the  information from regina is 30 yo living in Sydney, with email regina@example.com\n\nAnswer in JSON using this schema:\n{\n  name: string,\n  age: int,\n  address: string,\n  email: string,\n}",
-          "llm_response": "```json\n{\n  \"name\": \"Regina\",\n  \"age\": 30,\n  \"address\": \"Sydney\",\n  \"email\": \"regina@example.com\"\n}\n```",
-          "children": []
-        },
-        {
-          "step": 3,
-          "node_type": "FieldAccess",
-          "description": "Field access: .name",
-          "inputs": [],
-          "output": {
-            "String": "Regina"
-          },
-          "error": null,
-          "duration_micros": 9,
-          "depth": 2,
-          "variables": null,
-          "children": []
+          "duration_micros": 234,
+          "depth": 1,
+          "variables": null
         }
       ]
     }

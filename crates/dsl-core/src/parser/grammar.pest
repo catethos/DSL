@@ -385,6 +385,7 @@ literal = _{
     boolean
     | float
     | integer
+    | triple_quoted_string
     | template_string
     | string_literal
     | list_literal

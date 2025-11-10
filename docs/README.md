@@ -1,197 +1,367 @@
 # Documentation Index
 
-Welcome to the DSL TUI documentation! This directory contains comprehensive guides for understanding and using the Agentic LLM Workflow DSL.
+**Last Updated:** 2025-11-10
 
-## Documentation Structure
-
-### Getting Started
-1. **[01-Overview.md](01-Overview.md)** - Project introduction, architecture, and design principles
-2. **[02-Getting-Started.md](02-Getting-Started.md)** - Installation, first steps, and tutorials
-3. **[03-TUI-Interface.md](03-TUI-Interface.md)** - UI modes, navigation, and interface guide
-
-### Core Concepts
-4. **[04-Language-Features.md](04-Language-Features.md)** - Syntax, data types, operators, and expressions
-5. **[05-Type-System.md](05-Type-System.md)** - Custom types, enums, and type validation
-6. **[06-Builtin-Functions.md](06-Builtin-Functions.md)** - Complete reference for 50+ builtin functions
-7. **[07-Workflow-Constructs.md](07-Workflow-Constructs.md)** - Sequential, parallel, and conditional workflows
-
-### Integration Features
-8. **[08-LLM-Integration.md](08-LLM-Integration.md)** - AI/LLM features with simplify_baml
-9. **[09-SQL-DuckDB.md](09-SQL-DuckDB.md)** - Data processing with SQL and DuckDB
-10. **[10-HTTP-Client.md](10-HTTP-Client.md)** - API integration and HTTP requests
-
-### Advanced Topics
-11. **[11-Advanced-Features.md](11-Advanced-Features.md)** - Advanced usage patterns and techniques
-12. **[12-Implementation-Details.md](12-Implementation-Details.md)** - Technical architecture and internals
-
-### GUI Development
-13. **[08-egui-Migration-Guide.md](08-egui-Migration-Guide.md)** - Desktop GUI with egui framework
-    - Rich display system (tables, markdown, images, charts)
-    - Migration from TUI to GUI
-    - Complete renderer documentation
-
-## Quick Links
-
-### For New Users
-Start here:
-1. Read [01-Overview.md](01-Overview.md) to understand what the DSL does
-2. Follow [02-Getting-Started.md](02-Getting-Started.md) for installation and tutorials
-3. Learn the [03-TUI-Interface.md](03-TUI-Interface.md) to navigate the application
-
-### For Developers
-Building workflows:
-1. Master [04-Language-Features.md](04-Language-Features.md) for syntax
-2. Define custom [05-Type-System.md](05-Type-System.md) types
-3. Reference [06-Builtin-Functions.md](06-Builtin-Functions.md) for all builtin functions
-4. Build [07-Workflow-Constructs.md](07-Workflow-Constructs.md) with operators
-
-### For Integration
-Connecting to external services:
-1. Use [08-LLM-Integration.md](08-LLM-Integration.md) for AI features
-2. Process data with [09-SQL-DuckDB.md](09-SQL-DuckDB.md)
-3. Call APIs with [10-HTTP-Client.md](10-HTTP-Client.md)
-
-### For Advanced Users
-Deep dive:
-1. Explore [11-Advanced-Features.md](11-Advanced-Features.md) patterns
-2. Understand [12-Implementation-Details.md](12-Implementation-Details.md) internals
-
-## Documentation Format
-
-Each document includes:
-- Clear section headings
-- Code examples with expected output
-- Best practices and tips
-- Related documents links
-- Next steps guidance
-
-## How to Read This Documentation
-
-### Linear Reading Path
-Read documents in order (01 → 12) for comprehensive understanding.
-
-**Recommended for:** Complete beginners, systematic learners
-
-### Topic-Based Reading
-Jump to specific topics as needed.
-
-**Recommended for:** Experienced developers, quick reference
-
-### Example-Driven Learning
-Start with examples, refer to docs when needed.
-
-**Recommended for:** Hands-on learners, quick prototyping
-
-## Related Resources
-
-### In Repository
-- **[../README.md](../README.md)** - Project README and quick overview
-- **[../DESIGN.md](../DESIGN.md)** - Complete design specification
-- **[../PROGRESS.md](../PROGRESS.md)** - Development progress tracker
-- **[../examples/](../examples/)** - Example workflow files
-- **[../examples/README.md](../examples/README.md)** - Examples guide
-
-### Specific Guides
-- **[../EDITOR_USAGE.md](../EDITOR_USAGE.md)** - Editor-specific guide
-- **[../HTTP_QUICK_START.md](../HTTP_QUICK_START.md)** - HTTP quick reference
-- **[../HTTP_CLIENT_SUMMARY.md](../HTTP_CLIENT_SUMMARY.md)** - Complete HTTP docs
-- **[../MULTILINE_INPUT.md](../MULTILINE_INPUT.md)** - Multi-line input guide
-- **[../CSV_USAGE.md](../CSV_USAGE.md)** - CSV file handling
-
-### Historical Documents
-- **[../REPL_FIRST_PLAN.md](../REPL_FIRST_PLAN.md)** - Incremental development plan
-- **[../PHASE*_*.md](../)** - Phase-specific documentation
-- **[../SESSION_SUMMARY.md](../SESSION_SUMMARY.md)** - Development sessions
-- **[../COMPLETION_SUMMARY.md](../COMPLETION_SUMMARY.md)** - Feature completions
-- **[../IMPLEMENTATION_COMPLETE.md](../IMPLEMENTATION_COMPLETE.md)** - HTTP implementation
-
-## Document Status
-
-| Document | Status | Last Updated |
-|----------|--------|--------------|
-| 01-Overview.md | ✅ Complete | 2025-11-01 |
-| 02-Getting-Started.md | ✅ Complete | 2025-11-01 |
-| 03-TUI-Interface.md | ✅ Complete | 2025-11-01 |
-| 04-Language-Features.md | ✅ Complete | 2025-11-01 |
-| 05-Type-System.md | ✅ Complete | 2025-11-01 |
-| 06-Functions.md | 🚧 In Progress | 2025-11-01 |
-| 07-Workflow-Constructs.md | 🚧 In Progress | 2025-11-01 |
-| 08-LLM-Integration.md | 🚧 In Progress | 2025-11-01 |
-| 09-SQL-DuckDB.md | 🚧 In Progress | 2025-11-01 |
-| 10-HTTP-Client.md | 🚧 In Progress | 2025-11-01 |
-| 11-Advanced-Features.md | 🚧 In Progress | 2025-11-01 |
-| 12-Implementation-Details.md | 🚧 In Progress | 2025-11-01 |
-
-## Contributing to Documentation
-
-### Style Guide
-- Use clear, concise language
-- Include code examples
-- Show expected output
-- Add "Next Steps" section
-- Link related documents
-
-### Structure
-- Start with overview
-- Progress from simple to complex
-- Include practical examples
-- End with best practices
-
-### Code Examples
-```javascript
-// Good example: Shows input and output
-flow> 42 as answer
-✓ Bound 'answer' to 42 : Int
-
-flow> answer * 2
-✓ 84 : Int
-```
-
-## Getting Help
-
-### Within the Application
-- Press **F1** for REPL mode
-- Type `:help` for quick reference
-- Press **F3** for Type Explorer
-- Use `:vars`, `:types`, `:funcs` commands
-
-### In Documentation
-- Check the relevant section in this index
-- Follow "Next Steps" links in documents
-- Search for keywords across files
-
-### External Resources
-- GitHub Issues: [Report problems](https://github.com/anthropics/DSL/issues)
-- Examples: See `../examples/` directory
-- Design Spec: Read `../DESIGN.md`
-
-## Feedback
-
-Found an error? Have a suggestion?
-- Open an issue on GitHub
-- Submit a pull request
-- Contact the maintainers
-
-## Version History
-
-### v1.0 (Current)
-- Complete documentation set
-- All 12 core documents
-- Examples and guides
-- Implementation complete
-
-### Future Versions
-- Video tutorials
-- Interactive examples
-- API reference
-- Cookbook
-
-## License
-
-See the main repository LICENSE file for licensing information.
+Welcome to the DSL documentation! This guide helps you find the right documentation for your needs.
 
 ---
 
-**Happy Learning!** 🚀
+## 🚀 Quick Start
 
-Start your journey with [01-Overview.md](01-Overview.md) or jump straight to [02-Getting-Started.md](02-Getting-Started.md) to begin coding!
+### New Users
+
+1. **[Getting Started](user-guide/02-Getting-Started.md)** - Installation and first steps
+2. **[Language Features](user-guide/04-Language-Features.md)** - Learn the DSL syntax
+3. **[TUI Interface](gui/tui-interface.md)** or **[Desktop GUI](gui/egui-desktop-gui.md)** - Choose your interface
+
+### Developers
+
+1. **[Architecture](developer/architecture.md)** - Understand the system design
+2. **[Building](developer/building.md)** - Build from source
+3. **[egui Implementation](developer/egui-implementation.md)** - GUI development
+
+---
+
+## 📚 Documentation Structure
+
+### User Guide (`user-guide/`)
+
+Complete guides for using the DSL:
+
+| Document | Description |
+|----------|-------------|
+| [01-Overview.md](user-guide/01-Overview.md) | Project overview and architecture |
+| [02-Getting-Started.md](user-guide/02-Getting-Started.md) | Installation and first steps |
+| [04-Language-Features.md](user-guide/04-Language-Features.md) | Complete language reference |
+| [05-Type-System.md](user-guide/05-Type-System.md) | Custom types and enums |
+| [06-Builtin-Functions.md](user-guide/06-Builtin-Functions.md) | 50+ builtin functions |
+| [07-Workflow-Constructs.md](user-guide/07-Workflow-Constructs.md) | Sequential & parallel workflows |
+| [08-LLM-Integration.md](user-guide/08-LLM-Integration.md) | AI/LLM features |
+| [09-SQL-DuckDB.md](user-guide/09-SQL-DuckDB.md) | Data processing with SQL |
+| [10-HTTP-Client.md](user-guide/10-HTTP-Client.md) | API integration |
+
+---
+
+### GUI Documentation (`gui/`)
+
+Interface guides:
+
+| Document | Description |
+|----------|-------------|
+| [egui-desktop-gui.md](gui/egui-desktop-gui.md) | Modern desktop GUI with rich rendering |
+| [tui-interface.md](gui/tui-interface.md) | Terminal-based interface |
+
+**Both interfaces are actively maintained!** Choose based on your preference.
+
+---
+
+### Advanced Topics (`advanced/`)
+
+In-depth features:
+
+| Document | Description |
+|----------|-------------|
+| [11-Advanced-Features.md](advanced/11-Advanced-Features.md) | Advanced patterns and techniques |
+| [13-Chart-Generation.md](advanced/13-Chart-Generation.md) | Data visualization |
+| [tracing-and-debugging.md](advanced/tracing-and-debugging.md) | Execution tracing and debugging |
+
+---
+
+### Developer Documentation (`developer/`)
+
+For contributors and maintainers:
+
+| Document | Description |
+|----------|-------------|
+| [architecture.md](developer/architecture.md) | IR-based system architecture (11 crates) |
+| [error-handling.md](developer/error-handling.md) | Error system internals |
+| [known-issues.md](developer/known-issues.md) | Current limitations and fixes |
+| [egui-implementation.md](developer/egui-implementation.md) | GUI development guide |
+| [building.md](developer/building.md) | Build and compilation guide |
+| [EGUI-UPGRADE-PLAN.md](EGUI-UPGRADE-PLAN.md) | ⚠️ **Critical:** egui version upgrade guide |
+
+**👉 Before upgrading egui versions, read [EGUI-UPGRADE-PLAN.md](EGUI-UPGRADE-PLAN.md)!**
+
+---
+
+### Reference Materials (`references/`)
+
+Design and history:
+
+| Document | Description |
+|----------|-------------|
+| [dspy-comparison.md](references/dspy-comparison.md) | DSPy vs DSL design analysis |
+| [operator-changes.md](references/operator-changes.md) | Historical syntax changes |
+
+---
+
+### Migration Guides (`migration-guides/`)
+
+Upgrading and transitions:
+
+| Document | Description |
+|----------|-------------|
+| [autocomplete.md](migration-guides/autocomplete.md) | Autocomplete system guide |
+
+---
+
+## 🎯 By Use Case
+
+### I want to...
+
+#### **Learn the Language**
+→ [Getting Started](user-guide/02-Getting-Started.md) → [Language Features](user-guide/04-Language-Features.md)
+
+#### **Use LLM/AI Features**
+→ [LLM Integration](user-guide/08-LLM-Integration.md)
+
+#### **Process Data**
+→ [SQL/DuckDB](user-guide/09-SQL-DuckDB.md) for SQL queries
+→ [HTTP Client](user-guide/10-HTTP-Client.md) for API calls
+
+#### **Build Workflows**
+→ [Workflow Constructs](user-guide/07-Workflow-Constructs.md)
+
+#### **Create Custom Types**
+→ [Type System](user-guide/05-Type-System.md)
+
+#### **Use the GUI**
+→ [Desktop GUI Guide](gui/egui-desktop-gui.md) or [TUI Guide](gui/tui-interface.md)
+
+#### **Contribute Code**
+→ [Architecture](developer/architecture.md) → [Building](developer/building.md)
+
+#### **Debug Issues**
+→ [Known Issues](developer/known-issues.md) → [Tracing](advanced/tracing-and-debugging.md)
+
+---
+
+## 📖 Learning Paths
+
+### Path 1: Complete Beginner
+
+1. [Overview](user-guide/01-Overview.md) - What is the DSL?
+2. [Getting Started](user-guide/02-Getting-Started.md) - Install and run
+3. [TUI Interface](gui/tui-interface.md) - Navigate the interface
+4. [Language Features](user-guide/04-Language-Features.md) - Learn syntax
+5. [Builtin Functions](user-guide/06-Builtin-Functions.md) - Use functions
+6. [Type System](user-guide/05-Type-System.md) - Define types
+7. [Workflows](user-guide/07-Workflow-Constructs.md) - Build workflows
+
+**Time:** 2-3 hours
+
+---
+
+### Path 2: Experienced Programmer
+
+1. [Getting Started](user-guide/02-Getting-Started.md) - Quick setup
+2. [Language Features](user-guide/04-Language-Features.md) - Syntax overview
+3. [LLM Integration](user-guide/08-LLM-Integration.md) or [SQL/DuckDB](user-guide/09-SQL-DuckDB.md)
+4. [Advanced Features](advanced/11-Advanced-Features.md) - Power features
+
+**Time:** 30-60 minutes
+
+---
+
+### Path 3: Contributor
+
+1. [Architecture](developer/architecture.md) - System design
+2. [Building](developer/building.md) - Build from source
+3. [Known Issues](developer/known-issues.md) - Current work
+4. [Error Handling](developer/error-handling.md) or [egui Implementation](developer/egui-implementation.md)
+
+**Time:** 1-2 hours
+
+---
+
+## 🔍 Finding Information
+
+### By Topic
+
+**Language:**
+- Syntax → [Language Features](user-guide/04-Language-Features.md)
+- Types → [Type System](user-guide/05-Type-System.md)
+- Functions → [Builtin Functions](user-guide/06-Builtin-Functions.md)
+
+**Integration:**
+- LLM/AI → [LLM Integration](user-guide/08-LLM-Integration.md)
+- Database → [SQL/DuckDB](user-guide/09-SQL-DuckDB.md)
+- APIs → [HTTP Client](user-guide/10-HTTP-Client.md)
+
+**Interface:**
+- Desktop → [egui Desktop GUI](gui/egui-desktop-gui.md)
+- Terminal → [TUI Interface](gui/tui-interface.md)
+
+**Development:**
+- System Design → [Architecture](developer/architecture.md)
+- Building → [Building Guide](developer/building.md)
+- Errors → [Error Handling](developer/error-handling.md)
+- GUI Code → [egui Implementation](developer/egui-implementation.md)
+
+---
+
+## 📋 Document Status
+
+### User Documentation ✅
+
+| Category | Status | Files |
+|----------|--------|-------|
+| User Guide | ✅ Complete | 9 files |
+| GUI Documentation | ✅ Complete | 2 files |
+| Advanced Topics | ✅ Complete | 3 files |
+
+### Developer Documentation ✅
+
+| Category | Status | Files |
+|----------|--------|-------|
+| Architecture | ✅ Complete | 5 files |
+| References | ✅ Complete | 2 files |
+| Migration Guides | ✅ Complete | 1 file |
+
+---
+
+## 🔗 Related Resources
+
+### In Repository
+
+- **[Main README](../README.md)** - Project overview
+- **[Examples](../examples/)** - Example programs
+- **[Historical Docs](../historical/README.md)** - Development history
+
+### LLM Integration
+
+- **[simplify_baml](../crates/simplify_baml/README.md)** - LLM framework documentation
+
+### External Links
+
+- **GitHub Issues** - Report bugs or request features
+- **Architecture Diagrams** - See [Architecture](developer/architecture.md)
+
+---
+
+## 📊 Documentation Statistics
+
+### Content
+
+- **Total Documents:** 20+ organized files
+- **User Guides:** 9 comprehensive guides
+- **Developer Docs:** 5 technical documents
+- **Total Lines:** 15,000+ lines of documentation
+
+### Organization
+
+- ✅ Clear hierarchy (user-guide/, developer/, gui/, etc.)
+- ✅ Cross-references between documents
+- ✅ Examples in every guide
+- ✅ Search-friendly structure
+
+---
+
+## 🎓 Documentation Conventions
+
+### Code Examples
+
+All code examples follow this format:
+
+```javascript
+// Input
+let x = 5
+let y = 10
+x + y
+
+// Output
+15
+```
+
+### Document Structure
+
+Each document includes:
+- **Table of contents** - Quick navigation
+- **Clear sections** - Organized topics
+- **Code examples** - Practical demonstrations
+- **Best practices** - Tips and recommendations
+- **Related documents** - Cross-references
+
+---
+
+## 🆘 Getting Help
+
+### In the Application
+
+- Type `:help` in REPL for quick reference
+- Press `F1` for interface help (TUI)
+- Use `:vars`, `:types`, `:funcs` commands
+
+### In Documentation
+
+1. Check this index for topic
+2. Read relevant user guide
+3. Try examples
+4. Check troubleshooting in [Known Issues](developer/known-issues.md)
+
+### Still Stuck?
+
+- Search documentation for keywords
+- Check [examples/](../examples/) directory
+- Review [architecture](developer/architecture.md) for technical details
+- See [historical docs](../historical/README.md) for context
+
+---
+
+## 🤝 Contributing
+
+### Documentation
+
+- Follow existing structure
+- Include examples
+- Test all code snippets
+- Add cross-references
+
+### Style Guide
+
+- Use clear, concise language
+- Start simple, progress to complex
+- Show input and output
+- Include "Next Steps" or "See Also"
+
+---
+
+## 📝 Version History
+
+### Current (November 2025)
+
+- ✅ Complete documentation reorganization
+- ✅ User guide (9 files)
+- ✅ Developer documentation (5 files)
+- ✅ GUI guides (2 files)
+- ✅ Advanced topics (3 files)
+- ✅ References and migration guides
+
+### Previous
+
+- Original flat documentation structure
+- Phase-by-phase development docs
+- Scattered reference materials
+
+---
+
+## 🚀 Next Steps
+
+### New Users
+→ Start with [Getting Started](user-guide/02-Getting-Started.md)
+
+### Returning Users
+→ Check [What's New](#) for recent updates
+
+### Contributors
+→ Read [Architecture](developer/architecture.md) and [Building](developer/building.md)
+
+---
+
+**Happy Learning!** 🎉
+
+**Quick Links:**
+[Getting Started](user-guide/02-Getting-Started.md) |
+[Language Features](user-guide/04-Language-Features.md) |
+[Architecture](developer/architecture.md) |
+[Examples](../examples/)

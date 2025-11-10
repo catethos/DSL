@@ -1,4 +1,5 @@
 use eframe::egui;
+use egui::ecolor::Color32;
 
 /// Available animation types for the REPL header
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,7 +81,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
         ui.label(
             egui::RichText::new(ascii_art)
                 .monospace()
-                .color(egui::Color32::from_rgb(100, 150, 255)),
+                .color(Color32::from_rgb(100, 150, 255)),
         );
         ui.add_space(20.0);
         return;
@@ -121,15 +122,15 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                     .collect();
                 plot_ui.line(
                     egui_plot::Line::new(wave_points)
-                        .color(egui::Color32::from_rgb(100, 150, 255))
+                        .color(Color32::from_rgb(100, 150, 255))
                         .width(2.0),
                 );
             }
             AnimationType::AuroraWave => {
                 let colors = [
-                    egui::Color32::from_rgb(100, 150, 255),
-                    egui::Color32::from_rgb(150, 100, 255),
-                    egui::Color32::from_rgb(255, 100, 150),
+                    Color32::from_rgb(100, 150, 255),
+                    Color32::from_rgb(150, 100, 255),
+                    Color32::from_rgb(255, 100, 150),
                 ];
                 for (i, color) in colors.iter().enumerate() {
                     let offset = i as f64 * 0.5;
@@ -158,15 +159,15 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                     .collect();
                 plot_ui.line(
                     egui_plot::Line::new(points)
-                        .color(egui::Color32::from_rgb(100, 150, 255))
+                        .color(Color32::from_rgb(100, 150, 255))
                         .width(2.0),
                 );
             }
             AnimationType::SpiralGalaxy => {
                 let colors = [
-                    egui::Color32::from_rgb(100, 150, 255),
-                    egui::Color32::from_rgb(150, 255, 100),
-                    egui::Color32::from_rgb(255, 150, 100),
+                    Color32::from_rgb(100, 150, 255),
+                    Color32::from_rgb(150, 255, 100),
+                    Color32::from_rgb(255, 150, 100),
                 ];
                 for (arm, color) in colors.iter().enumerate() {
                     let offset = arm as f64 * 2.0 * PI / 3.0;
@@ -192,7 +193,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                 plot_ui.points(
                     egui_plot::Points::new(particles)
                         .radius(3.0)
-                        .color(egui::Color32::from_rgb(100, 150, 255)),
+                        .color(Color32::from_rgb(100, 150, 255)),
                 );
             }
             AnimationType::DnaHelix => {
@@ -212,12 +213,12 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                     .collect();
                 plot_ui.line(
                     egui_plot::Line::new(helix1)
-                        .color(egui::Color32::from_rgb(100, 150, 255))
+                        .color(Color32::from_rgb(100, 150, 255))
                         .width(2.0),
                 );
                 plot_ui.line(
                     egui_plot::Line::new(helix2)
-                        .color(egui::Color32::from_rgb(255, 100, 150))
+                        .color(Color32::from_rgb(255, 100, 150))
                         .width(2.0),
                 );
             }
@@ -233,7 +234,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                         .collect();
                     plot_ui.line(
                         egui_plot::Line::new(points)
-                            .color(egui::Color32::from_rgb(100, 150, 255))
+                            .color(Color32::from_rgb(100, 150, 255))
                             .width(1.5),
                     );
                 }
@@ -248,7 +249,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                     .collect();
                 plot_ui.line(
                     egui_plot::Line::new(points)
-                        .color(egui::Color32::from_rgb(100, 150, 255))
+                        .color(Color32::from_rgb(100, 150, 255))
                         .width(2.0),
                 );
             }
@@ -264,7 +265,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                     .collect();
                 plot_ui.line(
                     egui_plot::Line::new(points)
-                        .color(egui::Color32::from_rgb(100, 150, 255))
+                        .color(Color32::from_rgb(100, 150, 255))
                         .width(2.0),
                 );
             }
@@ -306,7 +307,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                 plot_ui.points(
                     egui_plot::Points::new(vec![[-5.0, 0.0], [5.0, 3.5]])
                         .radius(0.0)
-                        .color(egui::Color32::TRANSPARENT),
+                        .color(Color32::TRANSPARENT),
                 );
 
                 // Get mouse pointer position in plot coordinates
@@ -342,7 +343,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                             let bar_points = vec![[x, 0.0], [x, y]];
                             plot_ui.line(
                                 egui_plot::Line::new(bar_points)
-                                    .color(egui::Color32::from_rgba_unmultiplied(
+                                    .color(Color32::from_rgba_unmultiplied(
                                         100, 150, 255, 100,
                                     ))
                                     .width(2.0),
@@ -360,7 +361,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                         // Show vertical line at mouse position
                         plot_ui.vline(
                             egui_plot::VLine::new(mouse_x)
-                                .color(egui::Color32::from_rgba_unmultiplied(255, 100, 100, 150))
+                                .color(Color32::from_rgba_unmultiplied(255, 100, 100, 150))
                                 .width(1.5),
                         );
 
@@ -370,7 +371,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                                 egui_plot::PlotPoint::new(mouse_x, 3.0),
                                 format!("P ≤ {:.2}\n{:.1}%", normalized_x, cdf_approx * 100.0),
                             )
-                            .color(egui::Color32::WHITE),
+                            .color(Color32::WHITE),
                         );
                     }
                 }
@@ -378,7 +379,7 @@ Y8b  d8 88   88 88         88      88      88booo. `8b  d8' `8b d8'8b d8'
                 // Draw the distribution curve
                 plot_ui.line(
                     egui_plot::Line::new(points)
-                        .color(egui::Color32::from_rgb(100, 150, 255))
+                        .color(Color32::from_rgb(100, 150, 255))
                         .width(2.5),
                 );
             }

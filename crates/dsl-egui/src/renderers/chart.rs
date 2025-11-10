@@ -3,6 +3,7 @@
 use crate::output_item::ChartType;
 use dsl_ir::Value;
 use egui;
+use egui::ecolor::Color32;
 use egui_plot::{Bar, BarChart, Legend, Line, Plot, PlotPoints};
 
 /// Renders a chart using egui_plot
@@ -23,7 +24,7 @@ pub fn render_chart(ui: &mut egui::Ui, chart_type: &ChartType, data: &Value) {
             // Show a message for now
             ui.label(egui::RichText::new("[Pie chart rendering not yet implemented]")
                 .family(egui::FontFamily::Monospace)
-                .color(egui::Color32::from_rgb(150, 150, 150)));
+                .color(Color32::from_rgb(150, 150, 150)));
             ui.label(egui::RichText::new(format!("Data: {}", format_chart_data(data)))
                 .family(egui::FontFamily::Monospace));
         }
@@ -49,7 +50,7 @@ fn render_bar_chart(ui: &mut egui::Ui, data: &Value, chart_id: egui::Id) {
         .allow_scroll(false)
         .allow_boxed_zoom(false)
         .show(ui, |plot_ui| {
-            let chart = BarChart::new(bars).color(egui::Color32::from_rgb(100, 150, 250));
+            let chart = BarChart::new(bars).color(Color32::from_rgb(100, 150, 250));
             plot_ui.bar_chart(chart);
         });
 }
@@ -74,7 +75,7 @@ fn render_line_chart(ui: &mut egui::Ui, data: &Value, chart_id: egui::Id) {
         .allow_boxed_zoom(false)
         .show(ui, |plot_ui| {
             let line = Line::new(PlotPoints::from(points))
-                .color(egui::Color32::from_rgb(100, 200, 100))
+                .color(Color32::from_rgb(100, 200, 100))
                 .width(2.0);
             plot_ui.line(line);
         });
@@ -100,7 +101,7 @@ fn render_scatter_plot(ui: &mut egui::Ui, data: &Value, chart_id: egui::Id) {
         .allow_boxed_zoom(false)
         .show(ui, |plot_ui| {
             let scatter = egui_plot::Points::new(PlotPoints::from(points))
-                .color(egui::Color32::from_rgb(200, 100, 100))
+                .color(Color32::from_rgb(200, 100, 100))
                 .radius(5.0);
             plot_ui.points(scatter);
         });

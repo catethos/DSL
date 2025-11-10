@@ -207,10 +207,12 @@ The key dependencies in `Cargo.toml`:
 
 ```toml
 [dependencies]
-# egui framework
-eframe = "0.29"      # Application framework
-egui = "0.29"        # Core UI library
-egui_extras = { version = "0.29", features = ["syntect", "image"] }
+# egui framework (version 0.31 - see compatibility note below)
+eframe = "0.31"      # Application framework
+egui = "0.31"        # Core UI library
+egui_extras = { version = "0.31", features = ["syntect", "image"] }
+egui_plot = "0.31"   # Chart/plotting library
+egui_commonmark = "0.20"  # Markdown rendering
 
 # Core DSL engine (unchanged)
 dsl-core = { path = "../dsl-core" }
@@ -226,6 +228,100 @@ arboard = "3.4"           # Clipboard support
 rfd = "0.15"              # Native file picker dialogs
 image = { workspace = true }  # Image loading
 ```
+
+### ⚠️ Version Compatibility Notes
+
+**Important:** The egui ecosystem requires strict version alignment between all egui-related crates. Mixing versions will cause compilation errors due to type mismatches.
+
+#### Current Version: egui 0.31
+
+All egui crates must use version **0.31**:
+- `eframe = "0.31"`
+- `egui = "0.31"`
+- `egui_extras = "0.31"`
+- `egui_plot = "0.31"`
+- `egui_commonmark = "0.20"` (compatible with egui 0.31)
+
+#### Version History & Compatibility
+
+| egui Version | egui_plot Version | egui_commonmark Version | Notes |
+|--------------|-------------------|-------------------------|-------|
+| 0.29 | 0.29 | 0.18 | Initial version used |
+| 0.31 | 0.31 | 0.20 | **Current stable** |
+| 0.32 | 0.32 (broken) | 0.21 | ⚠️ egui_plot 0.32.0 has broken dependencies (pulls egui 0.31) |
+| 0.33 | 0.33 | 0.22 | Latest (requires API changes) |
+
+#### Known Issues
+
+**egui_plot 0.32.0 Dependency Bug:**
+- Despite being version 0.32, `egui_plot = "0.32.0"` incorrectly depends on `egui ^0.31`
+- This creates type conflicts when using with `egui = "0.32"`
+- **Solution:** Use egui 0.31 ecosystem OR skip to egui 0.33
+
+**API Changes Between Versions:**
+
+**0.31 → 0.32/0.33:**
+- `Line::new()` and `Points::new()` gain a required `name` parameter
+  - 0.31: `Line::new(points)`
+  - 0.32+: `Line::new("line_name", points)`
+- `Frame::rounding()` renamed to `Frame::corner_radius()`
+- `egui::menu::bar()` deprecated in favor of `egui::MenuBar::new().ui()`
+
+#### Upgrading to Newer Versions
+
+To upgrade to egui 0.33+:
+
+1. **Update Cargo.toml versions:**
+   ```toml
+   eframe = "0.33"
+   egui = "0.33"
+   egui_extras = "0.33"
+   egui_plot = "0.33"
+   egui_commonmark = "0.22"
+   ```
+
+2. **Update egui_plot API calls:**
+   ```rust
+   // OLD (0.31)
+   egui_plot::Line::new(points)
+   egui_plot::Points::new(points)
+
+   // NEW (0.33)
+   egui_plot::Line::new("my_line", points)
+   egui_plot::Points::new("my_points", points)
+   ```
+
+3. **Update Frame API:**
+   ```rust
+   // OLD
+   Frame::default().rounding(4.0)
+
+   // NEW
+   Frame::default().corner_radius(4.0)
+   ```
+
+4. **Update menu bar:**
+   ```rust
+   // OLD
+   egui::menu::bar(ui, |ui| { ... })
+
+   // NEW
+   egui::MenuBar::new().ui(ui, |ui| { ... })
+   ```
+
+#### Troubleshooting Version Conflicts
+
+If you encounter errors like:
+```
+error[E0308]: mismatched types
+note: two different versions of crate `egui` are being used
+```
+
+**Solution:**
+1. Check `cargo tree -p dsl-egui | grep egui` to find version conflicts
+2. Ensure ALL egui crates use the same minor version
+3. Clear cargo cache: `cargo clean && cargo update`
+4. Rebuild: `cargo build -p dsl-egui`
 
 ### Building
 

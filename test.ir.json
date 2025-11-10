@@ -1,0 +1,86 @@
+{
+  "version": "0.1.0",
+  "types": [
+    {
+      "name": "People",
+      "description": null,
+      "fields": [
+        {
+          "name": "name",
+          "field_type": "String",
+          "optional": false,
+          "description": null
+        },
+        {
+          "name": "age",
+          "field_type": "Int",
+          "optional": false,
+          "description": null
+        },
+        {
+          "name": "address",
+          "field_type": "String",
+          "optional": false,
+          "description": null
+        },
+        {
+          "name": "email",
+          "field_type": "String",
+          "optional": false,
+          "description": null
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "functions": [
+    {
+      "name": "test",
+      "params": [
+        "x"
+      ],
+      "return_type": {
+        "Class": "People"
+      },
+      "properties": {},
+      "execution": {
+        "LLM": {
+          "prompt": {
+            "TemplateString": [
+              {
+                "Text": "extract the  information from "
+              },
+              {
+                "Interpolation": {
+                  "Variable": "x"
+                }
+              }
+            ]
+          },
+          "model": null,
+          "base_url": null,
+          "api_key_env": null,
+          "temperature": null
+        }
+      }
+    }
+  ],
+  "function_groups": [],
+  "agents": [],
+  "entry_expr": {
+    "FunctionCall": {
+      "name": "test",
+      "args": [
+        {
+          "TemplateString": [
+            {
+              "Text": "regina is 30 yo living in Sydney, with email regina@example.com"
+            }
+          ]
+        }
+      ],
+      "effect_kind": null,
+      "source_span": null
+    }
+  }
+}

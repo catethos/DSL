@@ -647,6 +647,17 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Result<Expr, String> {
             let segments = parse_template_string(pair)?;
             Ok(Expr::TemplateString(segments))
         }
+        Rule::triple_quoted_string => {
+            // Triple-quoted strings are atomic, extract content from """..."""
+            let full_str = pair.as_str();
+            if full_str.len() < 6 {
+                return Err("Empty triple-quoted string".to_string());
+            }
+
+            // Remove surrounding """ (3 chars on each side)
+            let content = &full_str[3..full_str.len() - 3];
+            Ok(Expr::String(content.to_string()))
+        }
         Rule::integer => {
             let value = pair
                 .as_str()
