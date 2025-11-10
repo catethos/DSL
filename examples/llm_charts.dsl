@@ -7,9 +7,8 @@ type ChartData {
     value: Int
 }
 
-// Define a function to extract chart data from text
+// Define a function to extract chart data from text using LLM
 function ExtractSalesData(text: String) -> List<ChartData> {
-    client: "openai",
     prompt: """
     Extract quarterly sales data from the following text and return as structured data:
 
@@ -28,8 +27,8 @@ Our company had a great year!
 - But Q4 was amazing with $180,000 in sales!
 """
 
-// Extract data using LLM
-let data = extractAs(salesText, "List<ChartData>")
+// Extract data using our custom LLM function
+let data = ExtractSalesData(salesText)
 
 // Generate bar chart from extracted data
 let chart = generateBarChart(data)

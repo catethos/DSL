@@ -1,4 +1,4 @@
-use simplify_baml::{Class, Enum, FieldType};
+use dsl_types::{Class, Enum, FieldType};
 use std::collections::HashMap;
 
 /// Type alias for HTTP configuration: (method, url, params, headers, body)
@@ -69,6 +69,11 @@ pub enum Expr {
         scrutinee: Box<Expr>,
         cases: Vec<MatchCase>,
     },
+    /// Block expression with multiple statements and a final result
+    Block {
+        statements: Vec<Expr>, // Executed for side effects (let bindings, etc.)
+        result: Box<Expr>,     // Final expression that produces the value
+    },
 }
 
 /// Template string segments
@@ -131,6 +136,8 @@ pub struct MatchCase {
 /// Function execution modes
 #[derive(Debug, Clone)]
 pub enum FunctionExecution {
+    /// Regular expression-based execution (arrow functions and blocks)
+    Expression { body: Box<Expr> },
     /// LLM-based execution with prompt
     LLM {
         prompt: String,
@@ -149,18 +156,6 @@ pub enum FunctionExecution {
     },
     /// SQL query execution
     SQL { query: String },
-    /// Hybrid: HTTP then LLM processing
-    HTTPWithLLM {
-        http_method: String,
-        http_url: String,
-        http_params: Option<HashMap<String, String>>,
-        http_headers: Option<HashMap<String, String>>,
-        llm_prompt: String,
-        llm_model: Option<String>,
-        llm_base_url: Option<String>,
-        llm_api_key_env: Option<String>,
-        llm_temperature: Option<f64>,
-    },
 }
 
 /// Function definition (traditional with LLM/HTTP/SQL execution)

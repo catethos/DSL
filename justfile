@@ -2,6 +2,7 @@
 
 # Configuration
 binary_name := "dsl"
+gui_binary_name := "dsl-gui"
 dist_dir := "dist"
 vps_host := "72.61.149.67"
 vps_user := "root"
@@ -62,6 +63,7 @@ update-cargo-versions VERSION:
     sed -i.bak 's/^version = ".*"/version = "{{VERSION}}"/' crates/dsl-core/Cargo.toml
     sed -i.bak 's/^version = ".*"/version = "{{VERSION}}"/' crates/dsl-tui/Cargo.toml
     sed -i.bak 's/^version = ".*"/version = "{{VERSION}}"/' crates/dsl-autocomplete/Cargo.toml
+    sed -i.bak 's/^version = ".*"/version = "{{VERSION}}"/' crates/dsl-egui/Cargo.toml
     rm -f crates/*/Cargo.toml.bak
     echo "✓ Cargo.toml files updated"
 
@@ -100,6 +102,7 @@ build:
     @echo ""
     @echo "Building for current architecture..."
     @cargo build --release --manifest-path crates/dsl-repl/Cargo.toml
+    @cargo build --release --manifest-path crates/dsl-egui/Cargo.toml
     #!/usr/bin/env bash
     @set -e; \
     export VERSION=$(cat {{version_file}}); \
@@ -111,7 +114,7 @@ build:
     esac; \
     export ARCHIVE="{{binary_name}}-v$VERSION-$ARCH_NAME-macos.tar.gz"; \
     echo "Packaging $ARCHIVE..."; \
-    tar czf "{{dist_dir}}/$ARCHIVE" -C target/release "{{binary_name}}"; \
+    tar czf "{{dist_dir}}/$ARCHIVE" -C target/release "{{binary_name}}" "{{gui_binary_name}}"; \
     echo ""; \
     echo "✓ Built and packaged: {{dist_dir}}/$ARCHIVE"; \
     cp install.sh "{{dist_dir}}/"; \
@@ -153,15 +156,16 @@ start-server:
     @echo "Checking for existing server..."
     -ssh -i {{ssh_key}} {{vps_user}}@{{vps_host}} "pkill -f 'python3 -m http.server 8000' || true"
     @echo "Starting HTTP server..."
-    ssh -i {{ssh_key}} {{vps_user}}@{{vps_host}} "cd {{remote_dir}} && nohup python3 -m http.server 8000 > server.log 2>&1 </dev/null & disown"
+    ssh -f -i {{ssh_key}} {{vps_user}}@{{vps_host}} "cd {{remote_dir}} && nohup python3 -m http.server 8000 > server.log 2>&1 & echo \$! > server.pid"
     @sleep 2
     @echo "Verifying server..."
     #!/usr/bin/env bash
-    if curl -fsSL "http://{{vps_host}}:8000/" > /dev/null 2>&1; then
-    echo "✓ Server is running!"
-    else
-    echo "Warning: Server may not be running properly."
-    echo "Check logs with: just logs"
+    set -e
+    if curl -fsSL "http://{{vps_host}}:8000/" > /dev/null 2>&1; then \
+        echo "✓ Server is running!"; \
+    else \
+        echo "Warning: Server may not be running properly."; \
+        echo "Check logs with: just logs"; \
     fi
 
 # Stop HTTP server on VPS
@@ -177,11 +181,12 @@ logs:
 # Check server status
 status:
     #!/usr/bin/env bash
-    if curl -fsSL "http://{{vps_host}}:8000/" > /dev/null 2>&1; then
-    echo "✓ Server is running at http://{{vps_host}}:8000/"
-    else
-    echo "✗ Server is not responding"
-    exit 1
+    set -e
+    if curl -fsSL "http://{{vps_host}}:8000/" > /dev/null 2>&1; then \
+        echo "✓ Server is running at http://{{vps_host}}:8000/"; \
+    else \
+        echo "✗ Server is not responding"; \
+        exit 1; \
     fi
 
 # Clean local build artifacts

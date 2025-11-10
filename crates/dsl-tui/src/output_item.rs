@@ -87,7 +87,7 @@ impl OutputItem {
             Self::Image {
                 path: path.clone(),
                 data,
-                cached_lines: None, // Will be rendered on first display
+                cached_lines: None,          // Will be rendered on first display
                 use_graphics_protocol: true, // Try graphics protocol first
             }
         } else {

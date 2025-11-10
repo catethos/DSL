@@ -1,6 +1,7 @@
 //! Keyword completion provider
 
 use crate::{CompletionContext, CompletionProvider, ContextKind, Suggestion, SuggestionKind};
+use dsl_core::{boolean_info, keyword_info, type_info};
 
 /// A provider for DSL keywords
 pub struct KeywordProvider {
@@ -9,65 +10,36 @@ pub struct KeywordProvider {
 
 impl KeywordProvider {
     /// Create a new keyword provider with default DSL keywords
+    /// Keywords are sourced from dsl-core to ensure consistency
     pub fn new() -> Self {
-        let keywords = vec![
-            // Declaration keywords
-            Suggestion::new("def", SuggestionKind::Keyword)
-                .detail("Function definition")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            Suggestion::new("type", SuggestionKind::Keyword)
-                .detail("Type definition")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            Suggestion::new("enum", SuggestionKind::Keyword)
-                .detail("Enum definition")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            Suggestion::new("workflow", SuggestionKind::Keyword)
-                .detail("Workflow definition")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            // Binding and control flow
-            Suggestion::new("as", SuggestionKind::Keyword)
-                .detail("Variable binding")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            Suggestion::new("let", SuggestionKind::Keyword)
-                .detail("Variable binding (let x = expr)")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            // Function execution blocks
-            Suggestion::new("prompt:", SuggestionKind::Keyword)
-                .detail("LLM prompt block")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            Suggestion::new("sql:", SuggestionKind::Keyword)
-                .detail("SQL query block")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            Suggestion::new("http:", SuggestionKind::Keyword)
-                .detail("HTTP request block")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            // Primitive types
-            Suggestion::new("String", SuggestionKind::Type)
-                .detail("String type")
-                .priority(SuggestionKind::Type.default_priority()),
-            Suggestion::new("Int", SuggestionKind::Type)
-                .detail("Integer type")
-                .priority(SuggestionKind::Type.default_priority()),
-            Suggestion::new("Float", SuggestionKind::Type)
-                .detail("Float type")
-                .priority(SuggestionKind::Type.default_priority()),
-            Suggestion::new("Bool", SuggestionKind::Type)
-                .detail("Boolean type")
-                .priority(SuggestionKind::Type.default_priority()),
-            Suggestion::new("Table", SuggestionKind::Type)
-                .detail("Table type")
-                .priority(SuggestionKind::Type.default_priority()),
-            Suggestion::new("Any", SuggestionKind::Type)
-                .detail("Any type")
-                .priority(SuggestionKind::Type.default_priority()),
-            // Boolean literals
-            Suggestion::new("true", SuggestionKind::Keyword)
-                .detail("Boolean true")
-                .priority(SuggestionKind::Keyword.default_priority()),
-            Suggestion::new("false", SuggestionKind::Keyword)
-                .detail("Boolean false")
-                .priority(SuggestionKind::Keyword.default_priority()),
-        ];
+        let mut keywords = Vec::new();
+
+        // Add keywords from dsl-core
+        for kw in keyword_info() {
+            keywords.push(
+                Suggestion::new(kw.keyword, SuggestionKind::Keyword)
+                    .detail(kw.description)
+                    .priority(SuggestionKind::Keyword.default_priority()),
+            );
+        }
+
+        // Add types from dsl-core
+        for ty in type_info() {
+            keywords.push(
+                Suggestion::new(ty.type_name, SuggestionKind::Type)
+                    .detail(ty.description)
+                    .priority(SuggestionKind::Type.default_priority()),
+            );
+        }
+
+        // Add boolean literals from dsl-core
+        for bool_lit in boolean_info() {
+            keywords.push(
+                Suggestion::new(bool_lit.literal, SuggestionKind::Keyword)
+                    .detail(bool_lit.description)
+                    .priority(SuggestionKind::Keyword.default_priority()),
+            );
+        }
 
         Self { keywords }
     }

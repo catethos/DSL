@@ -1,5 +1,6 @@
 //! Autocomplete integration for the TUI
 
+use crate::commands::commands_for_autocomplete;
 use dsl_autocomplete::{
     providers::{
         dynamic::{FunctionProvider, ItemSource, TypeProvider, VariableProvider},
@@ -23,11 +24,12 @@ impl AutocompleteState {
     pub fn new(runtime: &Runtime) -> Self {
         let mut engine = AutocompleteEngine::new();
 
-        // Register keyword provider
+        // Register keyword provider (keywords sourced from dsl-core)
         engine.register_provider(Box::new(KeywordProvider::new()));
 
-        // Register command provider
-        engine.register_provider(Box::new(CommandProvider::new()));
+        // Register command provider (commands sourced from dsl-tui commands module)
+        let commands = commands_for_autocomplete();
+        engine.register_provider(Box::new(CommandProvider::with_commands(commands)));
 
         // Register function provider
         let func_source = Arc::new(RuntimeFunctionSource::new(runtime));
@@ -124,22 +126,8 @@ struct RuntimeFunctionSource {
 
 impl RuntimeFunctionSource {
     fn new(runtime: &Runtime) -> Self {
-        let mut functions = vec![
-            ("Upper".to_string(), Some("(String) -> String".to_string())),
-            ("Lower".to_string(), Some("(String) -> String".to_string())),
-            ("Length".to_string(), Some("(String) -> Int".to_string())),
-            ("Join".to_string(), Some("(List, String) -> String".to_string())),
-            ("Ask".to_string(), Some("(String) -> String".to_string())),
-            ("RenderMarkdown".to_string(), Some("(String) -> Markdown".to_string())),
-            ("ExtractPerson".to_string(), Some("(String) -> Person".to_string())),
-            ("ExtractAs".to_string(), Some("(String, Type) -> Type".to_string())),
-            ("SQL".to_string(), Some("(String) -> Table".to_string())),
-            ("Par".to_string(), Some("(...) -> List".to_string())),
-            ("Not".to_string(), Some("(Bool) -> Bool".to_string())),
-            ("GenerateBarChart".to_string(), Some("(List, String?) -> Image".to_string())),
-            ("GenerateLineChart".to_string(), Some("(List, String?) -> Image".to_string())),
-            ("GeneratePieChart".to_string(), Some("(List, String?) -> Image".to_string())),
-        ];
+        // Get builtin functions from dsl-interpreter metadata (single source of truth)
+        let mut functions = dsl_interpreter::builtins_for_autocomplete();
 
         // Add user-defined functions
         for (name, func_def) in runtime.functions.iter() {
@@ -174,7 +162,7 @@ struct RuntimeVariableSource {
 impl RuntimeVariableSource {
     fn new(runtime: &Runtime) -> Self {
         let variables = runtime
-            .vars
+            .all_visible_vars()
             .iter()
             .map(|(name, value)| {
                 let detail = Some(value.type_name().to_string());

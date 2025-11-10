@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 dsl-ir = { path = "../dsl-ir" }
 dsl-core = { path = "../dsl-core" }  # For parsing interpolated expressions
-simplify_baml = { path = "../../../simplify_baml" }
+simplify_baml = { path = "../simplify_baml" }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 duckdb = { workspace = true }

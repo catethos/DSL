@@ -1,0 +1,34 @@
+[package]
+name = "simplify_baml"
+version = "0.1.0"
+edition = "2021"
+authors = ["catethos <cloverethos@gmail.com>"]
+description = "Simplified BAML runtime for structured LLM outputs using native Rust types with macros"
+readme = "README.md"
+repository = "https://github.com/catethos/simplify_baml"
+license = "MIT"
+keywords = ["llm", "baml", "ai", "structured-output", "openai"]
+categories = ["api-bindings", "web-programming", "template-engine"]
+
+[dependencies]
+# Type definitions (shared with DSL)
+dsl-types = { path = "../dsl-types" }
+
+# Core dependencies
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Template rendering
+minijinja = "2.0"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }
+
+# Macro support
+simplify_baml_macros = { path = "../simplify_baml_macros" }
+
+# LLM client
+genai = "0.4.2"
+futures = "0.3"

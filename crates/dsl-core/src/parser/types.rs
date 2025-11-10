@@ -1,7 +1,7 @@
 use super::{DslParser, Rule};
 use pest::iterators::Pair;
 use pest::Parser;
-use simplify_baml::{Class, Enum, Field, FieldType};
+use dsl_types::{Class, Enum, Field, FieldType};
 
 /// Parse a type definition
 pub fn parse_type_definition(input: &str) -> Result<Class, String> {

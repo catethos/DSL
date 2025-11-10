@@ -1,8 +1,8 @@
+pub mod image;
 pub mod markdown;
 pub mod table;
 pub mod text;
 pub mod tree;
-pub mod image;
 
 use crate::output_item::OutputItem;
 use ratatui::text::Line;
@@ -29,7 +29,12 @@ impl OutputRenderer for OutputItem {
             } => tree::tree_to_lines(root, expanded_paths, width),
             OutputItem::Error(s) => text::error_to_lines(s, width),
             OutputItem::Markdown(s) => markdown::markdown_to_lines(s, width),
-            OutputItem::Image { path, data, cached_lines, use_graphics_protocol } => {
+            OutputItem::Image {
+                path,
+                data,
+                cached_lines,
+                use_graphics_protocol,
+            } => {
                 // For graphics protocol, we'll render separately in the draw function
                 // For fallback, use cached halfblock lines
                 if *use_graphics_protocol {

@@ -1,8 +1,9 @@
 use crate::autocomplete::AutocompleteState;
 use crate::output_item::OutputItem;
 use crate::ui::banner;
-use dsl_ir::Value;
+use dsl_core::{compile_function_group, resolve_program, SymbolTable};
 use dsl_interpreter::Interpreter;
+use dsl_ir::Value;
 use ratatui_image::picker::Picker;
 use std::time::Duration;
 use tui_textarea::TextArea;
@@ -38,6 +39,7 @@ pub struct App {
     pub input: String,
     pub output: Vec<OutputItem>,
     pub interpreter: Interpreter,
+    pub symbol_table: SymbolTable, // NEW: Persistent resolver symbol table
     pub show_banner: bool,
     pub is_loading: bool,
     pub cursor_position: usize,
@@ -72,7 +74,8 @@ pub struct App {
     pub image_picker: Picker,
 
     // Cached image protocols to avoid recreating on every frame (indexed by output item index)
-    pub image_protocols: std::collections::HashMap<usize, Box<dyn ratatui_image::protocol::StatefulProtocol>>,
+    pub image_protocols:
+        std::collections::HashMap<usize, Box<dyn ratatui_image::protocol::StatefulProtocol>>,
 
     // Toggle to show/hide images (for performance)
     pub show_images: bool,
@@ -101,6 +104,7 @@ impl App {
             input: String::new(),
             output: vec![],
             interpreter,
+            symbol_table: SymbolTable::new(), // Initialize persistent symbol table
             show_banner: true,
             is_loading: false,
             cursor_position: 0,
@@ -896,13 +900,20 @@ impl App {
 
     /// Evaluate input using the IR pipeline (parse -> compile -> interpret)
     async fn eval_with_ir(&mut self, input: &str) -> Result<(Value, Option<String>), String> {
-        use dsl_core::{parse_expr, compile_expr};
+        use dsl_core::{compile_expr, parse_expr};
+        use dsl_ir::{IRBinding, IRNode};
 
         let input = input.trim();
 
         // Check for special commands first
         if input == ":vars" {
             return self.handle_vars_command();
+        }
+        if input == ":scopes" {
+            return self.handle_scopes_command();
+        }
+        if input == ":globals" {
+            return self.handle_globals_command();
         }
         if input == ":types" {
             return self.handle_types_command();
@@ -923,8 +934,13 @@ impl App {
             return self.handle_debug_command();
         }
 
-        // Check for declarations (type, enum, def)
-        if input.starts_with("type ") || input.starts_with("enum ") || input.starts_with("def ") {
+        // Check for declarations and statements (type, enum, def, function, let)
+        if input.starts_with("type ")
+            || input.starts_with("enum ")
+            || input.starts_with("def ")
+            || input.starts_with("function ")
+            || input.starts_with("let ")
+        {
             return self.handle_declaration(input).await;
         }
 
@@ -934,84 +950,215 @@ impl App {
         // Compile AST to IR
         let ir_node = compile_expr(&ast).map_err(|e| format!("Compile error: {}", e))?;
 
-        // Evaluate IR
-        let value = self.interpreter.eval(&ir_node).await?;
+        // Check if this is a top-level binding (Sequential with binding)
+        let binding_info = if let IRNode::Sequential {
+            binding: Some(ref bind),
+            ..
+        } = ir_node
+        {
+            Some(bind.clone())
+        } else {
+            None
+        };
 
-        // Check if this was a variable binding
-        // For now, we don't track variable names in IR (future enhancement)
-        // The interpreter handles bindings internally
+        // Evaluate IR
+        let value = self.interpreter.eval(&ir_node).await.map_err(|e| e.to_string())?;
+
+        // For top-level REPL bindings, ensure they're stored in the global scope
+        if let Some(binding) = binding_info {
+            match &binding {
+                IRBinding::Single(name) => {
+                    // Get the value from current scope and ensure it's in global scope
+                    if let Ok(bound_value) = self.interpreter.runtime.get_var(name) {
+                        self.interpreter
+                            .runtime
+                            .set_global_var(name.clone(), bound_value);
+                        return Ok((value, Some(name.clone())));
+                    }
+                }
+                IRBinding::List(names) => {
+                    // For destructuring, ensure all variables are in global scope
+                    for name in names {
+                        if let Ok(bound_value) = self.interpreter.runtime.get_var(name) {
+                            self.interpreter
+                                .runtime
+                                .set_global_var(name.clone(), bound_value);
+                        }
+                    }
+                    // Return formatted variable names for display
+                    if !names.is_empty() {
+                        return Ok((value, Some(format!("[{}]", names.join(", ")))));
+                    }
+                }
+            }
+        }
+
         Ok((value, None))
     }
 
-    /// Handle declarations (type, enum, def)
+    /// Handle declarations and statements (type, enum, def, let)
     async fn handle_declaration(&mut self, input: &str) -> Result<(Value, Option<String>), String> {
-        use dsl_core::{parse_program, compile_program_to_ir};
+        use dsl_core::parse_program;
 
         // Parse the declaration as a program
-        let program = parse_program(input).map_err(|e| format!("Parse error: {}", e))?;
+        let mut program = parse_program(input).map_err(|e| format!("Parse error: {}", e))?;
 
-        // Compile to IR
-        let ir = compile_program_to_ir(&program).map_err(|e| format!("Compile error: {}", e))?;
+        // Extract entry_expr early before program is moved
+        let entry_expr = program.entry_expr.take();
 
         // Register types
-        for class in &ir.types {
+        for class in &program.types {
             self.interpreter.runtime.types.register_class(class.clone());
         }
 
         // Register enums
-        for enum_def in &ir.enums {
-            self.interpreter.runtime.types.register_enum(enum_def.clone());
+        for enum_def in &program.enums {
+            self.interpreter
+                .runtime
+                .types
+                .register_enum(enum_def.clone());
         }
 
         // Rebuild BAML runtime with new types
-        if !ir.types.is_empty() || !ir.enums.is_empty() {
-            self.interpreter.rebuild_runtime()
+        if !program.types.is_empty() || !program.enums.is_empty() {
+            self.interpreter
+                .rebuild_runtime()
                 .map_err(|e| format!("Failed to rebuild runtime: {}", e))?;
-        }
-
-        // Register traditional functions
-        for func in &ir.functions {
-            self.interpreter.runtime.functions.insert(func.name.clone(), func.clone());
-        }
-
-        // Register pattern-based functions (function groups)
-        // Merge clauses if a function group with the same name already exists
-        for func_group in &ir.function_groups {
-            if let Some(existing_group) = self.interpreter.runtime.function_groups.get_mut(&func_group.name) {
-                // Merge clauses into existing function group
-                existing_group.clauses.extend(func_group.clauses.clone());
-            } else {
-                // Create new function group
-                self.interpreter.runtime.function_groups.insert(func_group.name.clone(), func_group.clone());
-            }
         }
 
         // Generate a summary message
         let mut messages = Vec::new();
-        if !ir.types.is_empty() {
-            messages.push(format!("{} type(s) registered", ir.types.len()));
+        if !program.types.is_empty() {
+            messages.push(format!("{} type(s) registered", program.types.len()));
         }
-        if !ir.enums.is_empty() {
-            messages.push(format!("{} enum(s) registered", ir.enums.len()));
+        if !program.enums.is_empty() {
+            messages.push(format!("{} enum(s) registered", program.enums.len()));
         }
-        if !ir.functions.is_empty() {
-            messages.push(format!("{} function(s) defined", ir.functions.len()));
-        }
-        if !ir.function_groups.is_empty() {
-            for func_group in &ir.function_groups {
-                // Show the total clause count (after merging)
-                let total_clauses = self.interpreter.runtime.function_groups
-                    .get(&func_group.name)
-                    .map(|g| g.clauses.len())
-                    .unwrap_or(0);
-                messages.push(format!("Function '{}' defined with {} clause(s)", func_group.name, total_clauses));
+
+        // NEW: Use resolver to group functions (single source of truth!)
+        let groups = resolve_program(program, &mut self.symbol_table)
+            .map_err(|e| format!("Resolver error: {}", e))?;
+
+        // Compile each group and register with interpreter
+        for group in &groups {
+            let (ir_func, ir_group) =
+                compile_function_group(group).map_err(|e| format!("Compile error: {}", e))?;
+
+            if let Some(func) = ir_func {
+                // Trivial function - compiled to IRFunction
+                self.interpreter
+                    .runtime
+                    .functions
+                    .insert(func.name.clone(), func.clone());
+                messages.push(format!(
+                    "Defined function: {}/{}",
+                    func.name,
+                    func.params.len()
+                ));
             }
+
+            if let Some(func_group) = ir_group {
+                // Pattern function - compiled to IRFunctionGroup
+                // Check if we're updating an existing group or creating a new one
+                if self
+                    .interpreter
+                    .runtime
+                    .function_groups
+                    .contains_key(&func_group.name)
+                {
+                    // Update existing group
+                    self.interpreter
+                        .runtime
+                        .function_groups
+                        .insert(func_group.name.clone(), func_group.clone());
+                    messages.push(format!(
+                        "Updated pattern function {}/{} ({} clauses)",
+                        func_group.name,
+                        func_group.clauses[0].param_patterns.len(),
+                        func_group.clauses.len()
+                    ));
+                } else {
+                    // Create new group
+                    self.interpreter
+                        .runtime
+                        .function_groups
+                        .insert(func_group.name.clone(), func_group.clone());
+                    messages.push(format!(
+                        "Pattern function {}/{} defined ({} clause{})",
+                        func_group.name,
+                        func_group.clauses[0].param_patterns.len(),
+                        func_group.clauses.len(),
+                        if func_group.clauses.len() == 1 {
+                            ""
+                        } else {
+                            "s"
+                        }
+                    ));
+                }
+            }
+        }
+
+        // If there's an entry expression (like a let statement), compile and evaluate it
+        if let Some(entry_expr) = entry_expr {
+            use dsl_core::compile_expr;
+            use dsl_ir::IRBinding;
+
+            // Compile the entry expression to IR
+            let ir_node = compile_expr(&entry_expr).map_err(|e| format!("Compile error: {}", e))?;
+
+            // Check if this is a binding
+            let binding_info = if let dsl_ir::IRNode::Sequential {
+                binding: Some(ref bind),
+                ..
+            } = ir_node
+            {
+                Some(bind.clone())
+            } else if let dsl_ir::IRNode::Parallel {
+                binding: Some(ref bind),
+                ..
+            } = ir_node
+            {
+                Some(bind.clone())
+            } else {
+                None
+            };
+
+            // Evaluate the expression
+            let value = self.interpreter.eval(&ir_node).await.map_err(|e| e.to_string())?;
+
+            // For let statements, ensure the binding is in global scope
+            if let Some(binding) = binding_info {
+                match &binding {
+                    IRBinding::Single(name) => {
+                        if let Ok(bound_value) = self.interpreter.runtime.get_var(name) {
+                            self.interpreter
+                                .runtime
+                                .set_global_var(name.clone(), bound_value);
+                            return Ok((value, Some(name.clone())));
+                        }
+                    }
+                    IRBinding::List(names) => {
+                        for name in names {
+                            if let Ok(bound_value) = self.interpreter.runtime.get_var(name) {
+                                self.interpreter
+                                    .runtime
+                                    .set_global_var(name.clone(), bound_value);
+                            }
+                        }
+                        if !names.is_empty() {
+                            return Ok((value, Some(format!("[{}]", names.join(", ")))));
+                        }
+                    }
+                }
+            }
+
+            return Ok((value, None));
         }
 
         let message = if messages.is_empty() {
             "Declaration processed".to_string()
         } else {
-            messages.join(", ")
+            messages.join("\n")
         };
 
         Ok((Value::String(message), None))
@@ -1020,7 +1167,7 @@ impl App {
     /// Handle :vars command
     fn handle_vars_command(&self) -> Result<(Value, Option<String>), String> {
         let mut result = String::new();
-        for (name, value) in &self.interpreter.runtime.vars {
+        for (name, value) in &self.interpreter.runtime.all_visible_vars() {
             result.push_str(&format!("{} = {}\n", name, value.display()));
         }
         Ok((Value::String(result), None))
@@ -1053,6 +1200,42 @@ impl App {
         Ok((Value::String(result), None))
     }
 
+    /// Handle :scopes command (debug - show scope stack)
+    fn handle_scopes_command(&self) -> Result<(Value, Option<String>), String> {
+        let mut result = String::new();
+        let scope_count = self.interpreter.runtime.scopes.len();
+        result.push_str(&format!("Scope Stack ({} scopes):\n\n", scope_count));
+
+        for (i, scope) in self.interpreter.runtime.scopes.iter().enumerate() {
+            if i == 0 {
+                result.push_str(&format!("Scope [0] (global):\n"));
+            } else {
+                result.push_str(&format!("Scope [{}]:\n", i));
+            }
+
+            if scope.is_empty() {
+                result.push_str("  (empty)\n");
+            } else {
+                for (name, value) in scope {
+                    result.push_str(&format!("  {} = {}\n", name, value.display()));
+                }
+            }
+            result.push('\n');
+        }
+        Ok((Value::String(result), None))
+    }
+
+    /// Handle :globals command (show global scope variables only)
+    fn handle_globals_command(&self) -> Result<(Value, Option<String>), String> {
+        let mut result = String::new();
+        if let Some(global_scope) = self.interpreter.runtime.scopes.first() {
+            for (name, value) in global_scope {
+                result.push_str(&format!("{} = {}\n", name, value.display()));
+            }
+        }
+        Ok((Value::String(result), None))
+    }
+
     /// Handle :copy command
     fn handle_copy_command(&self, _filename: &str) -> Result<(Value, Option<String>), String> {
         // This would need access to last_result - not implemented yet
@@ -1062,20 +1245,34 @@ impl App {
     /// Handle :save command
     fn handle_save_command(&self, filename: &str) -> Result<(Value, Option<String>), String> {
         use std::fs;
-        let json = serde_json::to_string_pretty(&self.interpreter.runtime.vars)
+        let json = serde_json::to_string_pretty(&self.interpreter.runtime.all_visible_vars())
             .map_err(|e| format!("Serialization error: {}", e))?;
         fs::write(filename, json).map_err(|e| format!("Write error: {}", e))?;
-        Ok((Value::String(format!("Session saved to {}", filename)), None))
+        Ok((
+            Value::String(format!("Session saved to {}", filename)),
+            None,
+        ))
     }
 
     /// Handle :load command
-    async fn handle_load_command(&mut self, filename: &str) -> Result<(Value, Option<String>), String> {
+    async fn handle_load_command(
+        &mut self,
+        filename: &str,
+    ) -> Result<(Value, Option<String>), String> {
         use std::fs;
         let json = fs::read_to_string(filename).map_err(|e| format!("Read error: {}", e))?;
-        let vars: std::collections::HashMap<String, Value> = serde_json::from_str(&json)
-            .map_err(|e| format!("Deserialization error: {}", e))?;
-        self.interpreter.runtime.vars = vars;
-        Ok((Value::String(format!("Session loaded from {}", filename)), None))
+        let vars: std::collections::HashMap<String, Value> =
+            serde_json::from_str(&json).map_err(|e| format!("Deserialization error: {}", e))?;
+
+        // Load all variables into global scope
+        for (name, value) in vars {
+            self.interpreter.runtime.set_global_var(name, value);
+        }
+
+        Ok((
+            Value::String(format!("Session loaded from {}", filename)),
+            None,
+        ))
     }
 
     /// Handle :debug command

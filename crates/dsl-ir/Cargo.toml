@@ -4,10 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+dsl-types = { path = "../dsl-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rmp-serde = "1.1"
 indexmap = { workspace = true }
 anyhow = { workspace = true }
-simplify_baml = { path = "../../../simplify_baml" }
-duckdb = { workspace = true }

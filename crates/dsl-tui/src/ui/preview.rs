@@ -141,7 +141,7 @@ pub fn render_type_explorer(f: &mut Frame, area: Rect, app: &App) {
                 Span::styled(&field.name, Style::default().fg(Color::Yellow)),
                 Span::raw(": "),
                 Span::styled(
-                    format!("{}{}", field.field_type.to_string(), optional),
+                    format!("{}{}", field.field_type, optional),
                     Style::default().fg(Color::Blue),
                 ),
             ]));

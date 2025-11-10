@@ -1,6 +1,27 @@
 use serde::{Deserialize, Serialize};
-use simplify_baml::{Class, Enum, FieldType};
+use dsl_types::{Class, Enum, FieldType};
 use std::collections::HashMap;
+
+/// Effect kind for tracking side-effecting operations
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum EffectKind {
+    /// LLM API call (e.g., OpenAI, Anthropic)
+    LLM,
+    /// HTTP request (GET, POST, etc.)
+    HTTP,
+    /// SQL query execution
+    SQL,
+    /// Pure computation (no side effects)
+    Pure,
+}
+
+/// Source span for error reporting and debugging
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Span {
+    pub file: String,
+    pub line: usize,
+    pub column: usize,
+}
 
 /// Intermediate Representation Node - all expression types in the DSL
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -22,9 +43,14 @@ pub enum IRNode {
     /// Variable reference
     Variable(String),
     /// Function call: name(args)
+    ///
+    /// Effect kind tracks the side effects of this call (LLM, HTTP, SQL, Pure).
+    /// Source span enables better error messages by linking back to the original source.
     FunctionCall {
         name: String,
         args: Vec<IRNode>,
+        effect_kind: Option<EffectKind>,
+        source_span: Option<Span>,
     },
     /// Type instantiation: TypeName { field: value, ... }
     TypeInstantiation {
@@ -32,10 +58,7 @@ pub enum IRNode {
         fields: Vec<(String, IRNode)>,
     },
     /// Field access: expr.field
-    FieldAccess {
-        base: Box<IRNode>,
-        field: String,
-    },
+    FieldAccess { base: Box<IRNode>, field: String },
     /// Index access: expr[index]
     IndexAccess {
         base: Box<IRNode>,
@@ -64,6 +87,11 @@ pub enum IRNode {
         exprs: Vec<IRNode>,
         binding: Option<IRBinding>,
     },
+    /// Block expression with multiple statements and a final result
+    Block {
+        statements: Vec<IRNode>, // Executed for side effects (let bindings, etc.)
+        result: Box<IRNode>,     // Final expression that produces the value
+    },
 
     // Pattern matching (Phase 10B)
     /// Match expression: match value { pattern => expr, ... }
@@ -90,9 +118,7 @@ pub enum IRNode {
         timeout_ms: Option<u32>,
     },
     /// Receive a message matching a pattern
-    ReceiveMessage {
-        pattern: IRPattern,
-    },
+    ReceiveMessage { pattern: IRPattern },
     /// Broadcast message to multiple agents
     Broadcast {
         targets: Vec<String>,
@@ -101,9 +127,7 @@ pub enum IRNode {
 
     // Control flow (Phase 2)
     /// Infinite loop
-    Loop {
-        body: Box<IRNode>,
-    },
+    Loop { body: Box<IRNode> },
     /// While loop with condition
     While {
         condition: Box<IRNode>,
@@ -116,9 +140,7 @@ pub enum IRNode {
         body: Box<IRNode>,
     },
     /// Break from loop with optional value
-    Break {
-        value: Option<Box<IRNode>>,
-    },
+    Break { value: Option<Box<IRNode>> },
     /// Continue to next iteration
     Continue,
 
@@ -130,9 +152,7 @@ pub enum IRNode {
         catch_body: Box<IRNode>,
     },
     /// Throw an error
-    Throw {
-        error: Box<IRNode>,
-    },
+    Throw { error: Box<IRNode> },
 }
 
 /// Template string segments
@@ -141,7 +161,8 @@ pub enum IRTemplateSegment {
     /// Plain text
     Text(String),
     /// Interpolated expression ${expr}
-    Interpolation(String), // Store as string to be parsed later
+    /// Now stores the compiled IR node instead of a string to avoid re-parsing
+    Interpolation(Box<IRNode>),
 }
 
 /// Variable binding patterns
@@ -168,7 +189,7 @@ pub enum IRExecution {
     Expression { body: Box<IRNode> },
     /// LLM-based execution with prompt
     LLM {
-        prompt: String,
+        prompt: Box<IRNode>,  // Changed from String to IRNode to support templates
         model: Option<String>,
         base_url: Option<String>,
         api_key_env: Option<String>,
@@ -184,18 +205,6 @@ pub enum IRExecution {
     },
     /// SQL query execution
     SQL { query: String },
-    /// Hybrid: HTTP then LLM processing
-    HTTPWithLLM {
-        http_method: String,
-        http_url: String,
-        http_params: Option<HashMap<String, String>>,
-        http_headers: Option<HashMap<String, String>>,
-        llm_prompt: String,
-        llm_model: Option<String>,
-        llm_base_url: Option<String>,
-        llm_api_key_env: Option<String>,
-        llm_temperature: Option<f64>,
-    },
 }
 
 /// Function definition in IR

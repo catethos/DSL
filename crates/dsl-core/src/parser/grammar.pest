@@ -5,9 +5,23 @@
 // Program Structure
 // ============================================
 
-program = _{ SOI ~ declaration* ~ entry_expr? ~ EOI }
+program = _{ SOI ~ item* ~ EOI }
 
-entry_expr = { expr }
+item = {
+    declaration
+    | statement
+}
+
+statement = {
+    let_statement
+    | expr_statement
+}
+
+let_statement = {
+    "let" ~ (pattern | identifier) ~ "=" ~ expr
+}
+
+expr_statement = { expr }
 
 declaration = {
     type_decl
@@ -60,20 +74,47 @@ enum_variant = { identifier }
 // ============================================
 
 function_decl = {
-    "def" ~ identifier ~ "(" ~ def_parameters ~ ")" ~ ("->" ~ field_type)? ~ function_decl_body
+    "def" ~ identifier ~ "(" ~ parameters ~ ")" ~ return_type? ~ function_body
 }
 
-def_parameters = { (def_parameter ~ ("," ~ def_parameter)*)? }
-
-def_parameter = { (identifier ~ ":" ~ field_type) | pattern | identifier }
-
-// Function body can be either traditional (with properties/blocks) or expression-based
-function_decl_body = {
-    "{" ~ function_body ~ "}"
-    | "{" ~ expr ~ "}"
+parameters = {
+    (parameter ~ ("," ~ parameter)*)?
 }
 
-function_body = { (prompt_block | sql_block | http_block | property)* }
+// Parameters: typed (x: Int) or pattern-based (0, [x,y], etc.)
+parameter = {
+    typed_param    // Specific: must try first in PEG
+    | pattern_param   // General: any pattern
+}
+
+typed_param = { identifier ~ ":" ~ field_type }
+pattern_param = { pattern }
+
+return_type = { "->" ~ field_type }
+
+function_body = {
+    "=>" ~ expr                       // Arrow body (expression)
+    | block                           // Block body (statements + expr)
+    | special_body                    // LLM/HTTP/SQL body
+}
+
+// Block: flat sequence of items (statements or expressions)
+// Post-validation will ensure last item is an expression
+block = {
+    "{" ~ block_item* ~ "}"
+}
+
+// Block items: let statements or expressions
+// Note: All items are treated uniformly during parsing; 
+// post-validation ensures proper structure (statements before final expr)
+block_item = {
+    let_statement
+    | expr
+}
+
+special_body = {
+    "{" ~ (prompt_block | sql_block | http_block | property)+ ~ "}"
+}
 
 property = { identifier ~ ":" ~ property_value }
 
@@ -182,26 +223,26 @@ pattern_tuple = { "(" ~ pattern ~ ("," ~ pattern)+ ~ ","? ~ ")" }
 pattern_type = { identifier ~ "(" ~ pattern ~ ")" }
 
 // Variable binding: x, name (must come last)
-pattern_variable = { identifier }
+// Uses negative lookahead to avoid matching typed parameters
+// Note: Whitespace is implicitly consumed by Pest, so we just check for ":"
+pattern_variable = { identifier ~ !(":" ) }
 
 // ============================================
 // Workflow Definitions (for future use)
 // ============================================
 
 workflow_decl = {
-    "workflow" ~ identifier ~ "(" ~ def_parameters ~ ")" ~ ("->" ~ field_type)? ~ ":=" ~ expr
+    "workflow" ~ identifier ~ "(" ~ parameters ~ ")" ~ return_type? ~ ":=" ~ expr
 }
 
 // ============================================
 // Expressions (Runtime Constructs)
 // ============================================
 
-expr = { let_binding | conditional }
+expr = { conditional }
 
-// Let binding: let x = expr or let [a, b] = expr
-let_binding = {
-    "let" ~ (list_binding | identifier) ~ "=" ~ conditional
-}
+// Expression with End-of-Input validation (for standalone expression parsing)
+expr_with_eoi = _{ SOI ~ expr ~ EOI }
 
 conditional = {
     sequential ~ ("?" ~ sequential ~ ":" ~ sequential)?
@@ -249,7 +290,7 @@ multiplicative = {
     unary ~ (mul_op ~ unary)*
 }
 
-mul_op = { "*" | "/" }
+mul_op = { "*" | "/" | "%" }
 
 // Unary operators (!, -)
 unary = {
@@ -265,7 +306,7 @@ primary = _{
     | type_instantiation
     | function_call
     | access_chain
-    | block
+    | inline_block
     | literal
     | identifier
 }
@@ -331,8 +372,8 @@ field_access = { "." ~ identifier }
 
 index_access = { "[" ~ expr ~ "]" }
 
-// Inline anonymous block
-block = {
+// Inline anonymous block (for special syntax in expressions)
+inline_block = {
     "{" ~ property* ~ (sql_block | prompt_block)? ~ "}"
 }
 
@@ -350,7 +391,7 @@ literal = _{
     | map_literal
 }
 
-string_literal = ${
+string_literal = @{
     "\"" ~ plain_string_inner ~ "\""
     | "'" ~ single_string_inner ~ "'"
 }
@@ -413,8 +454,14 @@ description = { string_literal }
 // Basic Tokens
 // ============================================
 
+KEYWORD = _{
+    "def" | "function" | "type" | "enum" | "let" | "match"
+    | "if" | "then" | "else" | "true" | "false"
+    | "prompt" | "sql" | "http" | "as" | "return" | "workflow"
+}
+
 identifier = @{
-    (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
+    !KEYWORD ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
 }
 
 // ============================================

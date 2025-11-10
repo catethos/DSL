@@ -1,13 +1,16 @@
 use crate::builtins::BuiltinFunctions;
+use crate::error::InterpreterError;
 use crate::pattern::PatternMatcher;
 use crate::runtime::Runtime;
 use dsl_ir::{IRNode, IRTemplateSegment, IRBinding, IRExecution, IRFunction, Value, IR};
+use dsl_ir::lowering::Lowering;
 use indexmap::IndexMap;
+use std::collections::HashMap;
 use anyhow::Result;
 
 pub struct Interpreter {
     pub runtime: Runtime,
-    builtins: BuiltinFunctions,
+    pub builtins: BuiltinFunctions,
 }
 
 impl Interpreter {
@@ -53,7 +56,7 @@ impl Interpreter {
     }
 
     /// Main evaluation method - evaluates an IRNode and returns a Value
-    pub async fn eval(&mut self, node: &IRNode) -> Result<Value, String> {
+    pub async fn eval(&mut self, node: &IRNode) -> Result<Value, InterpreterError> {
         match node {
             // ===== Simple Values (5 types) =====
             IRNode::String(s) => Ok(Value::String(s.clone())),
@@ -117,7 +120,12 @@ impl Interpreter {
                 let cond_val = Box::pin(self.eval(condition)).await?;
                 let is_true = match cond_val {
                     Value::Bool(b) => b,
-                    _ => return Err("Condition must be a boolean".to_string()),
+                    _ => return Err(InterpreterError::TypeError {
+                        message: "Condition must be a boolean".to_string(),
+                        expected: "Bool".to_string(),
+                        got: cond_val.type_name().to_string(),
+                        source_span: None,
+                    }),
                 };
 
                 if is_true {
@@ -186,7 +194,24 @@ impl Interpreter {
             }
 
             // ===== Function Calls =====
-            IRNode::FunctionCall { name, args } => {
+            IRNode::FunctionCall { name, args, effect_kind, source_span } => {
+                // Check for intrinsic builtin calls first
+                if name.starts_with("__") {
+                    // Evaluate arguments first
+                    let mut arg_values = Vec::new();
+                    for arg in args {
+                        arg_values.push(Box::pin(self.eval(arg)).await?);
+                    }
+
+                    // Call intrinsic with evaluated arguments
+                    return self.builtins.call_intrinsic_with_values(
+                        name,
+                        &arg_values,
+                        effect_kind.clone(),
+                        source_span.clone(),
+                    ).await;
+                }
+
                 // Check for overloaded function first (function groups)
                 if let Some(func_group) = self.runtime.function_groups.get(name).cloned() {
                     // Overloaded function - try pattern matching
@@ -205,7 +230,7 @@ impl Interpreter {
                     self.builtins
                         .call(name, arg_values)
                         .await
-                        .map_err(|e| e.to_string())
+                        .map_err(Into::into)
                 }
             }
 
@@ -213,17 +238,21 @@ impl Interpreter {
             IRNode::Match { scrutinee, cases } => {
                 let value = Box::pin(self.eval(scrutinee)).await?;
 
-                // Save current variable scope
-                let saved_vars = self.runtime.vars.clone();
-
+                // Use push_scope for pattern matching isolation
                 for case in cases {
+                    // Push a new scope for this case
+                    self.runtime.push_scope();
+
                     // Check if pattern matches
                     if PatternMatcher::matches(&case.pattern, &value) {
                         // Check guard if present
                         if let Some(guard) = &case.guard {
                             // Temporarily add bindings for guard evaluation
                             let bindings = PatternMatcher::extract_bindings(&case.pattern, &value)
-                                .map_err(|e| format!("Pattern binding error: {}", e))?;
+                                .map_err(|e| InterpreterError::RuntimeError {
+                                    message: format!("Pattern binding error: {}", e),
+                                    source_span: None,
+                                })?;
 
                             for (name, val) in &bindings {
                                 self.runtime.set_var(name.clone(), val.clone());
@@ -231,18 +260,19 @@ impl Interpreter {
 
                             let guard_result = Box::pin(self.eval(guard)).await?;
 
-                            // Restore variables
-                            self.runtime.vars = saved_vars.clone();
-
-                            // If guard fails, try next case
+                            // If guard fails, pop scope and try next case
                             if !matches!(guard_result, Value::Bool(true)) {
+                                self.runtime.pop_scope();
                                 continue;
                             }
                         }
 
                         // Extract bindings and add to scope
                         let bindings = PatternMatcher::extract_bindings(&case.pattern, &value)
-                            .map_err(|e| format!("Pattern binding error: {}", e))?;
+                            .map_err(|e| InterpreterError::RuntimeError {
+                                message: format!("Pattern binding error: {}", e),
+                                source_span: None,
+                            })?;
 
                         for (name, val) in bindings {
                             self.runtime.set_var(name, val);
@@ -251,34 +281,54 @@ impl Interpreter {
                         // Execute body
                         let result = Box::pin(self.eval(&case.body)).await;
 
-                        // Restore variables
-                        self.runtime.vars = saved_vars;
+                        // Pop scope after execution
+                        self.runtime.pop_scope();
 
                         return result;
                     }
+
+                    // Pattern didn't match, pop the scope
+                    self.runtime.pop_scope();
                 }
 
-                Err("No matching pattern in match expression".to_string())
+                Err(InterpreterError::RuntimeError {
+                    message: "No matching pattern in match expression".to_string(),
+                    source_span: None,
+                })
             }
 
             // ===== Type Instantiation (TODO) =====
             IRNode::TypeInstantiation { type_name, fields: _ } => {
                 // TODO: Type instantiation not yet implemented in interpreter
-                Err(format!(
-                    "Type instantiation for '{}' not yet supported",
-                    type_name
-                ))
+                Err(InterpreterError::RuntimeError {
+                    message: format!("Type instantiation for '{}' not yet supported", type_name),
+                    source_span: None,
+                })
+            }
+
+            // ===== Block Expressions =====
+            IRNode::Block { statements, result } => {
+                // Execute all statements for their side effects and bindings
+                // Each statement might be a let binding (Parallel with binding)
+                for stmt in statements {
+                    Box::pin(self.eval(stmt)).await?;
+                }
+                // Return the final result expression
+                Box::pin(self.eval(result)).await
             }
 
             // ===== Future variants (not yet in grammar) =====
-            _ => Err("Unsupported IR node variant (future feature)".to_string()),
+            _ => Err(InterpreterError::RuntimeError {
+                message: "Unsupported IR node variant (future feature)".to_string(),
+                source_span: None,
+            }),
         }
     }
 
     // ===== Helper Methods =====
 
     /// Apply a binding to a value (store in variables)
-    fn apply_binding(&mut self, binding: &IRBinding, value: &Value) -> Result<(), String> {
+    pub fn apply_binding(&mut self, binding: &IRBinding, value: &Value) -> Result<(), InterpreterError> {
         match binding {
             IRBinding::Single(name) => {
                 self.runtime.set_var(name.clone(), value.clone());
@@ -291,19 +341,24 @@ impl Interpreter {
                         if let Some(item) = items.get(i) {
                             self.runtime.set_var(name.clone(), item.clone());
                         } else {
-                            return Err(format!(
-                                "Not enough items to destructure: expected at least {}, got {}",
-                                names.len(),
-                                items.len()
-                            ));
+                            return Err(InterpreterError::InvalidArguments {
+                                message: format!(
+                                    "Not enough items to destructure: expected at least {}, got {}",
+                                    names.len(),
+                                    items.len()
+                                ),
+                                source_span: None,
+                            });
                         }
                     }
                     Ok(())
                 } else {
-                    Err(format!(
-                        "Cannot destructure non-list value: got {}",
-                        value.type_name()
-                    ))
+                    Err(InterpreterError::TypeError {
+                        message: "Cannot destructure non-list value".to_string(),
+                        expected: "List".to_string(),
+                        got: value.type_name().to_string(),
+                        source_span: None,
+                    })
                 }
             }
         }
@@ -313,7 +368,7 @@ impl Interpreter {
     async fn interpolate_template(
         &mut self,
         segments: &[IRTemplateSegment],
-    ) -> Result<String, String> {
+    ) -> Result<String, InterpreterError> {
         let mut result = String::new();
 
         for segment in segments {
@@ -321,13 +376,9 @@ impl Interpreter {
                 IRTemplateSegment::Text(text) => {
                     result.push_str(text);
                 }
-                IRTemplateSegment::Interpolation(expr_str) => {
-                    // Parse the expression string and evaluate it
-                    let expr = dsl_core::parse_expr(expr_str)
-                        .map_err(|e| format!("Failed to parse interpolation: {}", e))?;
-                    let ir_node = dsl_core::compile_expr(&expr)
-                        .map_err(|e| format!("Failed to compile interpolation: {}", e))?;
-                    let value = Box::pin(self.eval(&ir_node)).await?;
+                IRTemplateSegment::Interpolation(ir_node) => {
+                    // The expression is already compiled, just evaluate it
+                    let value = Box::pin(self.eval(ir_node)).await?;
                     // Convert value to string - use to_prompt_string for full data
                     let str_value = value.to_prompt_string();
                     result.push_str(&str_value);
@@ -339,42 +390,64 @@ impl Interpreter {
     }
 
     /// Access a field in a map value
-    fn access_field(&self, value: &Value, field: &str) -> Result<Value, String> {
+    fn access_field(&self, value: &Value, field: &str) -> Result<Value, InterpreterError> {
         match value {
             Value::Map(m) => m
                 .get(field)
                 .cloned()
-                .ok_or_else(|| format!("Field '{}' not found", field)),
-            _ => Err(format!("Cannot access field on {}", value.type_name())),
+                .ok_or_else(|| InterpreterError::RuntimeError {
+                    message: format!("Field '{}' not found", field),
+                    source_span: None,
+                }),
+            _ => Err(InterpreterError::TypeError {
+                message: "Cannot access field on non-map value".to_string(),
+                expected: "Map".to_string(),
+                got: value.type_name().to_string(),
+                source_span: None,
+            }),
         }
     }
 
     /// Access an index in a list or map
-    fn access_index(&self, value: &Value, index: &Value) -> Result<Value, String> {
+    fn access_index(&self, value: &Value, index: &Value) -> Result<Value, InterpreterError> {
         match (value, index) {
             (Value::List(items), Value::Int(i)) => {
                 if *i < 0 {
-                    return Err("Index cannot be negative".to_string());
+                    return Err(InterpreterError::RuntimeError {
+                        message: "Index cannot be negative".to_string(),
+                        source_span: None,
+                    });
                 }
                 items
                     .get(*i as usize)
                     .cloned()
-                    .ok_or_else(|| format!("Index {} out of bounds", i))
+                    .ok_or_else(|| InterpreterError::RuntimeError {
+                        message: format!("Index {} out of bounds", i),
+                        source_span: None,
+                    })
             }
             (Value::Map(map), Value::String(key)) => map
                 .get(key)
                 .cloned()
-                .ok_or_else(|| format!("Key '{}' not found", key)),
-            _ => Err(format!(
-                "Invalid index operation: {} indexed by {}",
-                value.type_name(),
-                index.type_name()
-            )),
+                .ok_or_else(|| InterpreterError::RuntimeError {
+                    message: format!("Key '{}' not found", key),
+                    source_span: None,
+                }),
+            _ => Err(InterpreterError::TypeError {
+                message: format!(
+                    "Invalid index operation: {} indexed by {}",
+                    value.type_name(),
+                    index.type_name()
+                ),
+                expected: "List[Int] or Map[String]".to_string(),
+                got: format!("{}[{}]", value.type_name(), index.type_name()),
+                source_span: None,
+            }),
         }
     }
 
     /// Apply a binary operation to two values
-    fn apply_binary_op(&self, op: &str, left: Value, right: Value) -> Result<Value, String> {
+    pub fn apply_binary_op(&self, op: &str, left: Value, right: Value) -> Result<Value, InterpreterError> {
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => {
                 match op {
@@ -384,7 +457,10 @@ impl Interpreter {
                     "*" => Ok(Value::Int(a * b)),
                     "/" => {
                         if b == 0 {
-                            return Err("Division by zero".to_string());
+                            return Err(InterpreterError::RuntimeError {
+                                message: "Division by zero".to_string(),
+                                source_span: None,
+                            });
                         }
                         Ok(Value::Int(a / b))
                     }
@@ -395,7 +471,10 @@ impl Interpreter {
                     ">" => Ok(Value::Bool(a > b)),
                     "<=" => Ok(Value::Bool(a <= b)),
                     ">=" => Ok(Value::Bool(a >= b)),
-                    _ => Err(format!("Unknown operator: {}", op)),
+                    _ => Err(InterpreterError::RuntimeError {
+                        message: format!("Unknown operator: {}", op),
+                        source_span: None,
+                    }),
                 }
             }
             (Value::Float(a), Value::Float(b)) => {
@@ -412,7 +491,10 @@ impl Interpreter {
                     ">" => Ok(Value::Bool(a > b)),
                     "<=" => Ok(Value::Bool(a <= b)),
                     ">=" => Ok(Value::Bool(a >= b)),
-                    _ => Err(format!("Unknown operator: {}", op)),
+                    _ => Err(InterpreterError::RuntimeError {
+                        message: format!("Unknown operator: {}", op),
+                        source_span: None,
+                    }),
                 }
             }
             // Mixed Int/Float operations - promote to Float
@@ -430,7 +512,10 @@ impl Interpreter {
                     ">" => Ok(Value::Bool((a as f64) > b)),
                     "<=" => Ok(Value::Bool((a as f64) <= b)),
                     ">=" => Ok(Value::Bool((a as f64) >= b)),
-                    _ => Err(format!("Unknown operator: {}", op)),
+                    _ => Err(InterpreterError::RuntimeError {
+                        message: format!("Unknown operator: {}", op),
+                        source_span: None,
+                    }),
                 }
             }
             (Value::Float(a), Value::Int(b)) => {
@@ -447,7 +532,10 @@ impl Interpreter {
                     ">" => Ok(Value::Bool(a > (b as f64))),
                     "<=" => Ok(Value::Bool(a <= (b as f64))),
                     ">=" => Ok(Value::Bool(a >= (b as f64))),
-                    _ => Err(format!("Unknown operator: {}", op)),
+                    _ => Err(InterpreterError::RuntimeError {
+                        message: format!("Unknown operator: {}", op),
+                        source_span: None,
+                    }),
                 }
             }
             // String operations
@@ -462,7 +550,10 @@ impl Interpreter {
                     ">" => Ok(Value::Bool(a > b)),
                     "<=" => Ok(Value::Bool(a <= b)),
                     ">=" => Ok(Value::Bool(a >= b)),
-                    _ => Err(format!("Operator '{}' not supported for strings", op)),
+                    _ => Err(InterpreterError::RuntimeError {
+                        message: format!("Operator '{}' not supported for strings", op),
+                        source_span: None,
+                    }),
                 }
             }
             // Boolean operations
@@ -472,24 +563,32 @@ impl Interpreter {
                     "!=" => Ok(Value::Bool(a != b)),
                     "&&" | "and" => Ok(Value::Bool(a && b)),
                     "||" | "or" => Ok(Value::Bool(a || b)),
-                    _ => Err(format!("Operator '{}' not supported for booleans", op)),
+                    _ => Err(InterpreterError::RuntimeError {
+                        message: format!("Operator '{}' not supported for booleans", op),
+                        source_span: None,
+                    }),
                 }
             }
-            (left_val, right_val) => Err(format!(
-                "Type mismatch in operation: {} {} {}",
-                left_val.type_name(),
-                op,
-                right_val.type_name()
-            )),
+            (left_val, right_val) => Err(InterpreterError::TypeError {
+                message: format!(
+                    "Type mismatch in operation: {} {} {}",
+                    left_val.type_name(),
+                    op,
+                    right_val.type_name()
+                ),
+                expected: "Compatible types".to_string(),
+                got: format!("{} and {}", left_val.type_name(), right_val.type_name()),
+                source_span: None,
+            }),
         }
     }
 
     /// Call a user-defined function
-    async fn call_user_function(
+    pub async fn call_user_function(
         &mut self,
         func: &IRFunction,
         args: &[IRNode],
-    ) -> Result<Value, String> {
+    ) -> Result<Value, InterpreterError> {
         // Evaluate arguments
         let mut arg_values = Vec::new();
         for arg in args {
@@ -498,106 +597,45 @@ impl Interpreter {
 
         // Check argument count
         if arg_values.len() != func.params.len() {
-            return Err(format!(
-                "Function '{}' expects {} arguments, got {}",
-                func.name,
-                func.params.len(),
-                arg_values.len()
-            ));
+            return Err(InterpreterError::InvalidArguments {
+                message: format!(
+                    "Function '{}' expects {} arguments, got {}",
+                    func.name,
+                    func.params.len(),
+                    arg_values.len()
+                ),
+                source_span: None,
+            });
         }
 
-        // Save current variable state
-        let saved_vars = self.runtime.vars.clone();
+        // Push a new scope for function execution
+        self.runtime.push_scope();
 
         // Bind arguments to parameters
         for (param_name, arg_value) in func.params.iter().zip(arg_values.iter()) {
             self.runtime.set_var(param_name.clone(), arg_value.clone());
         }
 
-        // Execute based on function type
-        let result = match &func.execution {
-            IRExecution::Expression { body } => {
-                // Simple expression evaluation (for helper functions, recursion, etc.)
-                Box::pin(self.eval(body)).await?
-            }
-            IRExecution::LLM {
-                prompt,
-                model,
-                base_url,
-                api_key_env,
-                temperature: _,
-            } => {
-                self.execute_llm_function(
-                    func,
-                    prompt,
-                    model.clone(),
-                    base_url.clone(),
-                    api_key_env.clone(),
-                    &arg_values,
-                )
-                .await?
-            }
-            IRExecution::HTTP {
-                method,
-                url,
-                params,
-                headers,
-                body,
-            } => {
-                self.execute_http_function(
-                    func,
-                    method,
-                    url,
-                    params,
-                    headers,
-                    body,
-                    &arg_values,
-                )
-                .await?
-            }
-            IRExecution::SQL { query } => {
-                self.execute_sql_function(func, query, &arg_values).await?
-            }
-            IRExecution::HTTPWithLLM {
-                http_method,
-                http_url,
-                http_params,
-                http_headers,
-                llm_prompt,
-                llm_model,
-                llm_base_url,
-                llm_api_key_env,
-                llm_temperature: _,
-            } => {
-                // First execute HTTP request
-                let http_result = self
-                    .execute_http_function(
-                        func,
-                        http_method,
-                        http_url,
-                        http_params,
-                        http_headers,
-                        &None,
-                        &arg_values,
-                    )
-                    .await?;
+        // Lower the execution to LIR before executing
+        let mut lowering = Lowering::new();
+        let return_type_str = func.return_type.as_ref().map(|ft| ft.to_string());
+        let lowered_execution = lowering.lower_execution_direct(&func.execution, &func.name, &return_type_str);
 
-                // Then pass result to LLM
-                self.execute_llm_with_input(
-                    func,
-                    llm_prompt,
-                    llm_model.clone(),
-                    llm_base_url.clone(),
-                    llm_api_key_env.clone(),
-                    &http_result,
-                    &arg_values,
-                )
-                .await?
+        // Execute the lowered IR (should always be Expression after lowering)
+        let result = match lowered_execution {
+            IRExecution::Expression { body } => {
+                Box::pin(self.eval(&body)).await?
+            }
+            _ => {
+                return Err(InterpreterError::RuntimeError {
+                    message: "Internal error: lowering should produce Expression".to_string(),
+                    source_span: None,
+                });
             }
         };
 
-        // Restore variable state
-        self.runtime.vars = saved_vars;
+        // Pop the function scope
+        self.runtime.pop_scope();
 
         Ok(result)
     }
@@ -611,26 +649,31 @@ impl Interpreter {
         base_url: Option<String>,
         api_key_env: Option<String>,
         arg_values: &[Value],
-    ) -> Result<Value, String> {
-        // Interpolate template variables
-        let prompt = self.interpolate_string_template(prompt_template, &func.params, arg_values)?;
-
-        // Call the appropriate builtin function based on return type
-        if let Some(return_type) = &func.return_type {
-            // For structured types, use ExtractAs with the type name or serialized type
-            let type_identifier = return_type.to_string();
-
-            self.builtins
-                .extract_as_with_config(prompt, type_identifier, model, base_url, api_key_env)
-                .await
-                .map_err(|e| e.to_string())
-        } else {
-            // Simple string output - use Ask
-            self.builtins
-                .ask_with_config(prompt, model, base_url, api_key_env)
-                .await
-                .map_err(|e| e.to_string())
+    ) -> Result<Value, InterpreterError> {
+        // Create parameter map from function arguments
+        let mut params = HashMap::new();
+        for (i, param_name) in func.params.iter().enumerate() {
+            if i < arg_values.len() {
+                params.insert(param_name.clone(), arg_values[i].clone());
+            }
         }
+
+        // Get return type as string
+        let type_identifier = func.return_type.as_ref()
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "String".to_string());
+
+        self.builtins
+            .execute_with_prompt_template(
+                prompt_template,
+                params,
+                type_identifier,
+                model,
+                base_url,
+                api_key_env
+            )
+            .await
+            .map_err(Into::into)
     }
 
     /// Execute LLM with pre-fetched input data
@@ -644,29 +687,37 @@ impl Interpreter {
         api_key_env: Option<String>,
         input_data: &Value,
         arg_values: &[Value],
-    ) -> Result<Value, String> {
-        // Interpolate template with args
-        let mut prompt =
-            self.interpolate_string_template(prompt_template, &func.params, arg_values)?;
-
-        // Append the input data to the prompt
-        prompt.push_str("\n\nData to analyze:\n");
-        prompt.push_str(&input_data.to_prompt_string());
-
-        // Call the appropriate builtin function based on return type
-        if let Some(return_type) = &func.return_type {
-            let type_identifier = return_type.to_string();
-
-            self.builtins
-                .extract_as_with_config(prompt, type_identifier, model, base_url, api_key_env)
-                .await
-                .map_err(|e| e.to_string())
-        } else {
-            self.builtins
-                .ask_with_config(prompt, model, base_url, api_key_env)
-                .await
-                .map_err(|e| e.to_string())
+    ) -> Result<Value, InterpreterError> {
+        // Create parameter map from function arguments
+        let mut params = HashMap::new();
+        for (i, param_name) in func.params.iter().enumerate() {
+            if i < arg_values.len() {
+                params.insert(param_name.clone(), arg_values[i].clone());
+            }
         }
+
+        // Add input data as additional parameter
+        params.insert("input_data".to_string(), input_data.clone());
+
+        // Create modified prompt template that includes input data
+        let enhanced_template = format!("{}\n\nData to analyze:\n{{{{ input_data }}}}", prompt_template);
+
+        // Get return type as string
+        let type_identifier = func.return_type.as_ref()
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "String".to_string());
+
+        self.builtins
+            .execute_with_prompt_template(
+                &enhanced_template,
+                params,
+                type_identifier,
+                model,
+                base_url,
+                api_key_env
+            )
+            .await
+            .map_err(Into::into)
     }
 
     /// Execute an HTTP request
@@ -680,7 +731,7 @@ impl Interpreter {
         headers: &Option<std::collections::HashMap<String, String>>,
         body: &Option<String>,
         arg_values: &[Value],
-    ) -> Result<Value, String> {
+    ) -> Result<Value, InterpreterError> {
         // Interpolate URL template with arguments
         let url = self.interpolate_string_template(url_template, &func.params, arg_values)?;
 
@@ -689,7 +740,10 @@ impl Interpreter {
             .timeout(std::time::Duration::from_secs(30))
             .user_agent("Mozilla/5.0 (compatible; DSL-REPL/1.0)")
             .build()
-            .map_err(|e| format!("Failed to create HTTP client: {:#?}", e))?;
+            .map_err(|e| InterpreterError::RuntimeError {
+                message: format!("Failed to create HTTP client: {:#?}", e),
+                source_span: None,
+            })?;
 
         // Build the request
         let mut request = match method.to_uppercase().as_str() {
@@ -699,7 +753,10 @@ impl Interpreter {
             "DELETE" => client.delete(&url),
             "PATCH" => client.patch(&url),
             "HEAD" => client.head(&url),
-            _ => return Err(format!("Unsupported HTTP method: {}", method)),
+            _ => return Err(InterpreterError::RuntimeError {
+                message: format!("Unsupported HTTP method: {}", method),
+                source_span: None,
+            }),
         };
 
         // Add query parameters if provided
@@ -732,23 +789,32 @@ impl Interpreter {
         let response = request
             .send()
             .await
-            .map_err(|e| format!("HTTP request failed: {}", e))?;
+            .map_err(|e| InterpreterError::RuntimeError {
+                message: format!("HTTP request failed: {}", e),
+                source_span: None,
+            })?;
 
         // Check if the response is successful
         let status = response.status();
         if !status.is_success() {
-            return Err(format!(
-                "HTTP request failed with status: {} {}",
-                status.as_u16(),
-                status.canonical_reason().unwrap_or("Unknown")
-            ));
+            return Err(InterpreterError::RuntimeError {
+                message: format!(
+                    "HTTP request failed with status: {} {}",
+                    status.as_u16(),
+                    status.canonical_reason().unwrap_or("Unknown")
+                ),
+                source_span: None,
+            });
         }
 
         // Get the response body as text first
         let response_text = response
             .text()
             .await
-            .map_err(|e| format!("Failed to read response body: {}", e))?;
+            .map_err(|e| InterpreterError::RuntimeError {
+                message: format!("Failed to read response body: {}", e),
+                source_span: None,
+            })?;
 
         // Try to parse as JSON, otherwise return as string
         if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&response_text) {
@@ -765,7 +831,7 @@ impl Interpreter {
         func: &IRFunction,
         query_template: &str,
         arg_values: &[Value],
-    ) -> Result<Value, String> {
+    ) -> Result<Value, InterpreterError> {
         // Interpolate query template with arguments
         let query = self.interpolate_string_template(query_template, &func.params, arg_values)?;
 
@@ -773,7 +839,7 @@ impl Interpreter {
         self.builtins
             .call("sql", vec![Value::String(query)])
             .await
-            .map_err(|e| e.to_string())
+            .map_err(Into::into)
     }
 
     /// Interpolate string template with parameter values
@@ -782,7 +848,7 @@ impl Interpreter {
         template: &str,
         params: &[String],
         arg_values: &[Value],
-    ) -> Result<String, String> {
+    ) -> Result<String, InterpreterError> {
         let mut result = template.to_string();
 
         // Replace ${param} with actual values
@@ -796,24 +862,24 @@ impl Interpreter {
     }
 
     /// Call an overloaded function with pattern matching
-    async fn call_overloaded_function(
+    pub async fn call_overloaded_function(
         &mut self,
         func_group: &dsl_ir::IRFunctionGroup,
         args: &[IRNode],
-    ) -> Result<Value, String> {
+    ) -> Result<Value, InterpreterError> {
         // Evaluate all arguments
         let mut arg_values = Vec::new();
         for arg in args {
             arg_values.push(Box::pin(self.eval(arg)).await?);
         }
 
-        // Save current variable scope
-        let saved_vars = self.runtime.vars.clone();
-
         // Try each clause in order
         for clause in &func_group.clauses {
+            // Push a new scope for this clause attempt
+            self.runtime.push_scope();
             // Check if patterns match arguments
             if clause.param_patterns.len() != arg_values.len() {
+                self.runtime.pop_scope();
                 continue;
             }
 
@@ -829,11 +895,15 @@ impl Interpreter {
 
                 // Extract bindings from this pattern
                 let pattern_bindings = PatternMatcher::extract_bindings(pattern, value)
-                    .map_err(|e| format!("Pattern binding error: {}", e))?;
+                    .map_err(|e| InterpreterError::RuntimeError {
+                        message: format!("Pattern binding error: {}", e),
+                        source_span: None,
+                    })?;
                 bindings.extend(pattern_bindings);
             }
 
             if !all_match {
+                self.runtime.pop_scope();
                 continue;
             }
 
@@ -846,8 +916,8 @@ impl Interpreter {
             if let Some(guard) = &clause.guard {
                 let guard_result = Box::pin(self.eval(guard)).await?;
                 if !matches!(guard_result, Value::Bool(true)) {
-                    // Restore and try next clause
-                    self.runtime.vars = saved_vars.clone();
+                    // Pop scope and try next clause
+                    self.runtime.pop_scope();
                     continue;
                 }
             }
@@ -855,17 +925,20 @@ impl Interpreter {
             // Execute body
             let result = Box::pin(self.eval(&clause.body)).await;
 
-            // Restore scope
-            self.runtime.vars = saved_vars;
+            // Pop scope after execution
+            self.runtime.pop_scope();
 
             return result;
         }
 
-        Err(format!(
-            "No matching clause for function '{}' with {} arguments",
-            func_group.name,
-            arg_values.len()
-        ))
+        Err(InterpreterError::InvalidArguments {
+            message: format!(
+                "No matching clause for function '{}' with {} arguments",
+                func_group.name,
+                arg_values.len()
+            ),
+            source_span: None,
+        })
     }
 }
 
@@ -1121,6 +1194,8 @@ mod tests {
         let call_node = IRNode::FunctionCall {
             name: "double".to_string(),
             args: vec![IRNode::Int(21)],
+            effect_kind: None,
+            source_span: None,
         };
 
         let result = interp.eval(&call_node).await.unwrap();
@@ -1155,6 +1230,8 @@ mod tests {
                                 op: "-".to_string(),
                                 right: Box::new(IRNode::Int(1)),
                             }],
+                            effect_kind: None,
+                            source_span: None,
                         }),
                     }),
                 }),
@@ -1168,6 +1245,8 @@ mod tests {
         let call_node = IRNode::FunctionCall {
             name: "fact".to_string(),
             args: vec![IRNode::Int(5)],
+            effect_kind: None,
+            source_span: None,
         };
 
         let result = interp.eval(&call_node).await.unwrap();
@@ -1293,6 +1372,8 @@ mod tests {
                                 op: "-".to_string(),
                                 right: Box::new(IRNode::Int(1)),
                             }],
+                            effect_kind: None,
+                            source_span: None,
                         }),
                     }),
                 },
@@ -1307,6 +1388,8 @@ mod tests {
         let call_0 = IRNode::FunctionCall {
             name: "factorial".to_string(),
             args: vec![IRNode::Int(0)],
+            effect_kind: None,
+            source_span: None,
         };
         let result_0 = interp.eval(&call_0).await.unwrap();
         assert_eq!(result_0, Value::Int(1));
@@ -1315,6 +1398,8 @@ mod tests {
         let call_5 = IRNode::FunctionCall {
             name: "factorial".to_string(),
             args: vec![IRNode::Int(5)],
+            effect_kind: None,
+            source_span: None,
         };
         let result_5 = interp.eval(&call_5).await.unwrap();
         assert_eq!(result_5, Value::Int(120));
@@ -1354,6 +1439,8 @@ mod tests {
                         right: Box::new(IRNode::FunctionCall {
                             name: "length".to_string(),
                             args: vec![IRNode::Variable("tail".to_string())],
+                            effect_kind: None,
+                            source_span: None,
                         }),
                     }),
                 },
@@ -1368,6 +1455,8 @@ mod tests {
         let call_empty = IRNode::FunctionCall {
             name: "length".to_string(),
             args: vec![IRNode::List(vec![])],
+            effect_kind: None,
+            source_span: None,
         };
         let result_empty = interp.eval(&call_empty).await.unwrap();
         assert_eq!(result_empty, Value::Int(0));
@@ -1380,6 +1469,8 @@ mod tests {
                 IRNode::Int(2),
                 IRNode::Int(3),
             ])],
+            effect_kind: None,
+            source_span: None,
         };
         let result_list = interp.eval(&call_list).await.unwrap();
         assert_eq!(result_list, Value::Int(3));
@@ -1435,6 +1526,8 @@ mod tests {
         let call_neg = IRNode::FunctionCall {
             name: "classify".to_string(),
             args: vec![IRNode::Int(-5)],
+            effect_kind: None,
+            source_span: None,
         };
         let result_neg = interp.eval(&call_neg).await.unwrap();
         assert_eq!(result_neg, Value::String("negative".to_string()));
@@ -1443,6 +1536,8 @@ mod tests {
         let call_zero = IRNode::FunctionCall {
             name: "classify".to_string(),
             args: vec![IRNode::Int(0)],
+            effect_kind: None,
+            source_span: None,
         };
         let result_zero = interp.eval(&call_zero).await.unwrap();
         assert_eq!(result_zero, Value::String("zero".to_string()));
@@ -1451,6 +1546,8 @@ mod tests {
         let call_pos = IRNode::FunctionCall {
             name: "classify".to_string(),
             args: vec![IRNode::Int(42)],
+            effect_kind: None,
+            source_span: None,
         };
         let result_pos = interp.eval(&call_pos).await.unwrap();
         assert_eq!(result_pos, Value::String("positive".to_string()));

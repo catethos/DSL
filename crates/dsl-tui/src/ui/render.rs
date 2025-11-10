@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
-use ratatui_image::{StatefulImage, Resize};
+use ratatui_image::{Resize, StatefulImage};
 
 use crate::app::{App, WorkspacePane};
 use crate::output_item::OutputItem;
@@ -98,9 +98,17 @@ fn draw_editor_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
 
 fn draw_repl_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
     // Check if we have any images to display with graphics protocol
-    let has_images = app.show_images && app.output.iter().any(|item| {
-        matches!(item, OutputItem::Image { use_graphics_protocol: true, data: Some(_), .. })
-    });
+    let has_images = app.show_images
+        && app.output.iter().any(|item| {
+            matches!(
+                item,
+                OutputItem::Image {
+                    use_graphics_protocol: true,
+                    data: Some(_),
+                    ..
+                }
+            )
+        });
 
     // If we have images and images are enabled, split the area to show the last image
     if has_images {
@@ -265,7 +273,14 @@ fn draw_repl_pane(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
 fn draw_repl_with_images(f: &mut Frame, area: Rect, app: &mut App, title: &str) {
     // Find the last image in output
     let last_image_index = app.output.iter().rposition(|item| {
-        matches!(item, OutputItem::Image { use_graphics_protocol: true, data: Some(_), .. })
+        matches!(
+            item,
+            OutputItem::Image {
+                use_graphics_protocol: true,
+                data: Some(_),
+                ..
+            }
+        )
     });
 
     if let Some(img_idx) = last_image_index {
@@ -340,7 +355,8 @@ fn draw_repl_with_images(f: &mut Frame, area: Rect, app: &mut App, title: &str) 
             let text_before_cursor = safe_prefix(&app.input, app.cursor_position);
             let cursor_input_line = text_before_cursor.matches('\n').count();
             let input_line_count = app.input.lines().count().max(1);
-            let cursor_global_line = total_lines.saturating_sub(input_line_count) + cursor_input_line;
+            let cursor_global_line =
+                total_lines.saturating_sub(input_line_count) + cursor_input_line;
             let cursor_visible_line = cursor_global_line.saturating_sub(scroll_offset as usize);
 
             let line_start = text_before_cursor
@@ -354,7 +370,9 @@ fn draw_repl_with_images(f: &mut Frame, area: Rect, app: &mut App, title: &str) 
             let cursor_x = chunks[0].x + 1 + prompt_width + cursor_col_in_input as u16;
             let cursor_y = chunks[0].y + 1 + cursor_visible_line as u16;
 
-            if cursor_visible_line < visible_lines && cursor_y < chunks[0].y + chunks[0].height.saturating_sub(1) {
+            if cursor_visible_line < visible_lines
+                && cursor_y < chunks[0].y + chunks[0].height.saturating_sub(1)
+            {
                 f.set_cursor_position((cursor_x, cursor_y));
             }
         }
@@ -367,7 +385,8 @@ fn draw_repl_with_images(f: &mut Frame, area: Rect, app: &mut App, title: &str) 
 
                 // Get or create cached protocol for this image
                 let protocol = app.image_protocols.entry(img_idx).or_insert_with(|| {
-                    app.image_picker.new_resize_protocol(img_data.as_ref().clone())
+                    app.image_picker
+                        .new_resize_protocol(img_data.as_ref().clone())
                 });
 
                 // Create StatefulImage widget with fit resize

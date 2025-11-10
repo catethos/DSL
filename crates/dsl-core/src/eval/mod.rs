@@ -1,3 +1,3 @@
 // Legacy evaluation module - now empty, all functionality moved to dsl-interpreter
 // This module is kept only for backward compatibility with imports
-pub use dsl_ir::SQLExecutor;
+// SQLExecutor has been moved to dsl-interpreter

@@ -26,7 +26,8 @@ impl AutocompleteEngine {
     pub fn register_provider(&mut self, provider: Box<dyn CompletionProvider>) {
         self.providers.push(provider);
         // Sort providers by priority (higher first)
-        self.providers.sort_by_key(|b| std::cmp::Reverse(b.priority()));
+        self.providers
+            .sort_by_key(|b| std::cmp::Reverse(b.priority()));
     }
 
     /// Set the matcher to use for filtering suggestions

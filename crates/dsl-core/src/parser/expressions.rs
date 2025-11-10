@@ -2,6 +2,48 @@ use super::ast::*;
 use super::Rule;
 use pest::iterators::Pair;
 
+/// Unescape a string literal
+fn unescape_string(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(escaped) = chars.next() {
+                match escaped {
+                    'n' => result.push('\n'),
+                    't' => result.push('\t'),
+                    'r' => result.push('\r'),
+                    '\\' => result.push('\\'),
+                    '"' => result.push('"'),
+                    '\'' => result.push('\''),
+                    '$' => result.push('$'),
+                    'b' => result.push('\u{0008}'),
+                    'f' => result.push('\u{000C}'),
+                    '/' => result.push('/'),
+                    'u' => {
+                        // Unicode escape sequence \uXXXX
+                        let hex: String = chars.by_ref().take(4).collect();
+                        if let Ok(code) = u32::from_str_radix(&hex, 16) {
+                            if let Some(unicode_char) = char::from_u32(code) {
+                                result.push(unicode_char);
+                            }
+                        }
+                    }
+                    _ => {
+                        result.push('\\');
+                        result.push(escaped);
+                    }
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    result
+}
+
 /// Parse a binding pattern
 pub(super) fn parse_binding(pair: Pair<Rule>) -> Result<Binding, String> {
     let mut inner = pair.into_inner();
@@ -32,7 +74,12 @@ pub(super) fn build_pattern(pair: Pair<Rule>) -> Result<Pattern, String> {
             Ok(Pattern::Literal(Box::new(expr)))
         }
         Rule::pattern_variable => {
-            let var_name = pair.as_str().to_string();
+            // Extract just the identifier (not the lookahead)
+            let id_pair = pair
+                .into_inner()
+                .next()
+                .ok_or("Missing identifier in pattern_variable")?;
+            let var_name = id_pair.as_str().to_string();
             Ok(Pattern::Variable(var_name))
         }
         Rule::pattern_binding => {
@@ -80,7 +127,9 @@ pub(super) fn build_pattern(pair: Pair<Rule>) -> Result<Pattern, String> {
             let rest = if let Some(rest_start) = list_str.find("...") {
                 // Extract the identifier after "..."
                 let after_dots = &list_str[rest_start + 3..];
-                let rest_name = if let Some(end) = after_dots.find(|c: char| !c.is_alphanumeric() && c != '_') {
+                let rest_name = if let Some(end) =
+                    after_dots.find(|c: char| !c.is_alphanumeric() && c != '_')
+                {
                     after_dots[..end].trim().to_string()
                 } else {
                     after_dots.trim_end_matches(']').trim().to_string()
@@ -161,15 +210,17 @@ pub(super) fn build_pattern(pair: Pair<Rule>) -> Result<Pattern, String> {
 pub(super) fn build_expr(pair: Pair<Rule>) -> Result<Expr, String> {
     match pair.as_rule() {
         Rule::expr => {
-            // Descend to let_binding or conditional
+            // Descend to conditional (let_binding is no longer part of expr)
             let inner = pair.into_inner().next().ok_or("Empty expression")?;
             build_expr(inner)
         }
-        Rule::let_binding => {
-            // Parse: let x = expr or let [a, b] = expr
+        // Note: let_binding is now handled as let_statement at the program/block level
+        // For backward compatibility in REPL, we might need to handle it differently
+        Rule::let_statement => {
+            // Parse: let x = expr or let pattern = expr
             let mut inner = pair.into_inner();
 
-            // First element is the binding pattern (identifier or list_binding)
+            // First element is the binding pattern (identifier or pattern)
             let binding_pair = inner.next().ok_or("Missing binding pattern in let")?;
             let binding = match binding_pair.as_rule() {
                 Rule::identifier => Binding::Single(binding_pair.as_str().to_string()),
@@ -180,7 +231,19 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Result<Expr, String> {
                         .collect();
                     Binding::List(vars)
                 }
-                _ => return Err(format!("Unexpected binding pattern: {:?}", binding_pair.as_rule())),
+                Rule::pattern => {
+                    // For patterns, we need to extract the binding
+                    // For now, just treat as identifier if it's a variable pattern
+                    return Err(
+                        "Complex patterns in let statements not yet fully supported".to_string()
+                    );
+                }
+                _ => {
+                    return Err(format!(
+                        "Unexpected binding pattern: {:?}",
+                        binding_pair.as_rule()
+                    ))
+                }
             };
 
             // Second element is the expression
@@ -567,8 +630,18 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Result<Expr, String> {
             build_expr(inner)
         }
         Rule::string_literal => {
-            let inner = pair.into_inner().next().ok_or("Empty string")?;
-            Ok(Expr::String(inner.as_str().to_string()))
+            // String is now atomic (@), so we need to extract content from quotes
+            let full_str = pair.as_str();
+            if full_str.len() < 2 {
+                return Err("Empty string".to_string());
+            }
+
+            // Remove surrounding quotes
+            let content = &full_str[1..full_str.len() - 1];
+
+            // Unescape the string content
+            let unescaped = unescape_string(content);
+            Ok(Expr::String(unescaped))
         }
         Rule::template_string => {
             let segments = parse_template_string(pair)?;
@@ -610,9 +683,13 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Result<Expr, String> {
                     let key = match key_pair.as_rule() {
                         Rule::identifier => key_pair.as_str().to_string(),
                         Rule::string_literal => {
-                            // Extract the string content without quotes
-                            let inner = key_pair.into_inner().next().ok_or("Empty string key")?;
-                            inner.as_str().to_string()
+                            // Extract the string content without quotes (string is now atomic)
+                            let full_str = key_pair.as_str();
+                            if full_str.len() < 2 {
+                                return Err("Empty string key".to_string());
+                            }
+                            let content = &full_str[1..full_str.len() - 1];
+                            unescape_string(content)
                         }
                         _ => return Err(format!("Invalid map key type: {:?}", key_pair.as_rule())),
                     };
@@ -626,9 +703,9 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Result<Expr, String> {
             }
             Ok(Expr::Map(entries))
         }
-        Rule::block => {
-            // A block in expression context is treated as an empty map
-            // This can happen when {} is parsed as a block rather than map_literal
+        Rule::inline_block => {
+            // An inline block in expression context is treated as an empty map
+            // This can happen when {} is parsed as inline_block rather than map_literal
             // due to grammar ambiguity
             Ok(Expr::Map(Vec::new()))
         }
@@ -646,7 +723,8 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Result<Expr, String> {
                     let mut case_inner = case_pair.into_inner();
 
                     // First is the pattern
-                    let pattern = build_pattern(case_inner.next().ok_or("Missing pattern in case")?)?;
+                    let pattern =
+                        build_pattern(case_inner.next().ok_or("Missing pattern in case")?)?;
 
                     // Check for optional guard (if condition)
                     let mut guard = None;
@@ -656,7 +734,9 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Result<Expr, String> {
                     if case_inner.peek().is_some() {
                         guard = Some(build_expr(body_pair)?);
                         body_pair = case_inner.next().ok_or("Missing body after guard")?;
-                    } else if body_pair.as_str().starts_with("if ") || body_pair.as_rule() != Rule::expr {
+                    } else if body_pair.as_str().starts_with("if ")
+                        || body_pair.as_rule() != Rule::expr
+                    {
                         // This might be a guard, check the next element
                         if let Some(next) = case_inner.next() {
                             guard = Some(build_expr(body_pair)?);

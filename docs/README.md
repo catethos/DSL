@@ -12,7 +12,7 @@ Welcome to the DSL TUI documentation! This directory contains comprehensive guid
 ### Core Concepts
 4. **[04-Language-Features.md](04-Language-Features.md)** - Syntax, data types, operators, and expressions
 5. **[05-Type-System.md](05-Type-System.md)** - Custom types, enums, and type validation
-6. **[06-Functions.md](06-Functions.md)** - Built-in functions and user-defined functions
+6. **[06-Builtin-Functions.md](06-Builtin-Functions.md)** - Complete reference for 50+ builtin functions
 7. **[07-Workflow-Constructs.md](07-Workflow-Constructs.md)** - Sequential, parallel, and conditional workflows
 
 ### Integration Features
@@ -23,6 +23,12 @@ Welcome to the DSL TUI documentation! This directory contains comprehensive guid
 ### Advanced Topics
 11. **[11-Advanced-Features.md](11-Advanced-Features.md)** - Advanced usage patterns and techniques
 12. **[12-Implementation-Details.md](12-Implementation-Details.md)** - Technical architecture and internals
+
+### GUI Development
+13. **[08-egui-Migration-Guide.md](08-egui-Migration-Guide.md)** - Desktop GUI with egui framework
+    - Rich display system (tables, markdown, images, charts)
+    - Migration from TUI to GUI
+    - Complete renderer documentation
 
 ## Quick Links
 
@@ -36,7 +42,7 @@ Start here:
 Building workflows:
 1. Master [04-Language-Features.md](04-Language-Features.md) for syntax
 2. Define custom [05-Type-System.md](05-Type-System.md) types
-3. Create [06-Functions.md](06-Functions.md) for reusable logic
+3. Reference [06-Builtin-Functions.md](06-Builtin-Functions.md) for all builtin functions
 4. Build [07-Workflow-Constructs.md](07-Workflow-Constructs.md) with operators
 
 ### For Integration

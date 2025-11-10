@@ -9,6 +9,7 @@ use crate::parser::{
     parse_expr, parse_program, Binding, Expr, FunctionDef, FunctionExecution, MatchCase, Pattern,
     PatternFunctionClause, PatternFunctionDef, Program, PropertyValue, TemplateSegment,
 };
+use crate::resolver::{resolve_program, Clause, FunctionBody, FunctionGroup, SymbolTable};
 
 /// Compile DSL source code to IR
 /// Handles both full programs (with types, enums, functions) and standalone expressions
@@ -50,14 +51,19 @@ pub fn compile_program(source: &str) -> Result<IR> {
     compile_program_to_ir(&program)
 }
 
+/// Compile a complete program to IR using the resolver (NEW workflow)
+/// This is the recommended way to compile programs going forward
+pub fn compile_program_with_resolver(source: &str) -> Result<IR> {
+    let program = parse_program(source).map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+
+    compile_program_to_ir_with_resolver(&program)
+}
+
 /// Compile a parsed program to IR
 pub fn compile_program_to_ir(program: &Program) -> Result<IR> {
     // Compile traditional functions
-    let functions: Result<Vec<IRFunction>> = program
-        .functions
-        .iter()
-        .map(compile_function)
-        .collect();
+    let functions: Result<Vec<IRFunction>> =
+        program.functions.iter().map(compile_function).collect();
     let functions = functions?;
 
     // Compile pattern-based functions to function groups
@@ -86,6 +92,47 @@ pub fn compile_program_to_ir(program: &Program) -> Result<IR> {
     })
 }
 
+/// Compile a parsed program to IR using the resolver (NEW workflow)
+/// This uses the resolver to group functions and eliminates duplicate classification logic
+pub fn compile_program_to_ir_with_resolver(program: &Program) -> Result<IR> {
+    // Step 1: Use resolver to group functions
+    let mut symbol_table = SymbolTable::new();
+    let groups = resolve_program(program.clone(), &mut symbol_table)
+        .map_err(|e| anyhow::anyhow!("Resolver error: {}", e))?;
+
+    // Step 2: Compile each group
+    let mut ir_functions = Vec::new();
+    let mut ir_function_groups = Vec::new();
+
+    for group in &groups {
+        let (ir_func, ir_group) = compile_function_group(group)?;
+
+        if let Some(f) = ir_func {
+            ir_functions.push(f);
+        }
+        if let Some(g) = ir_group {
+            ir_function_groups.push(g);
+        }
+    }
+
+    // Step 3: Compile entry expression if present
+    let entry_expr = if let Some(expr) = &program.entry_expr {
+        compile_expr(expr)?
+    } else {
+        IRNode::Int(0) // Default: return 0 if no entry expression
+    };
+
+    Ok(IR {
+        version: "0.1.0".to_string(),
+        types: program.types.clone(),
+        enums: program.enums.clone(),
+        functions: ir_functions,
+        function_groups: ir_function_groups,
+        agents: Vec::new(),
+        entry_expr,
+    })
+}
+
 /// Compile an expression to IR node
 pub fn compile_expr(expr: &Expr) -> Result<IRNode> {
     match expr {
@@ -104,10 +151,7 @@ pub fn compile_expr(expr: &Expr) -> Result<IRNode> {
         Expr::Bool(b) => Ok(IRNode::Bool(*b)),
 
         Expr::List(items) => {
-            let ir_items = items
-                .iter()
-                .map(compile_expr)
-                .collect::<Result<Vec<_>>>()?;
+            let ir_items = items.iter().map(compile_expr).collect::<Result<Vec<_>>>()?;
             Ok(IRNode::List(ir_items))
         }
 
@@ -122,13 +166,12 @@ pub fn compile_expr(expr: &Expr) -> Result<IRNode> {
         Expr::Variable(name) => Ok(IRNode::Variable(name.clone())),
 
         Expr::FunctionCall { name, args } => {
-            let ir_args = args
-                .iter()
-                .map(compile_expr)
-                .collect::<Result<Vec<_>>>()?;
+            let ir_args = args.iter().map(compile_expr).collect::<Result<Vec<_>>>()?;
             Ok(IRNode::FunctionCall {
                 name: name.clone(),
                 args: ir_args,
+                effect_kind: None, // Will be set during lowering for intrinsics
+                source_span: None, // TODO: Extract from parser
             })
         }
 
@@ -180,10 +223,7 @@ pub fn compile_expr(expr: &Expr) -> Result<IRNode> {
         }),
 
         Expr::Parallel { exprs, binding } => {
-            let ir_exprs = exprs
-                .iter()
-                .map(compile_expr)
-                .collect::<Result<Vec<_>>>()?;
+            let ir_exprs = exprs.iter().map(compile_expr).collect::<Result<Vec<_>>>()?;
             Ok(IRNode::Parallel {
                 exprs: ir_exprs,
                 binding: binding.as_ref().map(compile_binding).transpose()?,
@@ -201,6 +241,17 @@ pub fn compile_expr(expr: &Expr) -> Result<IRNode> {
                 cases: ir_cases,
             })
         }
+
+        Expr::Block { statements, result } => {
+            let ir_statements = statements
+                .iter()
+                .map(compile_expr)
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IRNode::Block {
+                statements: ir_statements,
+                result: Box::new(compile_expr(result)?),
+            })
+        }
     }
 }
 
@@ -216,7 +267,12 @@ fn compile_binding(binding: &Binding) -> Result<IRBinding> {
 fn compile_match_case(case: &MatchCase) -> Result<IRMatchCase> {
     Ok(IRMatchCase {
         pattern: compile_pattern(&case.pattern)?,
-        guard: case.guard.as_ref().map(compile_expr).transpose()?.map(Box::new),
+        guard: case
+            .guard
+            .as_ref()
+            .map(compile_expr)
+            .transpose()?
+            .map(Box::new),
         body: Box::new(compile_expr(&case.body)?),
     })
 }
@@ -240,7 +296,11 @@ fn compile_pattern(pattern: &Pattern) -> Result<IRPattern> {
 
         Pattern::Type { type_name, inner } => Ok(IRPattern::Type {
             type_name: type_name.clone(),
-            inner: inner.as_ref().map(|p| compile_pattern(p)).transpose()?.map(Box::new),
+            inner: inner
+                .as_ref()
+                .map(|p| compile_pattern(p))
+                .transpose()?
+                .map(Box::new),
         }),
 
         Pattern::List { patterns, rest } => {
@@ -279,8 +339,71 @@ fn compile_pattern(pattern: &Pattern) -> Result<IRPattern> {
 fn compile_template_segment(segment: &TemplateSegment) -> Result<IRTemplateSegment> {
     match segment {
         TemplateSegment::Text(t) => Ok(IRTemplateSegment::Text(t.clone())),
-        TemplateSegment::Interpolation(expr) => Ok(IRTemplateSegment::Interpolation(expr.clone())),
+        TemplateSegment::Interpolation(expr_str) => {
+            // Parse and compile the interpolation expression
+            let expr = parse_expr(expr_str)
+                .map_err(|e| anyhow::anyhow!("Failed to parse template interpolation: {}", e))?;
+            let ir_node = compile_expr(&expr)?;
+            Ok(IRTemplateSegment::Interpolation(Box::new(ir_node)))
+        }
     }
+}
+
+/// Compile a prompt template string into an IRNode
+/// Parses the string as a template and compiles all interpolations
+fn compile_prompt_template(prompt: &str) -> Result<IRNode> {
+    // Simple template parsing: split on ${...}
+    let mut segments = Vec::new();
+    let mut current_text = String::new();
+    let mut chars = prompt.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '$' && chars.peek() == Some(&'{') {
+            // Found interpolation start
+            chars.next(); // consume '{'
+
+            // Save any accumulated text
+            if !current_text.is_empty() {
+                segments.push(TemplateSegment::Text(current_text.clone()));
+                current_text.clear();
+            }
+
+            // Extract the expression until '}'
+            let mut expr = String::new();
+            let mut depth = 1;
+            while let Some(ch) = chars.next() {
+                if ch == '{' {
+                    depth += 1;
+                    expr.push(ch);
+                } else if ch == '}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                    expr.push(ch);
+                } else {
+                    expr.push(ch);
+                }
+            }
+
+            segments.push(TemplateSegment::Interpolation(expr));
+        } else {
+            current_text.push(ch);
+        }
+    }
+
+    // Add any remaining text
+    if !current_text.is_empty() {
+        segments.push(TemplateSegment::Text(current_text));
+    }
+
+    // Compile each segment
+    let ir_segments: Result<Vec<IRTemplateSegment>> = segments
+        .iter()
+        .map(compile_template_segment)
+        .collect();
+
+    Ok(IRNode::TemplateString(ir_segments?))
 }
 
 /// Compile a pattern-based function to IRFunctionGroup
@@ -300,15 +423,17 @@ pub fn compile_pattern_function(func: &PatternFunctionDef) -> Result<IRFunctionG
 
 /// Compile a pattern function clause to IRFunctionClause
 fn compile_pattern_function_clause(clause: &PatternFunctionClause) -> Result<IRFunctionClause> {
-    let param_patterns: Result<Vec<IRPattern>> = clause
-        .param_patterns
-        .iter()
-        .map(compile_pattern)
-        .collect();
+    let param_patterns: Result<Vec<IRPattern>> =
+        clause.param_patterns.iter().map(compile_pattern).collect();
 
     Ok(IRFunctionClause {
         param_patterns: param_patterns?,
-        guard: clause.guard.as_ref().map(compile_expr).transpose()?.map(Box::new),
+        guard: clause
+            .guard
+            .as_ref()
+            .map(compile_expr)
+            .transpose()?
+            .map(Box::new),
         body: Box::new(compile_expr(&clause.body)?),
     })
 }
@@ -316,6 +441,10 @@ fn compile_pattern_function_clause(clause: &PatternFunctionClause) -> Result<IRF
 /// Compile a function definition to IR
 pub fn compile_function(func: &FunctionDef) -> Result<IRFunction> {
     let execution = match &func.execution {
+        FunctionExecution::Expression { body } => IRExecution::Expression {
+            body: Box::new(compile_expr(body)?),
+        },
+
         FunctionExecution::LLM {
             prompt,
             model,
@@ -323,7 +452,7 @@ pub fn compile_function(func: &FunctionDef) -> Result<IRFunction> {
             api_key_env,
             temperature,
         } => IRExecution::LLM {
-            prompt: prompt.clone(),
+            prompt: Box::new(compile_prompt_template(prompt)?),
             model: model.clone(),
             base_url: base_url.clone(),
             api_key_env: api_key_env.clone(),
@@ -348,35 +477,15 @@ pub fn compile_function(func: &FunctionDef) -> Result<IRFunction> {
             query: query.clone(),
         },
 
-        FunctionExecution::HTTPWithLLM {
-            http_method,
-            http_url,
-            http_params,
-            http_headers,
-            llm_prompt,
-            llm_model,
-            llm_base_url,
-            llm_api_key_env,
-            llm_temperature,
-        } => IRExecution::HTTPWithLLM {
-            http_method: http_method.clone(),
-            http_url: http_url.clone(),
-            http_params: http_params.clone(),
-            http_headers: http_headers.clone(),
-            llm_prompt: llm_prompt.clone(),
-            llm_model: llm_model.clone(),
-            llm_base_url: llm_base_url.clone(),
-            llm_api_key_env: llm_api_key_env.clone(),
-            llm_temperature: *llm_temperature,
-        },
     };
 
     // Convert properties
-    let properties: HashMap<String, IRProperty> = func
+    let properties: Result<HashMap<String, IRProperty>> = func
         .properties
         .iter()
-        .map(|(k, v)| (k.clone(), compile_property(v)))
+        .map(|(k, v)| Ok((k.clone(), compile_property(v)?)))
         .collect();
+    let properties = properties?;
 
     Ok(IRFunction {
         name: func.name.clone(),
@@ -388,25 +497,148 @@ pub fn compile_function(func: &FunctionDef) -> Result<IRFunction> {
 }
 
 /// Compile a property value
-fn compile_property(prop: &PropertyValue) -> IRProperty {
+fn compile_property(prop: &PropertyValue) -> Result<IRProperty> {
     match prop {
-        PropertyValue::String(s) => IRProperty::String(s.clone()),
+        PropertyValue::String(s) => Ok(IRProperty::String(s.clone())),
         PropertyValue::Template(segments) => {
-            let ir_segments = segments
+            let ir_segments: Result<Vec<IRTemplateSegment>> = segments
                 .iter()
                 .map(|seg| match seg {
-                    TemplateSegment::Text(t) => IRTemplateSegment::Text(t.clone()),
-                    TemplateSegment::Interpolation(expr) => {
-                        IRTemplateSegment::Interpolation(expr.clone())
+                    TemplateSegment::Text(t) => Ok(IRTemplateSegment::Text(t.clone())),
+                    TemplateSegment::Interpolation(expr_str) => {
+                        let expr = parse_expr(expr_str)
+                            .map_err(|e| anyhow::anyhow!("Failed to parse template interpolation: {}", e))?;
+                        let ir_node = compile_expr(&expr)?;
+                        Ok(IRTemplateSegment::Interpolation(Box::new(ir_node)))
                     }
                 })
                 .collect();
-            IRProperty::Template(ir_segments)
+            Ok(IRProperty::Template(ir_segments?))
         }
-        PropertyValue::Int(i) => IRProperty::Int(*i),
-        PropertyValue::Float(f) => IRProperty::Float(*f),
-        PropertyValue::Bool(b) => IRProperty::Bool(*b),
+        PropertyValue::Int(i) => Ok(IRProperty::Int(*i)),
+        PropertyValue::Float(f) => Ok(IRProperty::Float(*f)),
+        PropertyValue::Bool(b) => Ok(IRProperty::Bool(*b)),
     }
+}
+
+// ==================== NEW RESOLVER-BASED COMPILATION ====================
+
+/// Compile a FunctionGroup (from resolver) to IR
+/// Handles both trivial functions (converted to IRFunction) and pattern functions (IRFunctionGroup)
+pub fn compile_function_group(
+    group: &FunctionGroup,
+) -> Result<(Option<IRFunction>, Option<IRFunctionGroup>)> {
+    // Check if this is a trivial function (single clause with simple patterns)
+    if group.is_trivial() {
+        // Compile as a simple IRFunction for optimization
+        let clause = &group.clauses[0];
+        let ir_function = compile_trivial_clause(&group.name, clause)?;
+        Ok((Some(ir_function), None))
+    } else {
+        // Compile as IRFunctionGroup with pattern matching
+        let ir_group = compile_function_group_to_ir(group)?;
+        Ok((None, Some(ir_group)))
+    }
+}
+
+/// Compile a trivial clause to IRFunction (optimization for simple functions)
+fn compile_trivial_clause(name: &str, clause: &Clause) -> Result<IRFunction> {
+    // Extract parameter names from simple Variable patterns
+    let params: Vec<String> = clause
+        .patterns
+        .iter()
+        .filter_map(|p| match p {
+            Pattern::Variable(name) => Some(name.clone()),
+            _ => None, // Should never happen for trivial clauses
+        })
+        .collect();
+
+    // Compile the body
+    let execution = compile_function_body(&clause.body)?;
+
+    Ok(IRFunction {
+        name: name.to_string(),
+        params,
+        return_type: clause.return_type.clone(),
+        properties: HashMap::new(), // Trivial clauses don't have properties
+        execution,
+    })
+}
+
+/// Compile a FunctionBody to IRExecution
+fn compile_function_body(body: &FunctionBody) -> Result<IRExecution> {
+    match body {
+        FunctionBody::Expr(expr) => Ok(IRExecution::Expression {
+            body: Box::new(compile_expr(expr)?),
+        }),
+        FunctionBody::LLM {
+            prompt,
+            model,
+            base_url,
+            api_key_env,
+            temperature,
+        } => Ok(IRExecution::LLM {
+            prompt: Box::new(compile_prompt_template(prompt)?),
+            model: model.clone(),
+            base_url: base_url.clone(),
+            api_key_env: api_key_env.clone(),
+            temperature: *temperature,
+        }),
+        FunctionBody::HTTP {
+            method,
+            url,
+            params,
+            headers,
+            body,
+        } => Ok(IRExecution::HTTP {
+            method: method.clone(),
+            url: url.clone(),
+            params: params.clone(),
+            headers: headers.clone(),
+            body: body.clone(),
+        }),
+        FunctionBody::SQL { query } => Ok(IRExecution::SQL {
+            query: query.clone(),
+        }),
+    }
+}
+
+/// Compile a FunctionGroup to IRFunctionGroup
+fn compile_function_group_to_ir(group: &FunctionGroup) -> Result<IRFunctionGroup> {
+    let clauses: Result<Vec<IRFunctionClause>> = group.clauses.iter().map(compile_clause).collect();
+
+    Ok(IRFunctionGroup {
+        name: group.name.clone(),
+        clauses: clauses?,
+        return_type: group.clauses.first().and_then(|c| c.return_type.clone()),
+    })
+}
+
+/// Compile a Clause to IRFunctionClause
+fn compile_clause(clause: &Clause) -> Result<IRFunctionClause> {
+    let param_patterns: Result<Vec<IRPattern>> =
+        clause.patterns.iter().map(compile_pattern).collect();
+
+    // Extract the body expression from FunctionBody
+    let body_expr = match &clause.body {
+        FunctionBody::Expr(expr) => expr,
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Pattern function clauses must have expression bodies"
+            ))
+        }
+    };
+
+    Ok(IRFunctionClause {
+        param_patterns: param_patterns?,
+        guard: clause
+            .guard
+            .as_ref()
+            .map(compile_expr)
+            .transpose()?
+            .map(Box::new),
+        body: Box::new(compile_expr(body_expr)?),
+    })
 }
 
 #[cfg(test)]
@@ -427,7 +659,10 @@ mod tests {
                     _ => panic!("Expected text segment"),
                 }
             }
-            _ => panic!("Expected string or template string node, got: {:?}", ir.entry_expr),
+            _ => panic!(
+                "Expected string or template string node, got: {:?}",
+                ir.entry_expr
+            ),
         }
     }
 
@@ -456,7 +691,7 @@ mod tests {
         let source = "Length(\"test\")";
         let ir = compile_to_ir(source).unwrap();
         match ir.entry_expr {
-            IRNode::FunctionCall { name, args } => {
+            IRNode::FunctionCall { name, args, .. } => {
                 assert_eq!(name, "Length");
                 assert_eq!(args.len(), 1);
             }

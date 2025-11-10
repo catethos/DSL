@@ -1,4 +1,4 @@
-use simplify_baml::{Class, Enum};
+use dsl_types::{Class, Enum};
 use std::collections::HashMap;
 
 /// Registry for user-defined types

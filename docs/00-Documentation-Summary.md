@@ -14,16 +14,16 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 | **03-TUI-Interface.md** | 16K | UI modes, navigation, interface details |
 | **04-Language-Features.md** | 10K | Syntax, data types, operators, expressions |
 | **05-Type-System.md** | 9.7K | Custom types, enums, validation |
-| **06-Functions.md** | 9.8K | Built-in functions, user-defined functions |
+| **06-Builtin-Functions.md** | 25K | Complete reference for all 50+ builtin functions |
 | **07-Workflow-Constructs.md** | 10K | Sequential, parallel, conditional workflows |
 | **08-LLM-Integration.md** | 7.4K | AI/LLM features with simplify_baml |
 | **09-SQL-DuckDB.md** | 8.0K | Data processing with SQL |
 | **10-HTTP-Client.md** | 7.9K | API integration and HTTP requests |
 | **11-Advanced-Features.md** | 7.4K | Advanced patterns and techniques |
 | **12-Implementation-Details.md** | 9.9K | Technical architecture and internals |
-| **13-Compiling-to-Binary.md** | 25K | Compiling DSL programs to native executables |
+| **08-egui-Migration-Guide.md** | 45K | Desktop GUI with rich display system (v2.0) |
 
-**Total:** 150.4 KB across 14 files
+**Total:** 170.4 KB across 14 files
 
 ## What Each Document Covers
 
@@ -32,12 +32,12 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 - **02-Getting-Started.md** - Step-by-step tutorials, installation, first commands
 - **03-TUI-Interface.md** - Complete guide to all UI modes and navigation
 
-### Core Language (04-05)
+### Core Language (04-06)
 - **04-Language-Features.md** - All language syntax, operators, expressions
 - **05-Type-System.md** - How to define and use custom types
+- **06-Builtin-Functions.md** - Complete reference for 50+ builtin functions organized by category
 
-### Functions and Workflows (06-07)
-- **06-Functions.md** - Built-in functions, creating your own functions
+### Workflows (07)
 - **07-Workflow-Constructs.md** - Building complex workflows with `>>` and `||`
 
 ### Integration Features (08-10)
@@ -45,10 +45,17 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 - **09-SQL-DuckDB.md** - Data processing with SQL queries
 - **10-HTTP-Client.md** - Calling REST APIs
 
-### Advanced Topics (11-13)
+### Advanced Topics (11-12)
 - **11-Advanced-Features.md** - Advanced patterns, debugging, optimization
 - **12-Implementation-Details.md** - Technical architecture, code structure
-- **13-Compiling-to-Binary.md** - Compiling DSL to native executables, command-line arguments
+
+### GUI Development
+- **08-egui-Migration-Guide.md** - Desktop GUI application with egui framework
+  - Rich display system (tables, markdown, images, charts)
+  - Migration guide from TUI to GUI
+  - Complete renderer documentation
+  - File operations and recent files
+  - Keyboard shortcuts and mouse interactions
 
 ### Navigation (README)
 - **README.md** - Index with reading paths and quick links
@@ -73,7 +80,13 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 - Integration with BAML
 
 ### Functions
-- Built-in functions (Upper, Lower, Length, Join, Ask)
+- 50+ built-in functions across 12 categories:
+  - String processing (Upper, Lower, Split, Trim, Replace, etc.)
+  - List operations (Sort, Filter, Map, Reverse, Unique, etc.)
+  - Math functions (Sum, Average, Min, Max, Abs, etc.)
+  - Functional programming (Map, Filter, Reduce, Any, All, etc.)
+  - Type conversions (ToString, ToInt, ToFloat)
+  - Utilities (Range, Zip, Chunk, Repeat)
 - User-defined LLM functions
 - User-defined SQL functions
 - User-defined HTTP functions
@@ -140,7 +153,7 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 ### For Developers
 1. Master **04-Language-Features.md** (syntax)
 2. Define **05-Type-System.md** (custom types)
-3. Create **06-Functions.md** (reusable logic)
+3. Reference **06-Builtin-Functions.md** (all builtin functions)
 4. Build **07-Workflow-Constructs.md** (complex workflows)
 
 ### For Integration
@@ -169,9 +182,9 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 
 ## Statistics
 
-- **Total Documentation:** ~200KB (including project root docs)
+- **Total Documentation:** ~175KB (including project root docs)
 - **New docs/ Folder:** 125KB
-- **Number of Files Created:** 13
+- **Number of Files Created:** 12
 - **Number of Code Examples:** 200+
 - **Sections Covered:** 100+
 - **Cross-References:** 50+

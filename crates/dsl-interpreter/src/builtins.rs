@@ -1,5 +1,7 @@
-use dsl_ir::{SQLExecutor, TypeRegistry, Value};
 use anyhow::Result;
+use crate::error::InterpreterError;
+use crate::sql::SQLExecutor;
+use dsl_ir::{TypeRegistry, Value, EffectKind, Span};
 use simplify_baml::*;
 use std::collections::HashMap;
 use std::env;
@@ -10,6 +12,23 @@ pub struct BuiltinFunctions {
     api_key: Option<String>,
     sql_executor: Option<SQLExecutor>,
     pub last_prompt: Option<String>,
+    pub last_response: Option<String>,
+    pub current_function_name: Option<String>,
+}
+
+// Helper function to compare values for equality
+fn values_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Null, Value::Null) => true,
+        (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::Int(x), Value::Int(y)) => x == y,
+        (Value::Float(x), Value::Float(y)) => (x - y).abs() < f64::EPSILON,
+        (Value::String(x), Value::String(y)) => x == y,
+        (Value::List(x), Value::List(y)) => {
+            x.len() == y.len() && x.iter().zip(y.iter()).all(|(a, b)| values_equal(a, b))
+        }
+        _ => false,
+    }
 }
 
 impl BuiltinFunctions {
@@ -17,53 +36,8 @@ impl BuiltinFunctions {
         // Try to initialize BAML runtime and direct LLM client
         let (runtime, llm_client, api_key) = match env::var("OPENAI_API_KEY") {
             Ok(api_key) => {
-                // Build IR with structured types
-                let mut ir = IR::new();
-
-                // Define a Person class for structured output
-                ir.classes.push(Class {
-                    name: "Person".to_string(),
-                    description: Some("Information about a person".to_string()),
-                    fields: vec![
-                        Field {
-                            name: "name".to_string(),
-                            field_type: FieldType::String,
-                            optional: false,
-                            description: Some("Full name of the person".to_string()),
-                        },
-                        Field {
-                            name: "age".to_string(),
-                            field_type: FieldType::Int,
-                            optional: true,
-                            description: Some("Age in years".to_string()),
-                        },
-                        Field {
-                            name: "occupation".to_string(),
-                            field_type: FieldType::String,
-                            optional: true,
-                            description: Some("Job title or profession".to_string()),
-                        },
-                    ],
-                });
-
-                // Define the ExtractPerson function with structured output
-                ir.functions.push(Function {
-                    name: "ExtractPerson".to_string(),
-                    inputs: vec![Field {
-                        name: "text".to_string(),
-                        field_type: FieldType::String,
-                        optional: false,
-                        description: Some("Text containing person information".to_string()),
-                    }],
-                    output: FieldType::Class("Person".to_string()),
-                    prompt_template: r#"Extract the person's information from the following text:
-
-{{ text }}
-
-Please extract: name, age (if mentioned), and occupation (if mentioned)."#
-                        .to_string(),
-                    client: "openai".to_string(),
-                });
+                // Build IR with structured types (will be populated later via rebuild_runtime)
+                let ir = IR::new();
 
                 // Create OpenAI client
                 let client = LLMClient::openai(api_key.clone(), "gpt-3.5-turbo".to_string());
@@ -94,6 +68,8 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             api_key,
             sql_executor,
             last_prompt: None,
+            last_response: None,
+            current_function_name: None,
         })
     }
 
@@ -112,52 +88,6 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
         ir.classes.extend(classes);
         ir.enums.extend(enums);
 
-        // Add the built-in ExtractPerson for backwards compatibility
-        if !type_registry.has_type("Person") {
-            ir.classes.push(Class {
-                name: "Person".to_string(),
-                description: Some("Information about a person".to_string()),
-                fields: vec![
-                    Field {
-                        name: "name".to_string(),
-                        field_type: FieldType::String,
-                        optional: false,
-                        description: Some("Full name of the person".to_string()),
-                    },
-                    Field {
-                        name: "age".to_string(),
-                        field_type: FieldType::Int,
-                        optional: true,
-                        description: Some("Age in years".to_string()),
-                    },
-                    Field {
-                        name: "occupation".to_string(),
-                        field_type: FieldType::String,
-                        optional: true,
-                        description: Some("Job title or profession".to_string()),
-                    },
-                ],
-            });
-
-            ir.functions.push(Function {
-                name: "ExtractPerson".to_string(),
-                inputs: vec![Field {
-                    name: "text".to_string(),
-                    field_type: FieldType::String,
-                    optional: false,
-                    description: Some("Text containing person information".to_string()),
-                }],
-                output: FieldType::Class("Person".to_string()),
-                prompt_template: r#"Extract the person's information from the following text:
-
-{{ text }}
-
-Please extract: name, age (if mentioned), and occupation (if mentioned)."#
-                    .to_string(),
-                client: "openai".to_string(),
-            });
-        }
-
         // Create new client
         let client = LLMClient::openai(api_key, "gpt-3.5-turbo".to_string());
 
@@ -174,21 +104,112 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
 
     pub async fn call(&mut self, name: &str, args: Vec<Value>) -> Result<Value> {
         match name.to_lowercase().as_str() {
-            "ask" => self.ask(args).await,
-            "extractperson" => self.extract_person(args).await,
-            "extractas" => self.extract_as(args).await,
-            "rendermarkdown" => self.render_markdown(args),
-            "sql" => self.sql(args),
-            "length" => self.length(args),
+            // String functions
             "upper" => self.upper(args),
             "lower" => self.lower(args),
+            "length" => self.length(args),
+            "trim" => self.trim(args),
+            "split" => self.split(args),
+            "replace" => self.replace(args),
+            "contains" => self.contains(args),
+            "startswith" => self.starts_with(args),
+            "endswith" => self.ends_with(args),
             "join" => self.join(args),
+            // List functions
+            "reverse" => self.reverse(args),
+            "sort" => self.sort(args),
+            "unique" => self.unique(args),
+            "take" => self.take(args),
+            "skip" => self.skip(args),
+            "first" => self.first(args),
+            "last" => self.last(args),
+            "flatten" => self.flatten(args),
+            // Math functions
+            "abs" => self.abs(args),
+            "min" => self.min(args),
+            "max" => self.max(args),
+            "sum" => self.sum(args),
+            "average" => self.average(args),
+            "round" => self.round(args),
+            "floor" => self.floor(args),
+            "ceil" => self.ceil(args),
+            // Type conversion functions
+            "tostring" => self.to_string(args),
+            "toint" => self.to_int(args),
+            "tofloat" => self.to_float(args),
+            // Utility list functions
+            "zip" => self.zip(args),
+            "range" => self.range(args),
+            "repeat" => self.repeat(args),
+            "chunk" => self.chunk(args),
+            // LLM functions
+            "ask" => self.ask(args).await,
+            "rendermarkdown" => self.render_markdown(args),
+            // SQL functions
+            "sql" => self.sql(args),
+            // Concurrency functions
             "par" => Ok(self.par(args)),
+            // Logic functions
             "not" => self.not(args),
+            // Chart generation functions
             "generatebarchart" => self.generate_bar_chart(args),
             "generatelinechart" => self.generate_line_chart(args),
             "generatepiechart" => self.generate_pie_chart(args),
             _ => Err(anyhow::anyhow!("Unknown function: {}", name)),
+        }
+    }
+
+    /// Call an intrinsic builtin function with already-evaluated arguments
+    ///
+    /// Intrinsic functions are generated by the lowering pass and have names starting with `__`.
+    /// They correspond to special execution constructs like LLM, HTTP, and SQL.
+    pub async fn call_intrinsic_with_values(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        _effect_kind: Option<EffectKind>,
+        span: Option<Span>,
+    ) -> Result<Value, InterpreterError> {
+        match name {
+            "__llm_execute" => {
+                if args.len() != 2 {
+                    return Err(InterpreterError::InvalidArguments {
+                        message: format!(
+                            "__llm_execute expects 2 arguments (prompt, config), got {}",
+                            args.len()
+                        ),
+                        source_span: span,
+                    });
+                }
+                self.intrinsic_llm_execute(&args[0], &args[1], span)
+                    .await
+            }
+            "__http" => {
+                if args.len() != 5 {
+                    return Err(InterpreterError::InvalidArguments {
+                        message: format!(
+                            "__http expects 5 arguments (method, url, params, headers, body), got {}",
+                            args.len()
+                        ),
+                        source_span: span.clone(),
+                    });
+                }
+                self.intrinsic_http(&args[0], &args[1], &args[2], &args[3], &args[4], span)
+                    .await
+            }
+            "__sql" => {
+                if args.len() != 1 {
+                    return Err(InterpreterError::InvalidArguments {
+                        message: format!("__sql expects 1 argument (query), got {}", args.len()),
+                        source_span: span.clone(),
+                    });
+                }
+                self.intrinsic_sql(&args[0], span).await
+            }
+            _ => Err(InterpreterError::UnknownIntrinsic {
+                name: name.to_string(),
+                source_span: span,
+            }),
         }
     }
 
@@ -213,13 +234,17 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             anyhow::anyhow!(error_msg)
         })?;
 
+        self.last_response = Some(response.clone());
+
         Ok(Value::String(response))
     }
 
-    /// Call ExtractAs with custom model, base_url, and api_key_env configuration
-    pub async fn extract_as_with_config(
+    /// Execute LLM with a custom prompt template and typed output
+    /// This is designed for user-defined prompts in function definitions
+    pub async fn execute_with_prompt_template(
         &mut self,
-        text: String,
+        prompt_template: &str,
+        params: HashMap<String, Value>,
         type_identifier: String,
         model: Option<String>,
         base_url: Option<String>,
@@ -232,22 +257,28 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
         })?;
 
         let output_type = Self::parse_type_identifier(&type_identifier, runtime.ir())?;
-        let mut params = std::collections::HashMap::new();
-        params.insert("text".to_string(), BamlValue::String(text.clone()));
 
-        let prompt_template = format!(
-            "Extract {} information from the following text:\n\n{{{{ text }}}}\n\nPlease extract all relevant fields.",
-            type_identifier
-        );
+        // Convert params to BamlValue
+        let baml_params: HashMap<String, BamlValue> = params
+            .into_iter()
+            .map(|(k, v)| (k, Self::value_to_baml_value(v)))
+            .collect();
 
-        let prompt = generate_prompt_from_ir(runtime.ir(), &prompt_template, &params, &output_type)
-            .map_err(|e| anyhow::anyhow!("Failed to generate prompt: {}", e))?;
+        // Use the user's prompt template directly with generate_prompt_from_ir
+        // This will handle both variable interpolation and schema generation
+        let prompt =
+            generate_prompt_from_ir(runtime.ir(), prompt_template, &baml_params, &output_type)
+                .map_err(|e| anyhow::anyhow!("Failed to generate prompt: {}", e))?;
+
+        self.last_prompt = Some(prompt.clone());
 
         let client = self.create_client(model, base_url, api_key_env)?;
         let raw_response = client
             .call(&prompt)
             .await
             .map_err(|e| anyhow::anyhow!("LLM call failed: {}", e))?;
+
+        self.last_response = Some(raw_response.clone());
 
         // Strip markdown code fences if present
         let cleaned_response = Self::strip_markdown_fences(&raw_response);
@@ -353,156 +384,9 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             anyhow::anyhow!(error_msg)
         })?;
 
+        self.last_response = Some(response.clone());
+
         Ok(Value::String(response))
-    }
-
-    async fn extract_person(&self, args: Vec<Value>) -> Result<Value> {
-        if args.is_empty() {
-            return Err(anyhow::anyhow!(
-                "ExtractPerson() requires at least 1 argument (text)"
-            ));
-        }
-
-        let text = match &args[0] {
-            Value::String(s) => s.clone(),
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "ExtractPerson() requires a string argument"
-                ))
-            }
-        };
-
-        // Check if runtime is available
-        let runtime = self.runtime.as_ref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "OPENAI_API_KEY not set. Please set it with: export OPENAI_API_KEY=sk-..."
-            )
-        })?;
-
-        // Prepare parameters
-        let mut params = HashMap::new();
-        params.insert("text".to_string(), BamlValue::String(text));
-
-        // For debugging, let's see what the LLM actually returns
-        // First, get the prompt that will be sent
-        let prompt = generate_prompt_from_ir(
-            runtime.ir(),
-            &runtime
-                .ir()
-                .find_function("ExtractPerson")
-                .unwrap()
-                .prompt_template,
-            &params,
-            &FieldType::Class("Person".to_string()),
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to generate prompt: {}", e))?;
-
-        // Get the client directly to see the raw response
-        let raw_response = self
-            .llm_client
-            .as_ref()
-            .unwrap()
-            .call(&prompt)
-            .await
-            .map_err(|e| anyhow::anyhow!("LLM call failed: {}", e))?;
-
-        // Strip markdown code fences if present
-        let cleaned_response = Self::strip_markdown_fences(&raw_response);
-
-        // Try to parse using the IR
-        let result = parse_llm_response_with_ir(
-            runtime.ir(),
-            &cleaned_response,
-            &FieldType::Class("Person".to_string()),
-        )
-        .map_err(|e| {
-            // Show both the error and the raw response for debugging
-            anyhow::anyhow!(
-                "Failed to parse LLM response:\n  Error: {}\n  Cleaned response: {}",
-                e,
-                cleaned_response
-            )
-        })?;
-
-        // Convert BamlValue to our Value type
-        Ok(Self::baml_value_to_value(result))
-    }
-
-    async fn extract_as(&self, args: Vec<Value>) -> Result<Value> {
-        if args.len() < 2 {
-            return Err(anyhow::anyhow!(
-                "ExtractAs() requires 2 arguments: ExtractAs(text, TypeName)"
-            ));
-        }
-
-        // First argument: text to extract from
-        let text = match &args[0] {
-            Value::String(s) => s.clone(),
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "ExtractAs() first argument must be a string"
-                ))
-            }
-        };
-
-        // Second argument: type identifier (could be a type name like "Person" or a type spec like "[string]")
-        let type_identifier = match &args[1] {
-            Value::String(s) => s.clone(),
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "ExtractAs() second argument must be a type identifier (string)"
-                ))
-            }
-        };
-
-        // Check if runtime is available
-        let runtime = self.runtime.as_ref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "OPENAI_API_KEY not set. Please set it with: export OPENAI_API_KEY=sk-..."
-            )
-        })?;
-
-        // Parse the type identifier to determine the FieldType
-        let output_type = Self::parse_type_identifier(&type_identifier, runtime.ir())?;
-
-        // Prepare parameters
-        let mut params = HashMap::new();
-        params.insert("text".to_string(), BamlValue::String(text.clone()));
-
-        // Create a dynamic prompt template
-        let prompt_template = format!(
-            "Extract {} information from the following text:\n\n{{{{ text }}}}\n\nPlease extract all relevant fields.",
-            type_identifier
-        );
-
-        // Generate the prompt
-        let prompt = generate_prompt_from_ir(runtime.ir(), &prompt_template, &params, &output_type)
-            .map_err(|e| anyhow::anyhow!("Failed to generate prompt: {}", e))?;
-
-        // Call the LLM
-        let raw_response = self
-            .llm_client
-            .as_ref()
-            .unwrap()
-            .call(&prompt)
-            .await
-            .map_err(|e| anyhow::anyhow!("LLM call failed: {}", e))?;
-
-        // Strip markdown code fences if present
-        let cleaned_response = Self::strip_markdown_fences(&raw_response);
-
-        // Parse using the IR
-        let result = parse_llm_response_with_ir(runtime.ir(), &cleaned_response, &output_type)
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to parse LLM response:\n  Error: {}\n  Cleaned response: {}",
-                    e,
-                    cleaned_response
-                )
-            })?;
-
-        // Convert BamlValue to our Value type
-        Ok(Self::baml_value_to_value(result))
     }
 
     // Helper function to convert BamlValue to our Value type
@@ -521,6 +405,26 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                     .map(|(k, v)| (k, Self::baml_value_to_value(v)))
                     .collect(),
             ),
+        }
+    }
+
+    fn value_to_baml_value(value: Value) -> BamlValue {
+        match value {
+            Value::String(s) => BamlValue::String(s),
+            Value::Int(i) => BamlValue::Int(i),
+            Value::Float(f) => BamlValue::Float(f),
+            Value::Bool(b) => BamlValue::Bool(b),
+            Value::Null => BamlValue::Null,
+            Value::List(items) => {
+                BamlValue::List(items.into_iter().map(Self::value_to_baml_value).collect())
+            }
+            Value::Map(map) => BamlValue::Map(
+                map.into_iter()
+                    .map(|(k, v)| (k, Self::value_to_baml_value(v)))
+                    .collect(),
+            ),
+            Value::Markdown(s) => BamlValue::String(s),
+            Value::Image(s) => BamlValue::String(s),
         }
     }
 
@@ -730,7 +634,8 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
         }
 
         // Get optional theme parameter (default: "blue")
-        let theme = args.get(1)
+        let theme = args
+            .get(1)
             .and_then(|v| match v {
                 Value::String(s) => Some(s.as_str()),
                 _ => None,
@@ -744,33 +649,49 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                 for item in items {
                     match item {
                         Value::Map(m) => {
-                            let label = m.get("label")
+                            let label = m
+                                .get("label")
                                 .and_then(|v| match v {
                                     Value::String(s) => Some(s.clone()),
                                     _ => None,
                                 })
-                                .ok_or_else(|| anyhow::anyhow!("Each item must have a 'label' string field"))?;
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("Each item must have a 'label' string field")
+                                })?;
 
-                            let value = m.get("value")
+                            let value = m
+                                .get("value")
                                 .and_then(|v| match v {
                                     Value::Int(n) => Some(*n as f64),
                                     Value::Float(f) => Some(*f),
                                     _ => None,
                                 })
-                                .ok_or_else(|| anyhow::anyhow!("Each item must have a 'value' numeric field"))?;
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("Each item must have a 'value' numeric field")
+                                })?;
 
                             chart_data.push((label, value));
                         }
-                        _ => return Err(anyhow::anyhow!("generateBarChart() expects a list of maps")),
+                        _ => {
+                            return Err(anyhow::anyhow!(
+                                "generateBarChart() expects a list of maps"
+                            ))
+                        }
                     }
                 }
                 chart_data
             }
-            _ => return Err(anyhow::anyhow!("generateBarChart() requires a list as first argument")),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "generateBarChart() requires a list as first argument"
+                ))
+            }
         };
 
         if data.is_empty() {
-            return Err(anyhow::anyhow!("generateBarChart() requires non-empty data"));
+            return Err(anyhow::anyhow!(
+                "generateBarChart() requires non-empty data"
+            ));
         }
 
         // Create temporary file
@@ -803,30 +724,28 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             .margin(20)
             .x_label_area_size(40)
             .y_label_area_size(60)
-            .build_cartesian_2d(
-                (0usize..data.len()).into_segmented(),
-                0f64..y_max,
-            )?;
+            .build_cartesian_2d((0usize..data.len()).into_segmented(), 0f64..y_max)?;
 
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(data.len())
             .x_label_formatter(&|x| {
                 if let SegmentValue::CenterOf(idx) = x {
-                    data.get(*idx).map(|(label, _)| label.clone()).unwrap_or_default()
+                    data.get(*idx)
+                        .map(|(label, _)| label.clone())
+                        .unwrap_or_default()
                 } else {
                     String::new()
                 }
             })
             .draw()?;
 
-        chart.draw_series(
-            data.iter().enumerate().map(|(i, (_, value))| {
-                let x = SegmentValue::CenterOf(i);
-                let mut bar = Rectangle::new([(x.clone(), 0.0), (x, *value)], bar_color.filled());
-                bar.set_margin(0, 0, 5, 5);
-                bar
-            })
-        )?;
+        chart.draw_series(data.iter().enumerate().map(|(i, (_, value))| {
+            let x = SegmentValue::CenterOf(i);
+            let mut bar = Rectangle::new([(x.clone(), 0.0), (x, *value)], bar_color.filled());
+            bar.set_margin(0, 0, 5, 5);
+            bar
+        }))?;
 
         root.present()?;
 
@@ -846,7 +765,8 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
         }
 
         // Get optional theme parameter (default: "blue")
-        let theme = args.get(1)
+        let theme = args
+            .get(1)
             .and_then(|v| match v {
                 Value::String(s) => Some(s.as_str()),
                 _ => None,
@@ -861,17 +781,27 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                     let value = match item {
                         Value::Int(n) => *n as f64,
                         Value::Float(f) => *f,
-                        _ => return Err(anyhow::anyhow!("generateLineChart() expects a list of numbers")),
+                        _ => {
+                            return Err(anyhow::anyhow!(
+                                "generateLineChart() expects a list of numbers"
+                            ))
+                        }
                     };
                     chart_data.push((i as f64, value));
                 }
                 chart_data
             }
-            _ => return Err(anyhow::anyhow!("generateLineChart() requires a list as first argument")),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "generateLineChart() requires a list as first argument"
+                ))
+            }
         };
 
         if data.is_empty() {
-            return Err(anyhow::anyhow!("generateLineChart() requires non-empty data"));
+            return Err(anyhow::anyhow!(
+                "generateLineChart() requires non-empty data"
+            ));
         }
 
         // Create temporary file
@@ -896,7 +826,10 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
         let root = BitMapBackend::new(&file_path, (800, 600)).into_drawing_area();
         root.fill(&bg_color)?;
 
-        let max_value = data.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max);
+        let max_value = data
+            .iter()
+            .map(|(_, v)| *v)
+            .fold(f64::NEG_INFINITY, f64::max);
         let min_value = data.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min);
         let y_range = max_value - min_value;
         let y_min = (min_value - y_range * 0.1).min(0.0);
@@ -941,7 +874,8 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
         }
 
         // Get optional theme parameter (default: "default")
-        let theme = args.get(1)
+        let theme = args
+            .get(1)
             .and_then(|v| match v {
                 Value::String(s) => Some(s.as_str()),
                 _ => None,
@@ -955,33 +889,49 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                 for item in items {
                     match item {
                         Value::Map(m) => {
-                            let label = m.get("label")
+                            let label = m
+                                .get("label")
                                 .and_then(|v| match v {
                                     Value::String(s) => Some(s.clone()),
                                     _ => None,
                                 })
-                                .ok_or_else(|| anyhow::anyhow!("Each item must have a 'label' string field"))?;
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("Each item must have a 'label' string field")
+                                })?;
 
-                            let value = m.get("value")
+                            let value = m
+                                .get("value")
                                 .and_then(|v| match v {
                                     Value::Int(n) => Some(*n as f64),
                                     Value::Float(f) => Some(*f),
                                     _ => None,
                                 })
-                                .ok_or_else(|| anyhow::anyhow!("Each item must have a 'value' numeric field"))?;
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("Each item must have a 'value' numeric field")
+                                })?;
 
                             chart_data.push((label, value));
                         }
-                        _ => return Err(anyhow::anyhow!("generatePieChart() expects a list of maps")),
+                        _ => {
+                            return Err(anyhow::anyhow!(
+                                "generatePieChart() expects a list of maps"
+                            ))
+                        }
                     }
                 }
                 chart_data
             }
-            _ => return Err(anyhow::anyhow!("generatePieChart() requires a list as first argument")),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "generatePieChart() requires a list as first argument"
+                ))
+            }
         };
 
         if data.is_empty() {
-            return Err(anyhow::anyhow!("generatePieChart() requires non-empty data"));
+            return Err(anyhow::anyhow!(
+                "generatePieChart() requires non-empty data"
+            ));
         }
 
         // Create temporary file
@@ -1000,7 +950,7 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
             "green" => (
                 WHITE,
                 vec![
-                    RGBColor(76, 175, 80),   // Green
+                    RGBColor(76, 175, 80), // Green
                     RGBColor(129, 199, 132),
                     RGBColor(165, 214, 167),
                     RGBColor(200, 230, 201),
@@ -1008,12 +958,12 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                     RGBColor(46, 125, 50),
                     RGBColor(27, 94, 32),
                     RGBColor(139, 195, 74),
-                ]
+                ],
             ),
             "red" => (
                 WHITE,
                 vec![
-                    RGBColor(244, 67, 54),   // Red
+                    RGBColor(244, 67, 54), // Red
                     RGBColor(239, 83, 80),
                     RGBColor(229, 115, 115),
                     RGBColor(239, 154, 154),
@@ -1021,12 +971,12 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                     RGBColor(198, 40, 40),
                     RGBColor(183, 28, 28),
                     RGBColor(255, 82, 82),
-                ]
+                ],
             ),
             "purple" => (
                 WHITE,
                 vec![
-                    RGBColor(156, 39, 176),  // Purple
+                    RGBColor(156, 39, 176), // Purple
                     RGBColor(171, 71, 188),
                     RGBColor(186, 104, 200),
                     RGBColor(206, 147, 216),
@@ -1034,12 +984,12 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                     RGBColor(106, 27, 154),
                     RGBColor(74, 20, 140),
                     RGBColor(170, 0, 255),
-                ]
+                ],
             ),
             "orange" => (
                 WHITE,
                 vec![
-                    RGBColor(255, 152, 0),   // Orange
+                    RGBColor(255, 152, 0), // Orange
                     RGBColor(255, 167, 38),
                     RGBColor(255, 183, 77),
                     RGBColor(255, 204, 128),
@@ -1047,7 +997,7 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                     RGBColor(245, 124, 0),
                     RGBColor(230, 81, 0),
                     RGBColor(255, 171, 64),
-                ]
+                ],
             ),
             "dark" => (
                 RGBColor(30, 30, 30),
@@ -1060,11 +1010,12 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                     RGBColor(38, 198, 218),  // Cyan
                     RGBColor(255, 112, 67),  // Deep Orange
                     RGBColor(126, 87, 194),  // Deep Purple
-                ]
+                ],
             ),
             _ => (
                 WHITE,
-                vec![  // default colorful palette
+                vec![
+                    // default colorful palette
                     RGBColor(31, 119, 180),
                     RGBColor(255, 127, 14),
                     RGBColor(44, 160, 44),
@@ -1073,8 +1024,8 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
                     RGBColor(140, 86, 75),
                     RGBColor(227, 119, 194),
                     RGBColor(127, 127, 127),
-                ]
-            )
+                ],
+            ),
         };
 
         root.fill(&bg_color)?;
@@ -1125,6 +1076,1100 @@ Please extract: name, age (if mentioned), and occupation (if mentioned)."#
         root.present()?;
 
         Ok(Value::Image(file_path.to_string_lossy().to_string()))
+    }
+
+    // ========================================
+    // String processing functions
+    // ========================================
+
+    fn trim(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Trim() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::String(s) => Ok(Value::String(s.trim().to_string())),
+            _ => Err(anyhow::anyhow!(
+                "Trim() requires a string, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn split(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Split() requires exactly 2 arguments (string, separator)"
+            ));
+        }
+
+        let string = match &args[0] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Split() first argument must be a string, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let separator = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Split() second argument must be a string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let parts: Vec<Value> = string
+            .split(separator.as_str())
+            .map(|s| Value::String(s.to_string()))
+            .collect();
+
+        Ok(Value::List(parts))
+    }
+
+    fn replace(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 3 {
+            return Err(anyhow::anyhow!(
+                "Replace() requires exactly 3 arguments (string, pattern, replacement)"
+            ));
+        }
+
+        let string = match &args[0] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Replace() first argument must be a string, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let pattern = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Replace() second argument must be a string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let replacement = match &args[2] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Replace() third argument must be a string, got {}",
+                    args[2].type_name()
+                ))
+            }
+        };
+
+        Ok(Value::String(
+            string.replace(pattern.as_str(), replacement.as_str()),
+        ))
+    }
+
+    fn contains(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Contains() requires exactly 2 arguments (string, substring)"
+            ));
+        }
+
+        let string = match &args[0] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Contains() first argument must be a string, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let substring = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Contains() second argument must be a string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        Ok(Value::Bool(string.contains(substring.as_str())))
+    }
+
+    fn starts_with(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "StartsWith() requires exactly 2 arguments (string, prefix)"
+            ));
+        }
+
+        let string = match &args[0] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "StartsWith() first argument must be a string, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let prefix = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "StartsWith() second argument must be a string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        Ok(Value::Bool(string.starts_with(prefix.as_str())))
+    }
+
+    fn ends_with(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "EndsWith() requires exactly 2 arguments (string, suffix)"
+            ));
+        }
+
+        let string = match &args[0] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "EndsWith() first argument must be a string, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let suffix = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "EndsWith() second argument must be a string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        Ok(Value::Bool(string.ends_with(suffix.as_str())))
+    }
+
+    // ========================================
+    // List processing functions
+    // ========================================
+
+    fn reverse(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Reverse() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => {
+                let mut reversed = items.clone();
+                reversed.reverse();
+                Ok(Value::List(reversed))
+            }
+            _ => Err(anyhow::anyhow!(
+                "Reverse() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn sort(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Sort() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => {
+                let mut sorted = items.clone();
+                sorted.sort_by(|a, b| match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                    (Value::Float(x), Value::Float(y)) => {
+                        x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    (Value::String(x), Value::String(y)) => x.cmp(y),
+                    (Value::Int(x), Value::Float(y)) => (*x as f64)
+                        .partial_cmp(y)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Float(x), Value::Int(y)) => x
+                        .partial_cmp(&(*y as f64))
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    _ => std::cmp::Ordering::Equal,
+                });
+                Ok(Value::List(sorted))
+            }
+            _ => Err(anyhow::anyhow!(
+                "Sort() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn unique(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Unique() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => {
+                let mut unique_items = Vec::new();
+                for item in items {
+                    if !unique_items.iter().any(|v| values_equal(v, item)) {
+                        unique_items.push(item.clone());
+                    }
+                }
+                Ok(Value::List(unique_items))
+            }
+            _ => Err(anyhow::anyhow!(
+                "Unique() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn take(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Take() requires exactly 2 arguments (list, count)"
+            ));
+        }
+
+        let items = match &args[0] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Take() first argument must be a list, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let count = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Take() second argument must be an integer, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let taken: Vec<Value> = items.iter().take(count).cloned().collect();
+        Ok(Value::List(taken))
+    }
+
+    fn skip(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Skip() requires exactly 2 arguments (list, count)"
+            ));
+        }
+
+        let items = match &args[0] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Skip() first argument must be a list, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let count = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Skip() second argument must be an integer, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let skipped: Vec<Value> = items.iter().skip(count).cloned().collect();
+        Ok(Value::List(skipped))
+    }
+
+    fn first(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("First() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => items
+                .first()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("First() called on empty list")),
+            _ => Err(anyhow::anyhow!(
+                "First() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn last(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Last() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => items
+                .last()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("Last() called on empty list")),
+            _ => Err(anyhow::anyhow!(
+                "Last() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn flatten(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Flatten() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => {
+                let mut flattened = Vec::new();
+                for item in items {
+                    match item {
+                        Value::List(inner) => flattened.extend(inner.clone()),
+                        other => flattened.push(other.clone()),
+                    }
+                }
+                Ok(Value::List(flattened))
+            }
+            _ => Err(anyhow::anyhow!(
+                "Flatten() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    // ========================================
+    // Math functions
+    // ========================================
+
+    fn abs(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Abs() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::Int(n) => Ok(Value::Int(n.abs())),
+            Value::Float(f) => Ok(Value::Float(f.abs())),
+            _ => Err(anyhow::anyhow!(
+                "Abs() requires a number, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn min(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Min() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => {
+                if items.is_empty() {
+                    return Err(anyhow::anyhow!("Min() called on empty list"));
+                }
+
+                let mut min_val = &items[0];
+                for item in items.iter().skip(1) {
+                    match (min_val, item) {
+                        (Value::Int(x), Value::Int(y)) if y < x => min_val = item,
+                        (Value::Float(x), Value::Float(y)) if y < x => min_val = item,
+                        (Value::Int(x), Value::Float(y)) if y < &(*x as f64) => min_val = item,
+                        (Value::Float(x), Value::Int(y)) if (*y as f64) < *x => min_val = item,
+                        _ => {}
+                    }
+                }
+                Ok(min_val.clone())
+            }
+            _ => Err(anyhow::anyhow!(
+                "Min() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn max(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Max() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => {
+                if items.is_empty() {
+                    return Err(anyhow::anyhow!("Max() called on empty list"));
+                }
+
+                let mut max_val = &items[0];
+                for item in items.iter().skip(1) {
+                    match (max_val, item) {
+                        (Value::Int(x), Value::Int(y)) if y > x => max_val = item,
+                        (Value::Float(x), Value::Float(y)) if y > x => max_val = item,
+                        (Value::Int(x), Value::Float(y)) if y > &(*x as f64) => max_val = item,
+                        (Value::Float(x), Value::Int(y)) if (*y as f64) > *x => max_val = item,
+                        _ => {}
+                    }
+                }
+                Ok(max_val.clone())
+            }
+            _ => Err(anyhow::anyhow!(
+                "Max() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn sum(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Sum() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => {
+                let mut int_sum = 0i64;
+                let mut float_sum = 0.0f64;
+                let mut has_float = false;
+
+                for item in items {
+                    match item {
+                        Value::Int(n) => {
+                            if has_float {
+                                float_sum += *n as f64;
+                            } else {
+                                int_sum += n;
+                            }
+                        }
+                        Value::Float(f) => {
+                            if !has_float {
+                                float_sum = int_sum as f64;
+                                has_float = true;
+                            }
+                            float_sum += f;
+                        }
+                        _ => {
+                            return Err(anyhow::anyhow!(
+                                "Sum() requires a list of numbers, found {}",
+                                item.type_name()
+                            ))
+                        }
+                    }
+                }
+
+                if has_float {
+                    Ok(Value::Float(float_sum))
+                } else {
+                    Ok(Value::Int(int_sum))
+                }
+            }
+            _ => Err(anyhow::anyhow!(
+                "Sum() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn average(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Average() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::List(items) => {
+                if items.is_empty() {
+                    return Err(anyhow::anyhow!("Average() called on empty list"));
+                }
+
+                let count = items.len() as f64;
+                let sum = self.sum(args)?;
+
+                match sum {
+                    Value::Int(n) => Ok(Value::Float(n as f64 / count)),
+                    Value::Float(f) => Ok(Value::Float(f / count)),
+                    _ => Err(anyhow::anyhow!("Sum() returned unexpected type")),
+                }
+            }
+            _ => Err(anyhow::anyhow!(
+                "Average() requires a list, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn round(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Round() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::Float(f) => Ok(Value::Int(f.round() as i64)),
+            Value::Int(n) => Ok(Value::Int(*n)),
+            _ => Err(anyhow::anyhow!(
+                "Round() requires a number, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn floor(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Floor() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::Float(f) => Ok(Value::Int(f.floor() as i64)),
+            Value::Int(n) => Ok(Value::Int(*n)),
+            _ => Err(anyhow::anyhow!(
+                "Floor() requires a number, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn ceil(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("Ceil() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::Float(f) => Ok(Value::Int(f.ceil() as i64)),
+            Value::Int(n) => Ok(Value::Int(*n)),
+            _ => Err(anyhow::anyhow!(
+                "Ceil() requires a number, got {}",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    // ========================================
+    // Type conversion functions
+    // ========================================
+
+    fn to_string(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("ToString() requires exactly 1 argument"));
+        }
+
+        let string = match &args[0] {
+            Value::String(s) => s.clone(),
+            Value::Int(n) => n.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Null => "null".to_string(),
+            other => other.display(),
+        };
+
+        Ok(Value::String(string))
+    }
+
+    fn to_int(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("ToInt() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::Int(n) => Ok(Value::Int(*n)),
+            Value::Float(f) => Ok(Value::Int(*f as i64)),
+            Value::String(s) => s
+                .parse::<i64>()
+                .map(Value::Int)
+                .map_err(|_| anyhow::anyhow!("Failed to parse '{}' as integer", s)),
+            _ => Err(anyhow::anyhow!(
+                "ToInt() cannot convert {} to integer",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    fn to_float(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 1 {
+            return Err(anyhow::anyhow!("ToFloat() requires exactly 1 argument"));
+        }
+
+        match &args[0] {
+            Value::Float(f) => Ok(Value::Float(*f)),
+            Value::Int(n) => Ok(Value::Float(*n as f64)),
+            Value::String(s) => s
+                .parse::<f64>()
+                .map(Value::Float)
+                .map_err(|_| anyhow::anyhow!("Failed to parse '{}' as float", s)),
+            _ => Err(anyhow::anyhow!(
+                "ToFloat() cannot convert {} to float",
+                args[0].type_name()
+            )),
+        }
+    }
+
+    // ========================================
+    // Utility list functions (no function args)
+    // ========================================
+
+    fn zip(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Zip() requires exactly 2 arguments (list1, list2)"
+            ));
+        }
+
+        let list1 = match &args[0] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Zip() first argument must be a list, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let list2 = match &args[1] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Zip() second argument must be a list, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let zipped: Vec<Value> = list1
+            .iter()
+            .zip(list2.iter())
+            .map(|(a, b)| Value::List(vec![a.clone(), b.clone()]))
+            .collect();
+
+        Ok(Value::List(zipped))
+    }
+
+    fn range(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Range() requires exactly 2 arguments (start, end)"
+            ));
+        }
+
+        let start = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Range() first argument must be an integer, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let end = match &args[1] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Range() second argument must be an integer, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let range: Vec<Value> = (start..end).map(Value::Int).collect();
+        Ok(Value::List(range))
+    }
+
+    fn repeat(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Repeat() requires exactly 2 arguments (value, count)"
+            ));
+        }
+
+        let value = &args[0];
+        let count = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Repeat() second argument must be an integer, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let repeated = vec![value.clone(); count];
+        Ok(Value::List(repeated))
+    }
+
+    fn chunk(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Chunk() requires exactly 2 arguments (list, size)"
+            ));
+        }
+
+        let items = match &args[0] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Chunk() first argument must be a list, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let size = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Chunk() second argument must be an integer, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        if size == 0 {
+            return Err(anyhow::anyhow!("Chunk() size must be greater than 0"));
+        }
+
+        let chunks: Vec<Value> = items
+            .chunks(size)
+            .map(|chunk| Value::List(chunk.to_vec()))
+            .collect();
+
+        Ok(Value::List(chunks))
+    }
+
+    // ===== Intrinsic Functions (Lowered from HIR) =====
+
+    /// Helper: Convert Value to plain string (without quotes for strings)
+    fn value_to_plain_string(value: &Value) -> String {
+        match value {
+            Value::String(s) => s.clone(),
+            Value::Int(n) => n.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Null => "null".to_string(),
+            _ => value.display(),
+        }
+    }
+
+    /// __llm_execute intrinsic: Execute LLM with prompt
+    ///
+    /// Arguments:
+    /// - prompt: Value (String with the prompt text)
+    /// - config: Value (Map with optional model, base_url, api_key_env, temperature)
+    async fn intrinsic_llm_execute(
+        &mut self,
+        prompt_value: &Value,
+        config_value: &Value,
+        span: Option<Span>,
+    ) -> Result<Value, InterpreterError> {
+        // Extract prompt string
+        let prompt = match prompt_value {
+            Value::String(s) => s.clone(),
+            _ => {
+                return Err(InterpreterError::TypeError {
+                    message: "__llm_execute: prompt must be String".to_string(),
+                    expected: "String".to_string(),
+                    got: format!("{:?}", prompt_value),
+                    source_span: span,
+                });
+            }
+        };
+
+        // Extract config parameters
+        let config_map = match config_value {
+            Value::Map(m) => m,
+            _ => {
+                return Err(InterpreterError::TypeError {
+                    message: "__llm_execute: config must be Map".to_string(),
+                    expected: "Map".to_string(),
+                    got: format!("{:?}", config_value),
+                    source_span: span,
+                });
+            }
+        };
+
+        let model = config_map
+            .get("model")
+            .and_then(|v| {
+                if let Value::String(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            });
+
+        let base_url = config_map
+            .get("base_url")
+            .and_then(|v| {
+                if let Value::String(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            });
+
+        let api_key_env = config_map
+            .get("api_key_env")
+            .and_then(|v| {
+                if let Value::String(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            });
+
+        // Extract return type from config (defaults to String if not specified)
+        let return_type = config_map
+            .get("return_type")
+            .and_then(|v| {
+                if let Value::String(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "String".to_string());
+
+        // Call existing execute_with_prompt_template method
+        // Note: We use an empty params map since template interpolation is already done
+        let result = self.execute_with_prompt_template(
+            &prompt,
+            std::collections::HashMap::new(),
+            return_type,
+            model,
+            base_url,
+            api_key_env,
+        )
+        .await
+        .map_err(|e| InterpreterError::LLMError {
+            message: e.to_string(),
+            function_name: self.current_function_name.clone(),
+            source_span: span,
+            prompt: Some(prompt),
+            response: self.last_response.clone(),
+        })?;
+
+        Ok(result)
+    }
+
+    /// __http intrinsic: Execute HTTP request
+    ///
+    /// Arguments:
+    /// - method: Value (String: GET, POST, etc.)
+    /// - url: Value (String)
+    /// - params: Value (Map of query parameters)
+    /// - headers: Value (Map of headers)
+    /// - body: Value (String, optional request body)
+    async fn intrinsic_http(
+        &mut self,
+        method_value: &Value,
+        url_value: &Value,
+        params_value: &Value,
+        headers_value: &Value,
+        body_value: &Value,
+        span: Option<Span>,
+    ) -> Result<Value, InterpreterError> {
+        use reqwest::Client;
+        use serde_json::Value as JsonValue;
+
+        // Extract method
+        let method = match method_value {
+            Value::String(s) => s.clone(),
+            _ => {
+                return Err(InterpreterError::TypeError {
+                    message: "__http: method must be String".to_string(),
+                    expected: "String".to_string(),
+                    got: format!("{:?}", method_value),
+                    source_span: span,
+                });
+            }
+        };
+
+        // Extract URL
+        let url = match url_value {
+            Value::String(s) => s.clone(),
+            _ => {
+                return Err(InterpreterError::TypeError {
+                    message: "__http: url must be String".to_string(),
+                    expected: "String".to_string(),
+                    got: format!("{:?}", url_value),
+                    source_span: span,
+                });
+            }
+        };
+
+        // Extract params
+        let params_map = match params_value {
+            Value::Map(m) => {
+                let mut map = std::collections::HashMap::new();
+                for (key, value) in m {
+                    map.insert(key.clone(), Self::value_to_plain_string(value));
+                }
+                map
+            }
+            _ => std::collections::HashMap::new(),
+        };
+
+        // Extract headers
+        let headers_map = match headers_value {
+            Value::Map(m) => {
+                let mut map = std::collections::HashMap::new();
+                for (key, value) in m {
+                    map.insert(key.clone(), Self::value_to_plain_string(value));
+                }
+                map
+            }
+            _ => std::collections::HashMap::new(),
+        };
+
+        // Extract body (optional - empty string means no body)
+        let body_str = match body_value {
+            Value::String(s) if !s.is_empty() => Some(s.clone()),
+            _ => None,
+        };
+
+        // Execute HTTP request
+        let client = Client::new();
+        let mut request = match method.to_uppercase().as_str() {
+            "GET" => client.get(&url),
+            "POST" => client.post(&url),
+            "PUT" => client.put(&url),
+            "DELETE" => client.delete(&url),
+            "PATCH" => client.patch(&url),
+            _ => {
+                return Err(InterpreterError::HTTPError {
+                    message: format!("Unsupported HTTP method: {}", method),
+                    function_name: self.current_function_name.clone(),
+                    source_span: span,
+                    method: Some(method),
+                    url: Some(url),
+                });
+            }
+        };
+
+        // Add query parameters
+        for (key, value) in params_map {
+            request = request.query(&[(key, value)]);
+        }
+
+        // Add headers
+        for (key, value) in headers_map {
+            request = request.header(key, value);
+        }
+
+        // Add body if present
+        if let Some(body) = body_str {
+            request = request.body(body);
+        }
+
+        // Send request
+        let response = request.send().await.map_err(|e| InterpreterError::HTTPError {
+            message: format!("Request failed: {}", e),
+            function_name: self.current_function_name.clone(),
+            source_span: span.clone(),
+            method: Some(method.clone()),
+            url: Some(url.clone()),
+        })?;
+
+        // Get response text
+        let response_text = response
+            .text()
+            .await
+            .map_err(|e| InterpreterError::HTTPError {
+                message: format!("Failed to read response: {}", e),
+                function_name: self.current_function_name.clone(),
+                source_span: span,
+                method: Some(method),
+                url: Some(url),
+            })?;
+
+        // Try to parse as JSON, fallback to string
+        if let Ok(json) = serde_json::from_str::<JsonValue>(&response_text) {
+            Ok(Self::json_to_value(&json))
+        } else {
+            Ok(Value::String(response_text))
+        }
+    }
+
+    /// __sql intrinsic: Execute SQL query
+    ///
+    /// Arguments:
+    /// - query: Value (String with SQL)
+    async fn intrinsic_sql(
+        &mut self,
+        query_value: &Value,
+        span: Option<Span>,
+    ) -> Result<Value, InterpreterError> {
+        // Extract query string
+        let query = match query_value {
+            Value::String(s) => s.clone(),
+            _ => {
+                return Err(InterpreterError::TypeError {
+                    message: "__sql: query must be String".to_string(),
+                    expected: "String".to_string(),
+                    got: format!("{:?}", query_value),
+                    source_span: span,
+                });
+            }
+        };
+
+        // Execute SQL using the existing sql executor
+        let executor = self.sql_executor.as_mut().ok_or_else(|| {
+            InterpreterError::RuntimeError {
+                message: "SQL executor not initialized".to_string(),
+                source_span: span.clone(),
+            }
+        })?;
+
+        // SQL doesn't support parameters yet, use empty map
+        let params = std::collections::HashMap::new();
+        executor.execute(&query, &params).map_err(|e| {
+            InterpreterError::SQLError {
+                message: format!("Query failed: {}", e),
+                function_name: self.current_function_name.clone(),
+                source_span: span,
+                query: Some(query),
+            }
+        })
+    }
+
+    /// Helper: Convert serde_json::Value to dsl_ir::Value
+    fn json_to_value(json: &serde_json::Value) -> Value {
+        match json {
+            serde_json::Value::Null => Value::Null,
+            serde_json::Value::Bool(b) => Value::Bool(*b),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Value::Int(i)
+                } else if let Some(f) = n.as_f64() {
+                    Value::Float(f)
+                } else {
+                    Value::Null
+                }
+            }
+            serde_json::Value::String(s) => Value::String(s.clone()),
+            serde_json::Value::Array(arr) => {
+                Value::List(arr.iter().map(Self::json_to_value).collect())
+            }
+            serde_json::Value::Object(obj) => {
+                let mut map = indexmap::IndexMap::new();
+                for (k, v) in obj {
+                    map.insert(k.clone(), Self::json_to_value(v));
+                }
+                Value::Map(map)
+            }
+        }
     }
 }
 

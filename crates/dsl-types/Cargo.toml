@@ -1,0 +1,10 @@
+[package]
+name = "dsl-types"
+version = "2.0.0"
+edition = "2021"
+authors = ["catethos <cloverethos@gmail.com>"]
+description = "Type definitions for DSL and BAML"
+license = "MIT"
+
+[dependencies]
+serde = { workspace = true }

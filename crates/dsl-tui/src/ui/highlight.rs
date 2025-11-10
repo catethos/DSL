@@ -131,16 +131,22 @@ pub fn highlight_line(line: &str) -> Vec<Span<'static>> {
 /// Get style for a highlight name
 fn get_style(highlight_name: &str) -> Style {
     match highlight_name {
-        "keyword" => Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
-        "keyword.special" => Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD),
-        "type" | "type.builtin" | "type.definition" => {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-        }
+        "keyword" => Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+        "keyword.special" => Style::default()
+            .fg(Color::LightMagenta)
+            .add_modifier(Modifier::BOLD),
+        "type" | "type.builtin" | "type.definition" => Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
         "function" | "function.call" => Style::default().fg(Color::Green),
         "constant" | "constant.builtin" => Style::default().fg(Color::Yellow),
         "variable.parameter" => Style::default().fg(Color::LightBlue),
         "property" => Style::default().fg(Color::LightGreen),
-        "operator" => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        "operator" => Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
         "punctuation.bracket" => Style::default().fg(Color::White),
         "punctuation.delimiter" => Style::default().fg(Color::Gray),
         "string" | "embedded" => Style::default().fg(Color::Green),

@@ -1,6 +1,6 @@
 [package]
 name = "dsl-core"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 
 [dependencies]
@@ -8,21 +8,11 @@ edition = "2021"
 pest = { workspace = true }
 pest_derive = { workspace = true }
 
+# Type definitions
+dsl-types = { path = "../dsl-types" }
+
 # IR
 dsl-ir = { path = "../dsl-ir" }
-
-# LLM and structured extraction
-simplify_baml = { path = "../../../simplify_baml" }
-
-# Database
-duckdb = { workspace = true }
-
-# Async runtime
-tokio = { workspace = true }
-futures = { workspace = true }
-
-# HTTP client
-reqwest = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -31,7 +21,3 @@ serde_json = { workspace = true }
 # Collections and utilities
 indexmap = { workspace = true }
 anyhow = { workspace = true }
-
-# Chart generation
-plotters = { workspace = true }
-image = { workspace = true }

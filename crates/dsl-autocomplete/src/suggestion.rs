@@ -149,15 +149,15 @@ impl SuggestionKind {
     /// Get a default priority for this kind
     pub fn default_priority(&self) -> i32 {
         match self {
-            Self::Variable => 100,  // Variables highest (most commonly used)
-            Self::Function => 90,   // Functions second
-            Self::Field => 80,      // Fields third
-            Self::Keyword => 70,    // Keywords fourth
-            Self::Type => 60,       // Types fifth
-            Self::Command => 50,    // Commands sixth
-            Self::Snippet => 40,    // Snippets seventh
-            Self::Operator => 30,   // Operators eighth
-            Self::Other => 0,       // Other lowest
+            Self::Variable => 100, // Variables highest (most commonly used)
+            Self::Function => 90,  // Functions second
+            Self::Field => 80,     // Fields third
+            Self::Keyword => 70,   // Keywords fourth
+            Self::Type => 60,      // Types fifth
+            Self::Command => 50,   // Commands sixth
+            Self::Snippet => 40,   // Snippets seventh
+            Self::Operator => 30,  // Operators eighth
+            Self::Other => 0,      // Other lowest
         }
     }
 }

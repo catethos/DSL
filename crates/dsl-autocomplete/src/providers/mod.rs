@@ -1,9 +1,9 @@
 //! Built-in completion providers
 
-mod keyword;
 mod command;
 pub mod dynamic;
+mod keyword;
 
-pub use keyword::KeywordProvider;
 pub use command::CommandProvider;
-pub use dynamic::{FunctionProvider, VariableProvider, TypeProvider};
+pub use dynamic::{FunctionProvider, TypeProvider, VariableProvider};
+pub use keyword::KeywordProvider;

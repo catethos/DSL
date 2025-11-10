@@ -3,6 +3,7 @@ set -e
 
 # Configuration
 BINARY_NAME="dsl"
+GUI_BINARY_NAME="dsl-gui"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 BASE_URL="${BASE_URL:-http://72.61.149.67:8000}"
 
@@ -98,14 +99,22 @@ if [ ! -d "$INSTALL_DIR" ]; then
   fi
 fi
 
-# Install
+# Install binaries
 if [ -w "$INSTALL_DIR" ]; then
   mv "$BINARY_NAME" "$INSTALL_DIR/"
   echo -e "${GREEN}✓ Installed to $INSTALL_DIR/${BINARY_NAME}${NC}"
+  if [ -f "$GUI_BINARY_NAME" ]; then
+    mv "$GUI_BINARY_NAME" "$INSTALL_DIR/"
+    echo -e "${GREEN}✓ Installed to $INSTALL_DIR/${GUI_BINARY_NAME}${NC}"
+  fi
 else
   echo "Installing to $INSTALL_DIR (requires sudo)..."
   sudo mv "$BINARY_NAME" "$INSTALL_DIR/"
   echo -e "${GREEN}✓ Installed to $INSTALL_DIR/${BINARY_NAME}${NC}"
+  if [ -f "$GUI_BINARY_NAME" ]; then
+    sudo mv "$GUI_BINARY_NAME" "$INSTALL_DIR/"
+    echo -e "${GREEN}✓ Installed to $INSTALL_DIR/${GUI_BINARY_NAME}${NC}"
+  fi
 fi
 
 # Cleanup
@@ -114,4 +123,7 @@ rm -rf "$TMP_DIR"
 
 echo ""
 echo -e "${GREEN}Installation complete!${NC}"
-echo "Run '${BINARY_NAME}' to get started"
+echo ""
+echo "Available commands:"
+echo "  ${BINARY_NAME}      - Terminal REPL interface"
+echo "  ${GUI_BINARY_NAME}  - GUI interface (egui-based)"

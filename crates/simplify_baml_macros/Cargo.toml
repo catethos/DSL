@@ -1,0 +1,19 @@
+[package]
+name = "simplify_baml_macros"
+version = "0.1.0"
+edition = "2021"
+authors = ["catethos <cloverethos@gmail.com>"]
+description = "Procedural macros for simplify_baml - automatic IR generation from Rust types"
+readme = "../README.md"
+repository = "https://github.com/catethos/simplify_baml"
+license = "MIT"
+keywords = ["llm", "baml", "macros", "procedural-macro"]
+categories = ["api-bindings", "development-tools::procedural-macro-helpers"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0", features = ["full", "extra-traits"] }
+quote = "1.0"
+proc-macro2 = "1.0"

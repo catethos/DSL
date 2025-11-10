@@ -1,4 +1,4 @@
-use crate::Value;
+use dsl_ir::Value;
 use duckdb::Connection;
 use indexmap::IndexMap;
 use std::collections::HashMap;

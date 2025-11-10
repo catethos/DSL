@@ -64,10 +64,7 @@ pub fn text_to_lines(text: &str, width: usize) -> Vec<Line<'static>> {
     }
 
     let wrapped = wrap_text(text, width);
-    wrapped
-        .into_iter()
-        .map(|line| Line::from(line))
-        .collect()
+    wrapped.into_iter().map(|line| Line::from(line)).collect()
 }
 
 /// Convert error text to styled lines

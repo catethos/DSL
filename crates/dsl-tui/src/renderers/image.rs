@@ -1,9 +1,13 @@
-use ratatui::text::{Line, Span};
-use ratatui::style::{Color as RatatuiColor, Style};
 use image::DynamicImage;
+use ratatui::style::{Color as RatatuiColor, Style};
+use ratatui::text::{Line, Span};
 
 /// Render image using ASCII halfblocks for inline display
-pub fn image_to_lines(path: &str, image_data: Option<&DynamicImage>, width: usize) -> Vec<Line<'static>> {
+pub fn image_to_lines(
+    path: &str,
+    image_data: Option<&DynamicImage>,
+    width: usize,
+) -> Vec<Line<'static>> {
     let mut lines = vec![
         Line::from(vec![
             Span::styled("📊 ", Style::default()),
@@ -26,7 +30,10 @@ pub fn image_to_lines(path: &str, image_data: Option<&DynamicImage>, width: usiz
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("💡 To view full size: ", Style::default().fg(RatatuiColor::Yellow)),
+            Span::styled(
+                "💡 To view full size: ",
+                Style::default().fg(RatatuiColor::Yellow),
+            ),
             Span::raw("open ".to_string()),
             Span::styled(path.to_string(), Style::default().fg(RatatuiColor::Blue)),
         ]),

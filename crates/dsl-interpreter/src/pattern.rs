@@ -205,10 +205,7 @@ mod tests {
 
     #[test]
     fn test_wildcard() {
-        assert!(PatternMatcher::matches(
-            &IRPattern::Any,
-            &Value::Int(42)
-        ));
+        assert!(PatternMatcher::matches(&IRPattern::Any, &Value::Int(42)));
     }
 
     #[test]
@@ -277,10 +274,7 @@ mod tests {
         assert!(PatternMatcher::matches(&pattern, &value));
 
         let bindings = PatternMatcher::extract_bindings(&pattern, &value).unwrap();
-        assert_eq!(
-            bindings.get("n"),
-            Some(&Value::String("Alice".to_string()))
-        );
+        assert_eq!(bindings.get("n"), Some(&Value::String("Alice".to_string())));
         assert_eq!(bindings.get("a"), Some(&Value::Int(30)));
     }
 

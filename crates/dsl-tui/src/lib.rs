@@ -26,6 +26,7 @@ use std::io;
 
 pub mod app;
 pub mod autocomplete;
+pub mod commands;
 pub mod editor;
 pub mod output_item;
 pub mod renderers;
@@ -36,8 +37,9 @@ pub use app::App;
 
 /// Run the TUI in non-interactive mode, reading from stdin
 pub async fn run_stdin() -> io::Result<()> {
-    use dsl_core::{parse_expr, compile_expr};
+    use dsl_core::parse_repl_input;
     use dsl_interpreter::Interpreter;
+    use dsl_ir::IRBinding;
     use std::io::{BufRead, BufReader};
 
     let mut interpreter = Interpreter::new().expect("Failed to initialize interpreter");
@@ -53,29 +55,44 @@ pub async fn run_stdin() -> io::Result<()> {
             continue;
         }
 
-        // Execute the line using IR pipeline
-        match parse_expr(trimmed) {
-            Ok(ast) => {
-                match compile_expr(&ast) {
-                    Ok(ir_node) => {
-                        match interpreter.eval(&ir_node).await {
-                            Ok(value) => {
-                                println!("✓ {}", value.type_name());
-                                // Print the value
-                                println!("{}", format_value_for_output(&value));
-                            }
-                            Err(err) => {
-                                eprintln!("Error: {}", err);
+        // Parse and compile using shared helper
+        let parsed = match parse_repl_input(trimmed) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                eprintln!("{}", err);
+                continue;
+            }
+        };
+
+        // Execute the IR node
+        match interpreter.eval(&parsed.ir_node).await {
+            Ok(value) => {
+                // Handle variable binding for let statements
+                if let Some(binding) = parsed.binding {
+                    match binding {
+                        IRBinding::Single(name) => {
+                            if let Ok(bound_value) = interpreter.runtime.get_var(&name) {
+                                interpreter.runtime.set_global_var(name.clone(), bound_value);
+                                println!("✓ Bound '{}' : {}", name, value.type_name());
                             }
                         }
+                        IRBinding::List(names) => {
+                            for name in &names {
+                                if let Ok(bound_value) = interpreter.runtime.get_var(name) {
+                                    interpreter.runtime.set_global_var(name.clone(), bound_value);
+                                }
+                            }
+                            println!("✓ Bound [{}] : {}", names.join(", "), value.type_name());
+                        }
                     }
-                    Err(err) => {
-                        eprintln!("Compile error: {}", err);
-                    }
+                } else {
+                    println!("✓ {}", value.type_name());
                 }
+                // Print the value
+                println!("{}", format_value_for_output(&value));
             }
             Err(err) => {
-                eprintln!("Parse error: {}", err);
+                eprintln!("Error: {}", err);
             }
         }
     }

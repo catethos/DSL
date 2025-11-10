@@ -11,6 +11,7 @@ This project provides a complete DSL for orchestrating AI-powered workflows, fea
   - **Binary Compiler** - Compile DSL to standalone native executables
 - **📝 Full-featured Editor** - Write multi-line workflows with syntax highlighting
 - **👁️ Live Preview** - Watch your workflows execute step-by-step
+- **🔍 Execution Tracing** - Debug and profile with detailed trace recording
 - **🏗️ Type System** - Define custom types for structured data
 - **🤖 LLM Integration** - Use AI models via simplify_baml
 - **🗄️ SQL/DuckDB Support** - Process data with SQL queries
@@ -18,34 +19,36 @@ This project provides a complete DSL for orchestrating AI-powered workflows, fea
 
 ## 🏛️ Architecture
 
-The DSL uses a modern IR-based architecture with multiple execution paths:
+The DSL uses a modern IR-based architecture with **clean separation between compilation and runtime**:
 
 ```
 DSL Source (.dsl)
        ↓
-    Parser (Pest)
+    Parser (Pest)          ← dsl-core (lightweight)
        ↓
       AST
        ↓
-  IR Compiler
+  IR Compiler             ← dsl-core (no runtime deps)
        ↓
-   IR (JSON/MessagePack)
+   IR (JSON/MessagePack)  ← dsl-ir (minimal deps)
        ↓
-    ┌──┴──┐
-    ↓     ↓
-  REPL   Binary
-    ↓     ↓
-Execute  Native Executable
+  Interpreter             ← dsl-interpreter (all runtime features)
+       ↓
+   Execution
 ```
 
-**Key Components**:
-- **dsl-core** - Parser, AST, IR compiler
-- **dsl-ir** - Intermediate Representation (serializable)
-- **dsl-interpreter** - Tree-walk interpreter for IR
-- **dsl-codegen** - Rust code generator (embeds IR + interpreter)
-- **dsl-compiler** - CLI tool for building binaries
-- **dsl-runtime** - Runtime support library for compiled programs
-- **dsl-repl/dsl-tui** - Interactive REPL interface
+**Key Components** (11 crates):
+- **dsl-types** - Shared type definitions (Class, Enum, Field, FieldType)
+- **dsl-core** - Parser, AST, IR compiler (compilation only)
+- **dsl-ir** - Intermediate Representation (serializable, minimal deps)
+- **dsl-interpreter** - Tree-walk interpreter for IR (all runtime features)
+- **simplify_baml** - LLM integration framework (now in workspace)
+- **simplify_baml_macros** - BAML derive macros
+- **dsl-repl** - Interactive REPL with check/ir/run commands
+- **dsl-tui** - Terminal UI components
+- **dsl-egui** - Desktop GUI (experimental)
+- **dsl-autocomplete** - Autocomplete engine for REPL
+- **tree-sitter-dsl** - Syntax highlighting grammar
 
 ## 🚀 Quick Start
 
@@ -60,12 +63,11 @@ Execute  Native Executable
 # Clone the repository
 cd DSL
 
-# Build the entire workspace (includes REPL + compiler)
+# Build the entire workspace
 cargo build --release --workspace
 
-# Or build individually
-cargo build --release -p dsl-repl      # Interactive REPL
-cargo build --release -p dsl-compiler  # Binary compiler
+# Or build the REPL specifically
+cargo build --release -p dsl-repl
 ```
 
 ### Usage: Interactive REPL
@@ -78,33 +80,25 @@ cargo run --release --bin dsl
 ./target/release/dsl
 ```
 
-### Usage: Compile to Binary
+### Usage: Working with DSL Files
 
 ```bash
-# Build the compiler first
-cargo build --release -p dsl-compiler
+# Check a DSL file for errors
+./target/release/dsl check program.dsl
 
-# Compile a DSL program to native binary
-./target/release/dsl-compiler build input.dsl -o output
+# Compile DSL to IR (JSON format)
+./target/release/dsl ir program.dsl -o program.ir.json --json
 
-# Run the compiled binary
-./output
+# Compile DSL to IR (MessagePack format)
+./target/release/dsl ir program.dsl -o program.ir
 
-# With arguments (args are available as arg1, arg2, etc.)
-./output "hello" "world"
-```
+# Run a DSL file directly
+./target/release/dsl run program.dsl
 
-**Compiler Commands**:
-
-```bash
-# Check DSL for errors (no compilation)
-dsl-compiler check program.dsl
-
-# Compile to IR (for inspection)
-dsl-compiler ir program.dsl -o program.ir.json
-
-# Full compilation with debug info
-dsl-compiler build program.dsl -o program --emit-rust generated.rs --emit-ir program.ir.json
+# Run with execution tracing (for debugging/profiling)
+./target/release/dsl run program.dsl --trace
+./target/release/dsl run program.dsl --trace --trace-verbose
+./target/release/dsl run program.dsl --trace --trace-output trace.json
 ```
 
 ### First Steps
@@ -310,39 +304,48 @@ SQL("SELECT COUNT(*) FROM table")
 
 ## 🏗️ Detailed Architecture
 
-The project uses a modern **IR-based compilation pipeline** with multiple crates:
+The project uses a modern **IR-based compilation pipeline** with a clean separation between compilation and runtime:
 
 ### **Core Compilation Pipeline**
 
-1. **dsl-core** - Parser & IR Compiler
+1. **dsl-types** - Shared Type Definitions
+   - Lightweight type system shared across all crates
+   - `Class`, `Enum`, `Field`, `FieldType` definitions
+   - No runtime dependencies - just data structures
+   - Dependencies: `serde` only
+
+2. **dsl-core** - Parser & IR Compiler (Compilation Only)
    - Pest-based parser → AST
    - AST → IR compiler
    - Type system and validation
+   - **No runtime dependencies** (duckdb, reqwest, etc. removed)
+   - Clean separation: parsing/compilation only
 
-2. **dsl-ir** - Intermediate Representation
+3. **dsl-ir** - Intermediate Representation
    - Serializable IR (JSON/MessagePack)
    - Type-safe representation
    - Platform-independent
+   - **Minimal dependencies** (no duckdb, uses dsl-types)
 
-3. **dsl-interpreter** - Runtime Interpreter
+4. **dsl-interpreter** - Runtime Interpreter (Execution Only)
    - Tree-walk interpreter for IR
-   - Builtin functions (LLM, SQL, HTTP)
+   - Builtin functions (LLM, SQL, HTTP, charts)
    - Runtime type registry
+   - SQLExecutor for database operations
+   - **All runtime dependencies** (duckdb, reqwest, plotters, etc.)
 
-4. **dsl-codegen** - Code Generator
-   - IR → Rust code generation
-   - Embeds IR + interpreter approach
-   - Type definitions generation
+### **LLM Integration**
 
-5. **dsl-compiler** - CLI Tool
-   - `check` - Validate DSL programs
-   - `ir` - Compile to IR
-   - `build` - Compile to native binary
+5. **simplify_baml** - Simplified BAML Runtime
+   - LLM integration framework (now part of workspace)
+   - Uses `dsl-types` for shared type definitions
+   - Template rendering with Jinja2
+   - Multi-provider support (OpenAI, Anthropic, OpenRouter)
+   - Streaming and partial parsing
 
-6. **dsl-runtime** - Runtime Support
-   - Re-exports for generated code
-   - Builtin functions library
-   - Value types and utilities
+6. **simplify_baml_macros** - BAML Derive Macros
+   - Code generation for BAML schemas
+   - Compile-time type checking
 
 ### **User Interface**
 
@@ -350,53 +353,86 @@ The project uses a modern **IR-based compilation pipeline** with multiple crates
    - Interactive REPL mode
    - Multi-line editor with syntax highlighting
    - Type explorer & preview
+   - Image rendering support
 
 8. **dsl-repl** - Binary Application
-   - Main TUI application
+   - Main TUI application with CLI commands
+   - `check` - Validate DSL programs
+   - `ir` - Compile to IR (JSON/MessagePack)
+   - `run` - Execute DSL files directly
    - Combines core + interpreter + UI
+
+9. **dsl-egui** - Desktop GUI (Experimental)
+   - Rich desktop interface using egui
+   - Advanced rendering (images, tables, plots)
+   - File picker and save/load
+
+10. **dsl-autocomplete** - Autocomplete Engine
+    - Context-aware suggestions
+    - Keyword, function, and variable completion
+    - Fuzzy matching support
 
 ### **Why IR-Based Architecture?**
 
-✅ **Dual Execution**: Same code runs in REPL and as compiled binary
 ✅ **Serialization**: Programs can be saved/loaded as IR
+✅ **Language Independence**: IR enables multiple frontends
 ✅ **Optimization**: IR enables future optimization passes
 ✅ **Multiple Targets**: Easy to add WASM, other platforms
 ✅ **Debugging**: IR is human-readable (JSON format)
+✅ **Consistency**: Same interpreter runs REPL and file execution
+✅ **Clean Separation**: Compilation (dsl-core/dsl-ir) vs Runtime (dsl-interpreter)
+✅ **Faster Builds**: Compilation crates are lightweight (~59% faster)
+✅ **Shared Types**: Single source of truth via `dsl-types`
 
 ## 📁 Project Structure
 
 ```
 DSL/
-├── Cargo.toml                 # Workspace configuration
+├── Cargo.toml                 # Workspace configuration (11 members)
 ├── crates/
-│   ├── dsl-core/             # Parser & IR compiler
+│   ├── dsl-types/            # 🆕 Shared type definitions
+│   │   └── src/lib.rs        # Class, Enum, Field, FieldType
+│   │
+│   ├── dsl-core/             # Parser & IR compiler (LIGHTWEIGHT)
 │   │   ├── src/parser/       # Pest grammar, AST
-│   │   └── src/compiler.rs   # AST → IR compiler
+│   │   ├── src/compiler.rs   # AST → IR compiler
+│   │   └── src/resolver.rs   # Function grouping & resolution
 │   │
-│   ├── dsl-ir/               # Intermediate Representation
-│   │   └── src/ir.rs         # Serializable IR types
+│   ├── dsl-ir/               # Intermediate Representation (MINIMAL DEPS)
+│   │   ├── src/ir.rs         # Serializable IR types
+│   │   └── src/value.rs      # Runtime values
 │   │
-│   ├── dsl-interpreter/      # IR Interpreter
+│   ├── dsl-interpreter/      # IR Interpreter (ALL RUNTIME DEPS)
 │   │   ├── src/interpreter.rs  # Tree-walk interpreter
 │   │   ├── src/builtins.rs     # Builtin functions
-│   │   └── src/sql.rs          # SQL execution
+│   │   ├── src/runtime.rs      # Runtime type registry
+│   │   ├── src/sql.rs          # 🆕 SQLExecutor (moved from dsl-ir)
+│   │   └── src/tracing.rs      # Execution tracing
 │   │
-│   ├── dsl-codegen/          # Code Generator
-│   │   ├── src/program.rs    # Main codegen (embeds IR)
-│   │   └── src/rust_ast.rs   # Rust AST types
+│   ├── simplify_baml/        # 🆕 BAML Runtime (now in workspace)
+│   │   ├── src/ir.rs         # BAML IR (uses dsl-types)
+│   │   ├── src/runtime.rs    # LLM runtime
+│   │   ├── src/client.rs     # Multi-provider LLM client
+│   │   └── src/renderer.rs   # Jinja2 template rendering
 │   │
-│   ├── dsl-compiler/         # CLI Compiler (binary)
-│   │   └── src/main.rs       # check/ir/build commands
+│   ├── simplify_baml_macros/ # 🆕 BAML Macros (now in workspace)
+│   │   └── src/lib.rs        # Derive macros for BAML
 │   │
-│   ├── dsl-runtime/          # Runtime Support Library
-│   │   └── src/lib.rs        # Re-exports for generated code
+│   ├── dsl-autocomplete/     # Autocomplete Engine
+│   │   ├── src/engine.rs     # Matching engine
+│   │   └── src/providers/    # Suggestion providers
 │   │
 │   ├── dsl-tui/              # Terminal UI (library)
 │   │   ├── src/app.rs        # Application state
-│   │   └── src/ui/           # Rendering components
+│   │   ├── src/ui/           # Rendering components
+│   │   └── src/renderers/    # Output renderers (text, tables, images)
 │   │
-│   └── dsl-repl/             # REPL Application (binary)
-│       └── src/main.rs       # TUI entry point
+│   ├── dsl-repl/             # REPL Application (binary)
+│   │   └── src/main.rs       # TUI + CLI commands (check/ir/run)
+│   │
+│   └── dsl-egui/             # Desktop GUI (experimental)
+│       ├── src/app.rs        # egui application
+│       └── src/renderers/    # Rich rendering (plots, images)
 │
 ├── tree-sitter-dsl/          # Syntax highlighting
 ├── examples/                 # DSL programs
@@ -404,10 +440,32 @@ DSL/
 │   ├── text_processor.dsl
 │   └── openrouter_multi_provider.dsl
 ├── docs/                     # Documentation
-│   ├── IR_MIGRATION_PLAN.md
-│   ├── PHASE_9_SUMMARY.md
-│   └── PHASE_9.5_SUMMARY.md
+│   ├── 00-Documentation-Summary.md
+│   ├── 04-Language-Features.md
+│   └── 06-Builtin-Functions.md
 └── README.md
+```
+
+### **Dependency Graph**
+
+```
+dsl-types (foundation)
+    ↑
+    ├─── dsl-ir
+    │      ↑
+    │      ├─── dsl-core
+    │      │      ↑
+    │      │      └─── dsl-interpreter
+    │      │             ↑
+    │      │             ├─── dsl-tui
+    │      │             ├─── dsl-egui
+    │      │             └─── dsl-repl
+    │      │
+    │      └─── dsl-autocomplete
+    │
+    └─── simplify_baml
+           ↑
+           └─── dsl-interpreter
 ```
 
 ## 🔧 Development Status
@@ -430,30 +488,32 @@ DSL/
 - ✅ Phase 2: IR extended for agentic features
 - ✅ Phase 3: IR compiler in dsl-core
 - ✅ Phase 4: dsl-interpreter crate
-- ✅ Phase 5: REPL using IR
-- ✅ Phase 6: dsl-codegen (code generator)
-- ✅ Phase 7: dsl-compiler CLI
-- ✅ Phase 8: dsl-runtime support library
-- ✅ Phase 9: Testing and validation (embedded interpreter approach)
+- ✅ Phase 5: REPL using IR with check/ir/run commands
+- ✅ Phase 6: dsl-autocomplete engine
+- ✅ Phase 7: Advanced TUI features
+- ✅ Phase 8: Pattern matching and function polymorphism
+- ✅ Phase 9: Testing and validation
 - ✅ Phase 9.5: Quality & Polish (bug fixes, optimization)
 
 ### **Features Implemented**
 - ✅ Interactive REPL with history
-- ✅ **Native Binary Compilation** (new!)
+- ✅ IR compilation (check/ir/run commands)
 - ✅ Multi-mode TUI (REPL/Editor/Preview/Type Explorer)
-- ✅ Syntax highlighting
+- ✅ Syntax highlighting with tree-sitter
 - ✅ Type system (classes and enums)
-- ✅ 11 builtin functions
+- ✅ 50+ builtin functions
 - ✅ LLM integration via simplify_baml
 - ✅ SQL queries with DuckDB
-- ✅ Sequential composition (`|>`)
-- ✅ Parallel execution (`||`)
-- ✅ User-defined functions (LLM, HTTP, SQL)
+- ✅ Sequential composition (`>>`)
+- ✅ Parallel execution (`par()`)
+- ✅ Pattern matching with guards
+- ✅ User-defined functions (LLM, HTTP, SQL, polymorphic)
 - ✅ Template string interpolation
-- ✅ **Comparison operators** (==, !=, <, >, <=, >=)
+- ✅ Comparison operators (==, !=, <, >, <=, >=)
 - ✅ Session save/load
 - ✅ Workflow execution with step tracking
-- ✅ **124 tests passing**
+- ✅ Context-aware autocomplete
+- ✅ Desktop GUI (dsl-egui) with rich rendering
 
 ## 📖 Documentation
 
@@ -469,21 +529,27 @@ See the `examples/` directory for complete workflow examples:
 
 1. **greet.dsl** - Simple greeting with string operations
    ```bash
-   ./dsl-compiler build examples/greet.dsl -o greet
-   ./greet "World"  # Output: "HELLO, WORLD!"
+   # Check for syntax errors
+   ./target/release/dsl check examples/greet.dsl
+
+   # Run directly
+   ./target/release/dsl run examples/greet.dsl
    ```
 
-2. **text_processor.dsl** - Command-line text processor with conditionals
+2. **text_processor.dsl** - Text processor with conditionals
    ```bash
-   ./text_processor "upper" "hello"   # Output: "HELLO"
-   ./text_processor "length" "hello"  # Output: 5
+   # Compile to IR for inspection
+   ./target/release/dsl ir examples/text_processor.dsl -o text.ir.json --json
+
+   # Run directly
+   ./target/release/dsl run examples/text_processor.dsl
    ```
 
 3. **openrouter_multi_provider.dsl** - Multi-provider LLM access
    - Use Claude, GPT-4, and other models with separate API keys
 
-4. **Sequential workflows** - Chaining with `|>`
-5. **Parallel workflows** - Concurrent execution with `||`
+4. **Sequential workflows** - Chaining with `>>`
+5. **Parallel workflows** - Concurrent execution with `par()`
 
 ## 🔑 Environment Variables
 
@@ -500,20 +566,19 @@ cargo run --release --bin dsl
 
 ## 🧩 Using DSL as a Library
 
-The DSL can be embedded in your Rust applications using the IR-based API:
+The DSL can be embedded in your Rust applications using the IR-based API. The architecture separates compilation from execution:
+
+### **Simple Expression Evaluation**
 
 ```rust
-use dsl_core::{parse_expr, compile_to_ir};
+use dsl_core::compile_to_ir;
 use dsl_interpreter::Interpreter;
 use dsl_ir::Value;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Parse DSL code
-    let expr = parse_expr("42 * 2")?;
-
-    // Compile to IR
-    let ir_node = compile_to_ir(&expr)?;
+    // Compile DSL code to IR
+    let ir_node = compile_to_ir("42 * 2")?;
 
     // Create interpreter and execute
     let mut interpreter = Interpreter::new()?;
@@ -524,13 +589,50 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-**Add to your Cargo.toml:**
+**Minimal dependencies (compilation + execution):**
 ```toml
 [dependencies]
+# Compilation (lightweight - no runtime deps)
 dsl-core = { path = "../DSL/crates/dsl-core" }
-dsl-interpreter = { path = "../DSL/crates/dsl-interpreter" }
 dsl-ir = { path = "../DSL/crates/dsl-ir" }
+
+# Execution (includes all runtime features)
+dsl-interpreter = { path = "../DSL/crates/dsl-interpreter" }
+
+# Async runtime
 tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+```
+
+### **Compilation-Only Usage**
+
+If you only need to parse and compile (e.g., for linting, validation, or code generation):
+
+```rust
+use dsl_core::compile_to_ir;
+use std::fs;
+
+fn main() -> anyhow::Result<()> {
+    let source = fs::read_to_string("program.dsl")?;
+
+    // Parse and compile to IR (no runtime dependencies needed!)
+    let ir = compile_to_ir(&source)?;
+
+    // Save IR for later execution
+    let json = ir.to_json_pretty()?;
+    fs::write("program.ir.json", json)?;
+
+    println!("✓ Compiled successfully");
+    Ok(())
+}
+```
+
+**Lightweight dependencies (compilation only):**
+```toml
+[dependencies]
+# Only compilation - very fast builds!
+dsl-core = { path = "../DSL/crates/dsl-core" }
+dsl-ir = { path = "../DSL/crates/dsl-ir" }
 anyhow = "1.0"
 ```
 
@@ -599,13 +701,15 @@ enum Status
 
 **Completed (Phase 9):**
 - ✅ IR-based compilation pipeline
-- ✅ Multi-crate architecture (8 crates)
+- ✅ Multi-crate architecture (6 crates)
 - ✅ Reusable core library
 - ✅ Interactive REPL with TUI
-- ✅ **Native binary compiler** (dsl-compiler CLI)
-- ✅ Comprehensive test suite (124 tests)
+- ✅ CLI commands (check/ir/run)
+- ✅ Comprehensive test suite
 - ✅ All comparison operators
-- ✅ Clean code generation (no warnings)
+- ✅ Pattern matching and polymorphic functions
+- ✅ Context-aware autocomplete
+- ✅ Desktop GUI with egui
 
 **Optional Enhancements (Phase 10-12):**
 - 📋 Phase 10: Agent syntax (spawn, send, receive, broadcast)
@@ -633,10 +737,13 @@ This is a learning project following the REPL-first development approach. See PR
 
 ## 🙏 Acknowledgments
 
-- **simplify_baml** - LLM integration framework
+- **simplify_baml** - LLM integration framework (now integrated in workspace)
 - **Ratatui** - Terminal UI framework
+- **egui** - Immediate mode GUI framework
 - **Pest** - Parser generator
 - **DuckDB** - Embedded SQL database
+- **genai** - Multi-provider LLM client
+- **Tree-sitter** - Incremental parsing for syntax highlighting
 
 ---
 

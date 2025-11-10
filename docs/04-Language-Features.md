@@ -614,6 +614,160 @@ x + y[0]            // Can use both x and y
 
 ---
 
+## Functions
+
+### Defining Functions
+
+Functions are defined using the `def` keyword and can have either single-expression bodies or multi-statement bodies.
+
+#### Single-Expression Functions
+
+The simplest function form contains a single expression:
+
+```javascript
+def double(x) { x * 2 }
+
+def greet(name) { "Hello, ${name}!" }
+
+def add(a, b) { a + b }
+```
+
+#### Multi-Statement Functions
+
+Functions can contain multiple statements for complex logic:
+
+```javascript
+def analyze_number(n) {
+    let squared = n * n;
+    let cubed = squared * n;
+    let sum = squared + cubed;
+
+    {
+        original: n,
+        squared: squared,
+        cubed: cubed,
+        sum: sum
+    }
+}
+
+def classify_value(value) {
+    let abs_val = value < 0 ? -value : value;
+    let category = abs_val < 10 ? "small" : (abs_val < 100 ? "medium" : "large");
+
+    {
+        value: value,
+        absolute: abs_val,
+        category: category
+    }
+}
+```
+
+**Multi-Statement Function Rules:**
+- Each statement is executed in sequence
+- Statements can be `let` bindings or expressions
+- The final expression is the return value
+- Intermediate variables are scoped to the function
+- Semicolons between statements are optional but recommended
+
+#### Function Scope
+
+Variables defined within functions are local to that function:
+
+```javascript
+def compute(x) {
+    let temp = x * 2;
+    let result = temp + 1;
+    result
+}
+
+// temp and result are not accessible here
+compute(5)  // Returns 11
+```
+
+**Scope Rules:**
+- Function parameters are local variables
+- `let` bindings inside functions are local
+- Local variables shadow global variables with the same name
+- Global variables can be accessed from functions
+- Function-local variables are cleaned up after the function returns
+- Each function call creates a new scope on the stack
+- Scopes are automatically cleaned up when functions return
+
+#### Scope Stack Implementation
+
+The DSL uses a scope stack for efficient variable management:
+
+1. **Global Scope** (scope[0]): Never removed, persists across REPL sessions
+2. **Function Scopes**: Created when functions are called, removed when they return
+3. **Variable Lookup**: Searches from innermost (current) to outermost (global) scope
+4. **Variable Binding**: Always creates variables in the current scope
+
+**Performance Benefits:**
+- O(1) scope creation/cleanup (vs O(n) with save-restore)
+- Efficient for recursive functions
+- No unnecessary cloning of variable state
+
+#### Nested Scopes
+
+Functions can access variables from outer scopes:
+
+```javascript
+let multiplier = 10
+
+def scale(x) {
+    let scaled = x * multiplier;  // Accesses global 'multiplier'
+    scaled
+}
+
+scale(5)  // Returns 50
+```
+
+#### Variable Shadowing
+
+Inner scopes can shadow outer scope variables:
+
+```javascript
+let x = 100
+
+def compute() {
+    let x = 10;  // Shadows global x
+    x * 2
+}
+
+compute()  // Returns 20
+x          // Still 100 (global x unchanged)
+```
+
+#### Debug Commands for Scopes
+
+The REPL provides commands to inspect the scope stack:
+
+```javascript
+:vars      // Show all visible variables (all scopes combined)
+:globals   // Show only global scope variables
+:scopes    // Show the entire scope stack (debug)
+```
+
+**Example Session:**
+```javascript
+flow> let global_var = 100
+✓ Bound 'global_var' to 100
+
+flow> :globals
+global_var = 100
+
+flow> def test(x) { let local_var = x * 2; local_var }
+
+flow> :scopes
+Scope Stack (1 scopes):
+
+Scope [0] (global):
+  global_var = 100
+  test = <function>
+```
+
+---
+
 ## Type System Integration
 
 ### Type Annotations
