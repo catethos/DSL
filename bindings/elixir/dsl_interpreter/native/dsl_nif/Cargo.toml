@@ -1,0 +1,21 @@
+[package]
+name = "dsl_nif"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "dsl_nif"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.37"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+lazy_static = "1.4"
+tokio = { version = "1.0", features = ["rt", "rt-multi-thread", "macros"] }
+
+[dependencies.dsl-interpreter]
+path = "../../../../../crates/dsl-interpreter"
+
+[dependencies.dsl-ir]
+path = "../../../../../crates/dsl-ir"

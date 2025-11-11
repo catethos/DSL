@@ -1,0 +1,41 @@
+{
+  "name": "@dsl/interpreter",
+  "version": "0.1.0",
+  "description": "Node.js bindings for DSL IR interpreter using Neon",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics --release && tsc",
+    "build:debug": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics && tsc",
+    "install": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics --release",
+    "test": "cargo test && node examples/basic.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "dsl",
+    "interpreter",
+    "ir",
+    "neon",
+    "rust"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cargo-cp-artifact": "^0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "src/**/*.ts",
+    "native/Cargo.toml",
+    "native/src/**/*.rs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

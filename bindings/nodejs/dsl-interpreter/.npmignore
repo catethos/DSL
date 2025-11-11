@@ -1,0 +1,35 @@
+# Source files (we'll distribute compiled JS)
+src/
+tsconfig.json
+
+# Rust source (we'll let users build)
+# Actually, keep native/ for building from source
+# native/
+
+# Build artifacts
+target/
+native/target/
+*.log
+
+# Tests and examples (include examples in package)
+# examples/
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# CI
+.github/
+
+# Documentation source
+*.md.tmp
+
+# OS files
+.DS_Store
+Thumbs.db

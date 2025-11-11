@@ -13,6 +13,9 @@ members = [
     "crates/simplify_baml",
     "crates/simplify_baml_macros",
 ]
+exclude = [
+    "bindings/elixir/dsl_interpreter/native/dsl_nif",
+]
 
 [workspace.dependencies]
 # TUI
