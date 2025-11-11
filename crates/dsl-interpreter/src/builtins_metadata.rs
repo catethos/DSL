@@ -82,7 +82,12 @@ pub fn all_builtins() -> Vec<BuiltinFunctionInfo> {
         BuiltinFunctionInfo {
             name: "SQL",
             signature: "(String) -> Table",
-            description: "Execute SQL query and return table",
+            description: "Execute SQL query and return table. Use $variable syntax to auto-register tables",
+        },
+        BuiltinFunctionInfo {
+            name: "refresh_table",
+            signature: "(String) -> Null",
+            description: "Clear cached SQL table, forcing re-registration on next use",
         },
         // Concurrency functions
         BuiltinFunctionInfo {

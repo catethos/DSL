@@ -1,6 +1,13 @@
-use crate::formatter::{format_document, FormatterConfig};
 use crate::syntax::{highlight_code, ColorScheme};
 use eframe::egui;
+
+/// Actions that can be triggered from the editor
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorAction {
+    RunAll,
+    LoadFile,
+    SaveFile,
+}
 
 /// Editor pane for editing DSL code
 pub struct EditorPane {
@@ -16,9 +23,6 @@ pub struct EditorPane {
     /// Color scheme for syntax highlighting
     color_scheme: ColorScheme,
 
-    /// Formatter configuration
-    formatter_config: FormatterConfig,
-
     /// Status message to display
     status_message: Option<(String, f64)>, // (message, timestamp)
 }
@@ -30,12 +34,13 @@ impl EditorPane {
             file_path: None,
             modified: false,
             color_scheme: ColorScheme::dark(),
-            formatter_config: FormatterConfig::default(),
             status_message: None,
         }
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui) {
+    pub fn ui(&mut self, ui: &mut egui::Ui) -> Option<EditorAction> {
+        let mut action = None;
+
         // Check if status message should be cleared (after 3 seconds)
         if let Some((_, timestamp)) = self.status_message {
             let now = ui.input(|i| i.time);
@@ -44,46 +49,51 @@ impl EditorPane {
             }
         }
 
-        // Check for formatting keyboard shortcuts BEFORE any widgets
-        // This ensures we capture the event before TextEdit consumes it
-        let format_requested = ui.ctx().input_mut(|i| {
-            // Check for Cmd+Shift+F (Mac) or Ctrl+Shift+F (Windows/Linux)
-            if i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::F) {
-                return true;
-            }
-            false
-        });
-
-        if format_requested {
-            self.format_document();
-            let now = ui.input(|i| i.time);
-            self.set_status_with_time("Document formatted".to_string(), now);
-        }
-
         ui.vertical(|ui| {
-            // Header
+            // Header - split into two rows to prevent overlap
             ui.horizontal(|ui| {
                 ui.heading("Editor");
-                ui.separator();
+                
+                // Add buttons on the right
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(egui::RichText::new("▶ Run All")
+                        .color(egui::Color32::from_rgb(80, 250, 123)))
+                        .clicked()
+                    {
+                        action = Some(EditorAction::RunAll);
+                    }
+                    
+                    if ui.button(egui::RichText::new("💾 Save")
+                        .color(egui::Color32::from_rgb(255, 184, 108)))
+                        .clicked()
+                    {
+                        action = Some(EditorAction::SaveFile);
+                    }
+                    
+                    if ui.button(egui::RichText::new("📂 Load")
+                        .color(egui::Color32::from_rgb(139, 233, 253)))
+                        .clicked()
+                    {
+                        action = Some(EditorAction::LoadFile);
+                    }
+                });
+            });
+            
+            // File path and status row
+            ui.horizontal(|ui| {
                 if let Some(path) = &self.file_path {
                     ui.label(egui::RichText::new(path)
-                        .family(egui::FontFamily::Monospace));
+                        .family(egui::FontFamily::Monospace)
+                        .size(13.0));
                     if self.modified {
                         ui.label(egui::RichText::new("(modified)")
-                            .family(egui::FontFamily::Monospace));
+                            .family(egui::FontFamily::Monospace)
+                            .size(13.0));
                     }
                 } else {
                     ui.label(egui::RichText::new("(no file)")
-                        .family(egui::FontFamily::Monospace));
-                }
-
-                ui.separator();
-
-                // Format button with keyboard shortcut hint
-                if ui.button("Format (⌘⇧F)").clicked() {
-                    self.format_document();
-                    let now = ui.input(|i| i.time);
-                    self.set_status_with_time("Document formatted".to_string(), now);
+                        .family(egui::FontFamily::Monospace)
+                        .size(13.0));
                 }
 
                 // Show status message if present
@@ -122,6 +132,8 @@ impl EditorPane {
                     }
                 });
         });
+
+        action
     }
 
     pub fn set_content(&mut self, content: String) {
@@ -174,21 +186,6 @@ impl EditorPane {
 
     pub fn clear_modified(&mut self) {
         self.modified = false;
-    }
-
-    /// Format the entire document
-    pub fn format_document(&mut self) {
-        let formatted = format_document(&self.content, &self.formatter_config);
-        if formatted != self.content {
-            self.content = formatted;
-            self.modified = true;
-            self.set_status("Document formatted");
-        }
-    }
-
-    /// Get formatter config (for customization)
-    pub fn formatter_config_mut(&mut self) -> &mut FormatterConfig {
-        &mut self.formatter_config
     }
 }
 

@@ -102,6 +102,21 @@ impl BuiltinFunctions {
         Ok(())
     }
 
+    /// Call a builtin function with scope access for variable lookups
+    pub async fn call_with_scope(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+        scope_lookup: impl Fn(&str) -> Option<Value>,
+    ) -> Result<Value> {
+        match name.to_lowercase().as_str() {
+            // SQL functions need scope access for $variable syntax
+            "sql" => self.sql_with_scope(args, scope_lookup),
+            // All other functions use the regular call
+            _ => self.call(name, args).await,
+        }
+    }
+
     pub async fn call(&mut self, name: &str, args: Vec<Value>) -> Result<Value> {
         match name.to_lowercase().as_str() {
             // String functions
@@ -154,6 +169,7 @@ impl BuiltinFunctions {
             "rendermarkdown" => self.render_markdown(args),
             // SQL functions
             "sql" => self.sql(args),
+            "refresh_table" => self.refresh_table(args),
             // Concurrency functions
             "par" => Ok(self.par(args)),
             // Logic functions
@@ -178,6 +194,7 @@ impl BuiltinFunctions {
         args: &[Value],
         _effect_kind: Option<EffectKind>,
         span: Option<Span>,
+        scope_lookup: impl Fn(&str) -> Option<Value>,
     ) -> Result<Value, InterpreterError> {
         match name {
             "__llm_execute" => {
@@ -213,7 +230,7 @@ impl BuiltinFunctions {
                         source_span: span.clone(),
                     });
                 }
-                self.intrinsic_sql(&args[0], span).await
+                self.intrinsic_sql(&args[0], span, scope_lookup).await
             }
             _ => Err(InterpreterError::UnknownIntrinsic {
                 name: name.to_string(),
@@ -571,6 +588,49 @@ impl BuiltinFunctions {
         Ok(Value::String(strings.join(separator)))
     }
 
+    fn sql_with_scope(
+        &mut self,
+        args: Vec<Value>,
+        scope_lookup: impl Fn(&str) -> Option<Value>,
+    ) -> Result<Value> {
+        if args.is_empty() {
+            return Err(anyhow::anyhow!(
+                "SQL() requires at least 1 argument (query string)"
+            ));
+        }
+
+        let query = match &args[0] {
+            Value::String(s) => s.clone(),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "SQL() first argument must be a query string"
+                ))
+            }
+        };
+
+        let executor = self
+            .sql_executor
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("SQL executor failed to initialize"))?;
+
+        // Prepare query with $variable auto-registration
+        let prepared_query = executor
+            .prepare_query_with_variables(&query, scope_lookup)
+            .map_err(|e| anyhow::anyhow!("Variable registration failed: {}", e))?;
+
+        // Register additional tables from arguments
+        for (i, arg) in args.iter().skip(1).enumerate() {
+            let table_name = format!("table{}", i + 1);
+            executor
+                .register_table(&table_name, arg)
+                .map_err(|e| anyhow::anyhow!("Failed to register table: {}", e))?;
+        }
+
+        executor
+            .execute(&prepared_query, &HashMap::new())
+            .map_err(|e| anyhow::anyhow!("SQL execution failed: {}", e))
+    }
+
     fn sql(&mut self, args: Vec<Value>) -> Result<Value> {
         if args.is_empty() {
             return Err(anyhow::anyhow!(
@@ -603,6 +663,34 @@ impl BuiltinFunctions {
         executor
             .execute(&query, &HashMap::new())
             .map_err(|e| anyhow::anyhow!("SQL execution failed: {}", e))
+    }
+
+    fn refresh_table(&mut self, args: Vec<Value>) -> Result<Value> {
+        if args.is_empty() {
+            return Err(anyhow::anyhow!(
+                "refresh_table() requires 1 argument (table name)"
+            ));
+        }
+
+        let table_name = match &args[0] {
+            Value::String(s) => s.clone(),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "refresh_table() argument must be a string (table name)"
+                ))
+            }
+        };
+
+        let executor = self
+            .sql_executor
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("SQL executor failed to initialize"))?;
+
+        executor
+            .clear_table(&table_name)
+            .map_err(|e| anyhow::anyhow!("Failed to refresh table: {}", e))?;
+
+        Ok(Value::Null)
     }
 
     /// par() - Parallel execution function
@@ -2501,6 +2589,7 @@ impl BuiltinFunctions {
         &mut self,
         query_value: &Value,
         span: Option<Span>,
+        scope_lookup: impl Fn(&str) -> Option<Value>,
     ) -> Result<Value, InterpreterError> {
         // Extract query string
         let query = match query_value {
@@ -2515,7 +2604,7 @@ impl BuiltinFunctions {
             }
         };
 
-        // Execute SQL using the existing sql executor
+        // Get SQL executor
         let executor = self.sql_executor.as_mut().ok_or_else(|| {
             InterpreterError::RuntimeError {
                 message: "SQL executor not initialized".to_string(),
@@ -2523,14 +2612,24 @@ impl BuiltinFunctions {
             }
         })?;
 
-        // SQL doesn't support parameters yet, use empty map
+        // Prepare query with auto-registration of $variables
+        let prepared_query = executor
+            .prepare_query_with_variables(&query, scope_lookup)
+            .map_err(|e| InterpreterError::SQLError {
+                message: format!("Variable registration failed: {}", e),
+                function_name: self.current_function_name.clone(),
+                source_span: span.clone(),
+                query: Some(query.clone()),
+            })?;
+
+        // Execute the prepared query
         let params = std::collections::HashMap::new();
-        executor.execute(&query, &params).map_err(|e| {
+        executor.execute(&prepared_query, &params).map_err(|e| {
             InterpreterError::SQLError {
                 message: format!("Query failed: {}", e),
                 function_name: self.current_function_name.clone(),
                 source_span: span,
-                query: Some(query),
+                query: Some(prepared_query),
             }
         })
     }

@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use crate::animations::AnimationType;
-use crate::editor::EditorPane;
+use crate::editor::{EditorPane, EditorAction};
 use crate::repl::ReplPane;
 
 /// The main application state
@@ -39,10 +39,27 @@ pub enum ActivePane {
 
 impl DslApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // Configure fonts to be larger
+        let mut fonts = egui::FontDefinitions::default();
+        
+        // Add JetBrains Mono for monospace with Unicode support
+        fonts.font_data.insert(
+            "JetBrainsMono".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!("../assets/JetBrainsMono-Regular.ttf"))),
+        );
+        
+        // Prioritize JetBrains Mono for monospace
+        fonts
+            .families
+            .entry(egui::FontFamily::Monospace)
+            .or_default()
+            .insert(0, "JetBrainsMono".to_owned());
+        
+        cc.egui_ctx.set_fonts(fonts);
+
+        // Configure modern, aesthetically pleasing style
         let mut style = (*cc.egui_ctx.style()).clone();
 
-        // Increase all text sizes by ~40%
+        // Increase all text sizes
         style.text_styles.insert(
             egui::TextStyle::Body,
             egui::FontId::new(16.0, egui::FontFamily::Proportional),
@@ -63,6 +80,61 @@ impl DslApp {
             egui::TextStyle::Small,
             egui::FontId::new(13.0, egui::FontFamily::Proportional),
         );
+
+        // Modern spacing - more breathing room
+        style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+        style.spacing.button_padding = egui::vec2(12.0, 6.0);
+        style.spacing.window_margin = egui::Margin::same(12);
+        style.spacing.menu_margin = egui::Margin::same(8);
+        style.spacing.indent = 20.0;
+        
+        // Rounded corners for modern look
+        style.visuals.widgets.noninteractive.corner_radius = 4.0.into();
+        style.visuals.widgets.inactive.corner_radius = 6.0.into();
+        style.visuals.widgets.hovered.corner_radius = 6.0.into();
+        style.visuals.widgets.active.corner_radius = 6.0.into();
+        
+        // Subtle shadows for depth
+        style.visuals.window_shadow.offset = [0, 4];
+        style.visuals.window_shadow.blur = 16;
+        style.visuals.window_shadow.spread = 0;
+        style.visuals.window_shadow.color = egui::Color32::from_black_alpha(40);
+        
+        style.visuals.popup_shadow.offset = [0, 2];
+        style.visuals.popup_shadow.blur = 8;
+        style.visuals.popup_shadow.spread = 0;
+        style.visuals.popup_shadow.color = egui::Color32::from_black_alpha(30);
+        
+        // Better stroke widths
+        style.visuals.widgets.noninteractive.bg_stroke.width = 1.0;
+        style.visuals.widgets.inactive.bg_stroke.width = 1.5;
+        style.visuals.widgets.hovered.bg_stroke.width = 1.5;
+        style.visuals.widgets.active.bg_stroke.width = 2.0;
+        
+        // Darker, more modern background
+        style.visuals.window_fill = egui::Color32::from_rgb(24, 26, 31);
+        style.visuals.panel_fill = egui::Color32::from_rgb(28, 30, 36);
+        style.visuals.faint_bg_color = egui::Color32::from_rgb(32, 35, 42);
+        
+        // Better contrast for interactive elements
+        style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(40, 44, 52);
+        style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(50, 56, 66);
+        style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(60, 68, 82);
+        
+        // Accent color - modern blue
+        let accent = egui::Color32::from_rgb(88, 166, 255);
+        style.visuals.selection.bg_fill = accent.linear_multiply(0.3);
+        style.visuals.selection.stroke.color = accent;
+        style.visuals.widgets.hovered.bg_fill = accent.linear_multiply(0.15);
+        style.visuals.widgets.active.bg_fill = accent.linear_multiply(0.25);
+        
+        // Custom scrollbar styling - thin and modern
+        style.visuals.widgets.inactive.expansion = 0.0; // Compact scrollbar
+        style.visuals.widgets.hovered.expansion = 2.0; // Expand on hover
+        
+        // Better text cursor
+        style.visuals.text_cursor.stroke.width = 2.0;
+        style.visuals.text_cursor.stroke.color = accent;
 
         cc.egui_ctx.set_style(style);
 
@@ -160,8 +232,10 @@ impl eframe::App for DslApp {
             });
         });
 
-        // Bottom status bar
-        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+        // Bottom status bar - modern and informative
+        egui::TopBottomPanel::bottom("status_bar")
+            .exact_height(28.0)
+            .show(ctx, |ui| {
             // Check if status message should be cleared (after 3 seconds)
             let now = ui.input(|i| i.time);
             if let Some((_, timestamp, _)) = self.status_message {
@@ -169,32 +243,55 @@ impl eframe::App for DslApp {
                     self.status_message = None;
                 }
             }
+            
+            // Custom background for status bar
+            ui.style_mut().visuals.widgets.noninteractive.weak_bg_fill = 
+                egui::Color32::from_rgb(32, 35, 42);
 
             ui.horizontal(|ui| {
-                // Show status message if present
+                ui.add_space(8.0);
+                
+                // Show status message if present with icon
                 if let Some((msg, _, kind)) = &self.status_message {
-                    let color = match kind {
-                        StatusKind::Success => egui::Color32::from_rgb(100, 200, 100),
-                        StatusKind::Error => egui::Color32::from_rgb(255, 100, 100),
+                    let (color, icon) = match kind {
+                        StatusKind::Success => (egui::Color32::from_rgb(80, 250, 123), "✓"),
+                        StatusKind::Error => (egui::Color32::from_rgb(255, 85, 85), "✗"),
                     };
-                    ui.colored_label(color, msg);
+                    ui.label(egui::RichText::new(icon).color(color).size(16.0));
+                    ui.label(egui::RichText::new(msg).color(color));
                     ui.separator();
                 }
 
-                ui.label(egui::RichText::new(format!("Active: {:?}", self.active_pane))
-                    .family(egui::FontFamily::Monospace));
-                ui.separator();
-                ui.label(egui::RichText::new("Shift+Tab: Switch pane")
-                    .family(egui::FontFamily::Monospace));
-                ui.separator();
-                ui.label(egui::RichText::new("Ctrl+E: Send to REPL")
-                    .family(egui::FontFamily::Monospace));
-                ui.separator();
-                ui.label(egui::RichText::new("Ctrl+R: Run all")
-                    .family(egui::FontFamily::Monospace));
-                ui.separator();
-                ui.label(egui::RichText::new("Ctrl+S: Save")
-                    .family(egui::FontFamily::Monospace));
+                // Active pane indicator with color
+                let pane_color = match self.active_pane {
+                    ActivePane::Repl => egui::Color32::from_rgb(139, 233, 253),
+                    ActivePane::Editor => egui::Color32::from_rgb(255, 184, 108),
+                };
+                ui.label(egui::RichText::new("●").color(pane_color).size(14.0));
+                ui.label(egui::RichText::new(format!("{:?}", self.active_pane))
+                    .size(13.0));
+                
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(8.0);
+                    
+                    // Keyboard shortcuts with subtle styling
+                    let shortcut_style = egui::RichText::new("Ctrl+S: Save")
+                        .size(12.0)
+                        .color(egui::Color32::from_rgb(150, 150, 150));
+                    ui.label(shortcut_style);
+                    
+                    ui.separator();
+                    
+                    ui.label(egui::RichText::new("Ctrl+R: Run")
+                        .size(12.0)
+                        .color(egui::Color32::from_rgb(150, 150, 150)));
+                    
+                    ui.separator();
+                    
+                    ui.label(egui::RichText::new("⇧Tab: Switch")
+                        .size(12.0)
+                        .color(egui::Color32::from_rgb(150, 150, 150)));
+                });
             });
         });
 
@@ -295,7 +392,23 @@ impl eframe::App for DslApp {
                             .inner_margin(8.0)
                             .show(ui, |ui| {
                                 ui.set_min_height(available_height - 16.0); // Account for margins
-                                self.editor.ui(ui);
+                                if let Some(action) = self.editor.ui(ui) {
+                                    match action {
+                                        EditorAction::RunAll => {
+                                            let content = self.editor.get_content().to_string();
+                                            if !content.trim().is_empty() {
+                                                self.repl.eval_code(content);
+                                                self.active_pane = ActivePane::Repl;
+                                            }
+                                        }
+                                        EditorAction::LoadFile => {
+                                            self.open_file_dialog(ctx.clone());
+                                        }
+                                        EditorAction::SaveFile => {
+                                            self.save_file(ctx.clone());
+                                        }
+                                    }
+                                }
                             });
                     },
                 );

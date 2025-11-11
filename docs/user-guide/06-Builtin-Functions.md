@@ -526,22 +526,65 @@ ExtractAs("iPhone 15 costs $999 in electronics", "Product")
 ## SQL Functions
 
 ### SQL
-**Signature:** `(String, ...Table) -> Table`
+**Signature:** `(String) -> Table`
 
-Execute a SQL query using DuckDB. Additional arguments are registered as tables.
+Execute a SQL query using DuckDB with automatic table registration.
+
+**Auto-registration with $variable:**
+Use `$variable` syntax to automatically register DSL variables as tables:
 
 ```javascript
-let data = [
+users = [
   {name: "Alice", age: 30},
   {name: "Bob", age: 25}
 ]
 
-SQL("SELECT * FROM table1 WHERE age > 26", data)
-# Returns rows where age > 26
+SQL("SELECT * FROM $users WHERE age > 26")
+# Automatically registers 'users' as a table, then queries it
 
 # Multiple tables
-SQL("SELECT * FROM table1 JOIN table2 ON ...", data1, data2)
+orders = [{user_id: 1, amount: 100}]
+SQL("SELECT * FROM $users JOIN $orders ON users.id = $orders.user_id")
 ```
+
+**Requirements for auto-registered tables:**
+- Must be a List of Maps
+- All maps must have the same keys (consistent schema)
+- No nested structures (Map/List inside Map)
+- Cannot be empty
+
+**Table caching:**
+Tables are cached after first registration. Subsequent queries reuse the cached table for better performance.
+
+```javascript
+users = [{name: "Alice", age: 25}]
+SQL("SELECT * FROM $users")  # Registers and caches
+SQL("SELECT COUNT(*) FROM $users")  # Uses cache (fast!)
+```
+
+See also: [refresh_table()](#refresh_table)
+
+### refresh_table
+**Signature:** `(String) -> Null`
+
+Clear a cached SQL table, forcing it to be re-registered on next use.
+
+```javascript
+users = [{name: "Alice", age: 25}]
+SQL("SELECT * FROM $users")  # Registers and caches
+
+# Update data
+users = [{name: "Bob", age: 30}]
+
+# Force refresh
+refresh_table("users")
+SQL("SELECT * FROM $users")  # Uses fresh data
+```
+
+**Use when:**
+- Data variables change and you need fresh results
+- Freeing memory from large cached tables
+- Debugging data issues
 
 ---
 

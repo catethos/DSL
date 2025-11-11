@@ -209,11 +209,13 @@ impl Interpreter {
                     }
 
                     // Call intrinsic with evaluated arguments
+                    let runtime = &self.runtime;
                     return self.builtins.call_intrinsic_with_values(
                         name,
                         &arg_values,
                         effect_kind.clone(),
                         source_span.clone(),
+                        |var_name| runtime.get_var(var_name).ok(),
                     ).await;
                 }
 
@@ -231,9 +233,10 @@ impl Interpreter {
                         arg_values.push(Box::pin(self.eval(arg)).await?);
                     }
 
-                    // Call the builtin function
+                    // Call the builtin function with scope access
+                    let runtime = &self.runtime;
                     self.builtins
-                        .call(name, arg_values)
+                        .call_with_scope(name, arg_values, |var_name| runtime.get_var(var_name).ok())
                         .await
                         .map_err(Into::into)
                 }

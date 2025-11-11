@@ -12,10 +12,10 @@ pub mod animations;
 pub mod app;
 pub mod autocomplete;
 pub mod editor;
-pub mod formatter;
 pub mod output_item;
 pub mod renderers;
 pub mod repl;
 pub mod syntax;
+pub mod theme;
 
 pub use app::DslApp;

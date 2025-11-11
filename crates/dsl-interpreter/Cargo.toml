@@ -22,3 +22,6 @@ image = { workspace = true }
 
 # RSS feed parsing
 rss = { workspace = true }
+
+# Regular expressions
+regex = { workspace = true }

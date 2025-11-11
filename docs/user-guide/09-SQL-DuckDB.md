@@ -9,7 +9,8 @@ The DSL integrates **DuckDB** - a fast, in-memory analytical database - for powe
 - **In-memory database** - Fast performance
 - **CSV file reading** - Direct SQL queries on CSV files
 - **Full SQL support** - JOINs, aggregations, window functions
-- **Table management** - Automatic registration
+- **Auto-registration** - Use `$variable` syntax to automatically register tables
+- **Table caching** - Tables registered once and cached for performance
 - **Template interpolation** - Use variables in queries
 
 ## Quick Start
@@ -24,16 +25,32 @@ SQL("SELECT * FROM 'data.csv' WHERE age > 25")
 // Returns filtered Table
 ```
 
-### With Variable
+### Auto-Registration with $variable
+
+Use `$variable` syntax to automatically register DSL variables as SQL tables:
+
+```javascript
+users = [
+    {name: "Alice", age: 25, city: "NYC"},
+    {name: "Bob", age: 30, city: "LA"}
+]
+
+SQL("SELECT * FROM $users WHERE age > 28")
+// Automatically registers 'users' as a table, then queries it
+```
+
+### With Named Tables
 
 ```javascript
 SQL("SELECT * FROM 'users.csv'") as users
 SQL("SELECT COUNT(*) FROM users") as count
 ```
 
-## SQL() Function
+## Built-in Functions
 
-Built-in function for executing SQL queries.
+### SQL()
+
+Execute SQL queries with auto-registration support.
 
 **Syntax:**
 ```javascript
@@ -50,13 +67,105 @@ SQL("SELECT * FROM 'sales.csv' WHERE amount > 100")
 
 // With aggregation
 SQL("SELECT category, SUM(sales) FROM 'data.csv' GROUP BY category")
+
+// With auto-registered variables
+users = [{name: "Alice", age: 25}]
+SQL("SELECT * FROM $users WHERE age > 20")
 ```
+
+### refresh_table()
+
+Clear a cached table, forcing it to be re-registered on next use.
+
+**Syntax:**
+```javascript
+refresh_table(tableName: String) -> Null
+```
+
+**Example:**
+```javascript
+users = [{name: "Alice", age: 25}]
+SQL("SELECT * FROM $users")  // Registers and caches
+
+// Update variable
+users = [{name: "Bob", age: 30}]
+
+// Force refresh
+refresh_table("users")
+
+SQL("SELECT * FROM $users")  // Uses fresh data
+```
+
+**Use Cases:**
+- When data variables change and you need fresh results
+- To free memory from large cached tables
+- When debugging data issues
 
 ## Table Operations
 
-### Creating Tables from Variables
+### Auto-Registration from Variables
 
-Tables are automatically registered:
+Use `$variable` to automatically register DSL variables as tables:
+
+```javascript
+users = [
+    {id: 1, name: "Alice", age: 25},
+    {id: 2, name: "Bob", age: 30},
+    {id: 3, name: "Charlie", age: 35}
+]
+
+orders = [
+    {user_id: 1, amount: 100},
+    {user_id: 2, amount: 200}
+]
+
+// Both tables auto-registered from variables
+SQL("""
+  SELECT u.name, o.amount
+  FROM $users u
+  JOIN $orders o ON u.id = o.user_id
+""")
+```
+
+### Table Schema Requirements
+
+Variables registered as tables must meet these requirements:
+
+1. **Must be a List** of Maps
+2. **Consistent schema** - All maps must have the same keys
+3. **No nested structures** - Only flat maps (no Map/List inside Map)
+4. **Non-empty** - List cannot be empty
+
+**Valid:**
+```javascript
+// ✓ All maps have same keys
+data = [
+    {name: "Alice", age: 25},
+    {name: "Bob", age: 30}
+]
+
+// ✓ Consistent types
+products = [
+    {id: 1, name: "Widget", price: 9.99},
+    {id: 2, name: "Gadget", price: 19.99}
+]
+```
+
+**Invalid:**
+```javascript
+// ✗ Inconsistent keys
+data = [
+    {name: "Alice", age: 25},
+    {name: "Bob"}  // Missing 'age'
+]
+
+// ✗ Nested structure
+data = [
+    {name: "Alice", address: {street: "Main"}}
+]
+```
+
+### Creating Tables from CSV
 
 ```javascript
 SQL("SELECT * FROM 'data.csv'") as mydata
@@ -64,6 +173,31 @@ SQL("SELECT * FROM 'data.csv'") as mydata
 
 SQL("SELECT * FROM mydata WHERE score > 0.5")
 // Query the registered table
+```
+
+### Table Caching
+
+Tables are cached after first registration for performance:
+
+```javascript
+users = [{name: "Alice", age: 25}]
+
+SQL("SELECT * FROM $users")  // Registers table
+SQL("SELECT COUNT(*) FROM $users")  // Uses cached table (fast!)
+SQL("SELECT AVG(age) FROM $users")  // Still using cache
+```
+
+**Important:** Cached tables don't automatically update when variables change:
+
+```javascript
+users = [{name: "Alice", age: 25}]
+SQL("SELECT * FROM $users")  // Returns 1 row
+
+users = [{name: "Bob", age: 30}, {name: "Charlie", age: 35}]
+SQL("SELECT * FROM $users")  // Still returns 1 row (cached!)
+
+refresh_table("users")  // Clear cache
+SQL("SELECT * FROM $users")  // Now returns 2 rows
 ```
 
 ### Joining Tables
@@ -299,7 +433,23 @@ def FetchAndAnalyze(category: String) -> Report {
 
 ## Performance Tips
 
-### 1. Filter Early
+### 1. Leverage Table Caching
+
+Tables are cached after first registration - subsequent queries are much faster:
+
+```javascript
+// ✓ Good: Reuse cached table
+data = [{name: "Alice", age: 25}, {name: "Bob", age: 30}]
+SQL("SELECT * FROM $data WHERE age > 20")  // Registers table
+SQL("SELECT COUNT(*) FROM $data")  // Uses cache (fast!)
+SQL("SELECT AVG(age) FROM $data")  // Still using cache
+
+// ✗ Inefficient: Re-reading CSV multiple times
+SQL("SELECT * FROM 'data.csv' WHERE age > 20")
+SQL("SELECT COUNT(*) FROM 'data.csv'")  // Re-reads file
+```
+
+### 2. Filter Early
 
 ```javascript
 // Good: Filter first
@@ -311,7 +461,7 @@ SQL("SELECT * FROM 'huge.csv'") as all
   >> SQL("SELECT AVG(value) FROM all WHERE category = 'A'")
 ```
 
-### 2. Use Appropriate Aggregations
+### 3. Use Appropriate Aggregations
 
 ```javascript
 // Good: Single pass
@@ -322,7 +472,7 @@ SQL("SELECT category, AVG(value) FROM 'data.csv' GROUP BY category")
 SQL("SELECT category, COUNT(*) FROM 'data.csv' GROUP BY category")
 ```
 
-### 3. Index-Friendly Queries
+### 4. Index-Friendly Queries
 
 DuckDB automatically optimizes, but writing efficient SQL helps:
 
@@ -332,6 +482,26 @@ SQL("SELECT name, age FROM 'users.csv'")
 
 // Bad: Select all when not needed
 SQL("SELECT * FROM 'users.csv'")
+```
+
+### 5. Refresh Tables Strategically
+
+Only refresh when data changes:
+
+```javascript
+// ✓ Good: Refresh when needed
+users = [{name: "Alice", age: 25}]
+SQL("SELECT * FROM $users")
+// ... many queries on $users ...
+
+users = load_new_data()  // Data changed
+refresh_table("users")  // Now refresh
+SQL("SELECT * FROM $users")
+
+// ✗ Wasteful: Refreshing unnecessarily
+SQL("SELECT * FROM $users")
+refresh_table("users")  // No data change
+SQL("SELECT * FROM $users")
 ```
 
 ## Limitations

@@ -45,6 +45,9 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 ### Integration Features (08-10)
 - **08-LLM-Integration.md** - Using AI models with structured outputs
 - **09-SQL-DuckDB.md** - Data processing with SQL queries
+  - **NEW:** `$variable` auto-registration for tables
+  - **NEW:** Table caching for performance
+  - **NEW:** `refresh_table()` for cache invalidation
 - **10-HTTP-Client.md** - Calling REST APIs
 
 ### Advanced Topics (11-12)
@@ -97,6 +100,9 @@ A comprehensive documentation set for the DSL TUI project, organized in 13 markd
 ### Integration
 - OpenAI LLM integration via simplify_baml
 - DuckDB SQL database with CSV support
+  - **NEW:** Auto-registration with `$variable` syntax
+  - **NEW:** Performance table caching
+  - **NEW:** Manual refresh with `refresh_table()`
 - Full HTTP client (GET, POST, PUT, DELETE, PATCH, HEAD)
 - Automatic JSON parsing
 

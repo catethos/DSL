@@ -8,6 +8,7 @@ use crate::autocomplete::AutocompleteState;
 use crate::output_item::{OutputItem, ErrorDetail};
 use crate::renderers;
 use crate::syntax::{highlight_code, ColorScheme};
+use crate::theme::Theme;
 
 use dsl_core::{compile_function_group, resolve_program, SymbolTable};
 
@@ -67,6 +68,9 @@ pub struct ReplPane {
 
     /// Cache for markdown rendering
     markdown_cache: egui_commonmark::CommonMarkCache,
+    
+    /// UI theme for colors
+    theme: Theme,
 }
 
 #[derive(Debug)]
@@ -123,6 +127,7 @@ impl ReplPane {
             accepting_suggestion: false,
             symbol_table: Arc::new(Mutex::new(SymbolTable::new())),
             markdown_cache: egui_commonmark::CommonMarkCache::default(),
+            theme: Theme::dark(),
         }
     }
 
@@ -177,7 +182,7 @@ impl ReplPane {
             // Output area - account for input area and separators (approx 100px)
             let output_height = (total_height - 100.0).max(100.0);
 
-            egui::ScrollArea::vertical()
+            egui::ScrollArea::both()
                 .id_salt("repl_output_scroll_area")
                 .min_scrolled_height(output_height)
                 .max_height(output_height)
@@ -419,7 +424,7 @@ impl ReplPane {
             }
             OutputItem::Error(err) => {
                 // Use the rich error renderer
-                renderers::render_error(ui, err);
+                renderers::render_error(ui, err, &self.theme);
             }
             OutputItem::Table {
                 columns,
@@ -427,14 +432,14 @@ impl ReplPane {
                 selected,
             } => {
                 // Use the dedicated table renderer
-                renderers::render_table(ui, columns, rows, selected);
+                renderers::render_table(ui, columns, rows, selected, &self.theme);
             }
             OutputItem::Tree {
                 root,
                 expanded_paths,
             } => {
                 // Use the tree renderer with expand/collapse functionality
-                renderers::render_tree(ui, root, expanded_paths);
+                renderers::render_tree(ui, root, expanded_paths, &self.theme);
             }
             OutputItem::Markdown(md) => {
                 // Use the dedicated markdown renderer
