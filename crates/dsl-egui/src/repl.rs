@@ -266,9 +266,11 @@ impl ReplPane {
                 let tab_pressed = tab_consumed_for_autocomplete;
 
                 // Build TextEdit with lock_focus to prevent Tab from stealing focus
+                // Use available width to make it fill the horizontal space while still wrapping
+                let available_width = ui.available_width();
                 let mut text_edit = egui::TextEdit::multiline(&mut self.input)
                     .id(text_edit_id)
-                    .desired_width(f32::INFINITY)
+                    .desired_width(available_width)
                     .desired_rows(3)
                     .font(egui::TextStyle::Monospace);
 
@@ -401,8 +403,8 @@ impl ReplPane {
             OutputItem::Text(text) => {
                 // Check if this is a code line (starts with "flow>")
                 if let Some(code) = text.strip_prefix("flow> ") {
-                    // Render with syntax highlighting
-                    ui.horizontal(|ui| {
+                    // Render with syntax highlighting - use horizontal_wrapped for text wrapping
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(egui::RichText::new("flow>")
                             .family(egui::FontFamily::Monospace));
                         let font_id = egui::FontId::new(16.0, egui::FontFamily::Monospace);
@@ -410,7 +412,9 @@ impl ReplPane {
                         ui.label(job);
                     });
                 } else {
-                    ui.monospace(text.as_str());
+                    // Use Label instead of monospace to enable wrapping
+                    ui.label(egui::RichText::new(text.as_str())
+                        .family(egui::FontFamily::Monospace));
                 }
             }
             OutputItem::Error(err) => {
@@ -767,6 +771,22 @@ impl ReplPane {
             }
             ":clear" => {
                 self.output.clear();
+                // Create a new interpreter session to reset all state
+                match dsl_interpreter::Interpreter::new() {
+                    Ok(new_interpreter) => {
+                        self.interpreter = Arc::new(Mutex::new(new_interpreter));
+                        // Reset autocomplete with new runtime
+                        let interp = self.interpreter.lock().unwrap();
+                        self.autocomplete = AutocompleteState::new(&interp.runtime);
+                        // Reset symbol table
+                        self.symbol_table = Arc::new(Mutex::new(SymbolTable::new()));
+                    }
+                    Err(e) => {
+                        self.push_output(OutputItem::Error(
+                            ErrorDetail::from_string(format!("Failed to create new session: {}", e))
+                        ));
+                    }
+                }
             }
             ":quit" | ":q" => {
                 // TODO: Signal quit

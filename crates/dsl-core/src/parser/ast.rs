@@ -74,6 +74,11 @@ pub enum Expr {
         statements: Vec<Expr>, // Executed for side effects (let bindings, etc.)
         result: Box<Expr>,     // Final expression that produces the value
     },
+    /// Inline lambda: fn x => expr end or fn x, y => expr end
+    Lambda {
+        params: Vec<String>,
+        body: Box<Expr>,
+    },
 }
 
 /// Template string segments

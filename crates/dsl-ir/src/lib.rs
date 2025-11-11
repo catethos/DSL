@@ -8,7 +8,7 @@ pub mod value;
 // Re-export main types
 pub use ir::{
     IRAgent, IRBinding, IRContextStore, IRExecution, IRFunction, IRFunctionClause, IRFunctionGroup,
-    IRMatchCase, IRMessageHandler, IRNode, IRPattern, IRProperty, IRTemplateSegment, IR,
+    IRMatchCase, IRMessageHandler, IRNode, IRPattern, IRProperty, IRTemplateSegment, LambdaIR, IR,
     EffectKind, Span,
 };
 pub use lowering::{Lowering, DebugInfoTable, DebugInfo, NodeId};

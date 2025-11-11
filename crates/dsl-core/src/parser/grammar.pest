@@ -93,7 +93,7 @@ pattern_param = { pattern }
 return_type = { "->" ~ field_type }
 
 function_body = {
-    "=>" ~ expr                       // Arrow body (expression)
+    "=>" ~ expr ~ "end"?              // Arrow body (expression) with optional 'end'
     | block                           // Block body (statements + expr)
     | special_body                    // LLM/HTTP/SQL body
 }
@@ -302,6 +302,7 @@ unary_op = { "!" | "-" }
 
 primary = _{
     match_expr
+    | inline_lambda
     | paren_expr
     | type_instantiation
     | function_call
@@ -309,6 +310,15 @@ primary = _{
     | inline_block
     | literal
     | identifier
+}
+
+// Inline lambda: fn x => expr end or fn x, y => expr end
+inline_lambda = {
+    "fn" ~ lambda_params ~ "=>" ~ expr ~ "end"?
+}
+
+lambda_params = {
+    identifier ~ ("," ~ identifier)*
 }
 
 // Match expression: match value { pattern => expr, ... }
@@ -459,6 +469,7 @@ KEYWORD = _{
     "def" | "function" | "type" | "enum" | "let" | "match"
     | "if" | "then" | "else" | "true" | "false"
     | "prompt" | "sql" | "http" | "as" | "return" | "workflow"
+    | "fn" | "end"
 }
 
 identifier = @{

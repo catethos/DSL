@@ -19,3 +19,6 @@ serde_json = { workspace = true }
 # Chart generation
 plotters = { workspace = true }
 image = { workspace = true }
+
+# RSS feed parsing
+rss = { workspace = true }

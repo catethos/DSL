@@ -290,6 +290,20 @@ impl App {
             self.multiline_mode = false;
             self.output_scroll_offset = 0;
             self.auto_scroll_output = true;
+
+            // Create a new interpreter session to reset all state
+            match Interpreter::new() {
+                Ok(new_interpreter) => {
+                    self.interpreter = new_interpreter;
+                    // Reset autocomplete with new runtime
+                    self.autocomplete = AutocompleteState::new(&self.interpreter.runtime);
+                    // Reset symbol table
+                    self.symbol_table = SymbolTable::new();
+                }
+                Err(e) => {
+                    self.output.push(OutputItem::error(format!("Failed to create new session: {}", e)));
+                }
+            }
             return;
         }
 

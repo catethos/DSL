@@ -1,0 +1,38 @@
+# Reduce Tests
+# Run with: cargo run --bin dsl -- -c < examples/test_reduce.txt
+
+# Test 1: Sum
+reduce([1, 2, 3, 4, 5], 0, fn acc, x => acc + x end)
+# Expected: 15
+
+# Test 2: Product
+reduce([1, 2, 3, 4], 1, fn acc, x => acc * x end)
+# Expected: 24
+
+# Test 3: String concatenation
+reduce(["Hello", " ", "World", "!"], "", fn acc, x => acc + x end)
+# Expected: "Hello World!"
+
+# Test 4: Find maximum
+reduce([3, 7, 2, 9, 1], 0, fn acc, x => if x > acc then x else acc end)
+# Expected: 9 (if conditionals work in lambda)
+
+# Test 5: Count items
+reduce([1, 2, 3, 4, 5], 0, fn acc, x => acc + 1 end)
+# Expected: 5
+
+# Test 6: Empty list
+reduce([], 42, fn acc, x => acc + x end)
+# Expected: 42
+
+# Test 7: Single element
+reduce([100], 0, fn acc, x => acc + x end)
+# Expected: 100
+
+# Test 8: Subtract (order matters)
+reduce([10, 3, 2], 0, fn acc, x => acc - x end)
+# Expected: -15 (0 - 10 - 3 - 2)
+
+# Test 9: Build list (reverse)
+reduce([1, 2, 3], [], fn acc, x => [x, ...acc] end)
+# Expected: [[3, 2, 1]] or similar (if list spread works)

@@ -1,0 +1,42 @@
+# Edge Cases and Error Handling Tests
+# Run with: cargo run --bin dsl -- -c < examples/test_hof_edge_cases.txt
+
+# Test 1: Map on single element
+map([42], fn x => x * 2 end)
+# Expected: [84]
+
+# Test 2: Filter on single element (matches)
+filter([42], fn x => x > 0 end)
+# Expected: [42]
+
+# Test 3: Filter on single element (doesn't match)
+filter([42], fn x => x < 0 end)
+# Expected: []
+
+# Test 4: Map with Boolean values
+map([true, false, true], fn b => !b end)
+# Expected: [false, true, false]
+
+# Test 5: Filter Boolean values
+filter([true, false, true, false], fn b => b end)
+# Expected: [true, true]
+
+# Test 6: Map with multiplication and addition
+map([1, 2, 3], fn x => x * 10 + x end)
+# Expected: [11, 22, 33]
+
+# Test 7: Filter with OR condition
+filter([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], fn x => x < 3 || x > 8 end)
+# Expected: [1, 2, 9, 10]
+
+# Test 8: Filter with map result
+[1, 2, 3, 4, 5] |> map(_, fn x => x * 2 end) |> filter(_, fn x => x > 5 end)
+# Expected: [6, 8, 10]
+
+# Test 9: Map with subtraction
+map([10, 20, 30], fn x => x - 5 end)
+# Expected: [5, 15, 25]
+
+# Test 10: Filter with compound condition
+filter([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], fn x => x > 3 && x < 8 end)
+# Expected: [4, 5, 6, 7]

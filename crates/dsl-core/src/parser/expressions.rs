@@ -775,6 +775,22 @@ pub(super) fn build_expr(pair: Pair<Rule>) -> Result<Expr, String> {
                 cases,
             })
         }
+        Rule::inline_lambda => {
+            let mut inner = pair.into_inner();
+            
+            // First element is lambda_params
+            let params_pair = inner.next().ok_or("Missing lambda parameters")?;
+            let params: Vec<String> = params_pair
+                .into_inner()
+                .map(|p| p.as_str().to_string())
+                .collect();
+            
+            // Second element is the body expression
+            let body = inner.next().ok_or("Missing lambda body")?;
+            let body_expr = Box::new(build_expr(body)?);
+            
+            Ok(Expr::Lambda { params, body: body_expr })
+        }
         Rule::identifier => Ok(Expr::Variable(pair.as_str().to_string())),
         _ => Err(format!("Unexpected rule: {:?}", pair.as_rule())),
     }

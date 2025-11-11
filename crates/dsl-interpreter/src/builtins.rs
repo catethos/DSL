@@ -124,6 +124,13 @@ impl BuiltinFunctions {
             "first" => self.first(args),
             "last" => self.last(args),
             "flatten" => self.flatten(args),
+            // Higher-order list functions
+            "map" => self.map(args),
+            "filter" => self.filter(args),
+            "pluck" => self.pluck(args),
+            "where" => self.where_fn(args),
+            "groupby" => self.group_by(args),
+            "sortby" => self.sort_by(args),
             // Math functions
             "abs" => self.abs(args),
             "min" => self.min(args),
@@ -155,6 +162,8 @@ impl BuiltinFunctions {
             "generatebarchart" => self.generate_bar_chart(args),
             "generatelinechart" => self.generate_line_chart(args),
             "generatepiechart" => self.generate_pie_chart(args),
+            // RSS feed functions
+            "rss" => self.rss(args).await,
             _ => Err(anyhow::anyhow!("Unknown function: {}", name)),
         }
     }
@@ -1079,6 +1088,127 @@ impl BuiltinFunctions {
     }
 
     // ========================================
+    // RSS feed functions
+    // ========================================
+
+    /// rss() - Fetch and parse an RSS feed
+    /// Takes a URL string and returns a list of feed items
+    /// Each item is a map with fields: title, link, description, pub_date, author, content
+    async fn rss(&self, args: Vec<Value>) -> Result<Value> {
+        use rss::Channel;
+
+        if args.is_empty() {
+            return Err(anyhow::anyhow!("rss() requires at least 1 argument (url)"));
+        }
+
+        let url = match &args[0] {
+            Value::String(s) => s.clone(),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "rss() first argument must be a URL string, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        // Optional: limit number of items (default: all items)
+        let limit = args
+            .get(1)
+            .and_then(|v| match v {
+                Value::Int(n) => Some(*n as usize),
+                _ => None,
+            });
+
+        // Fetch the RSS feed
+        let response = reqwest::get(&url)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch RSS feed from {}: {}", url, e))?;
+
+        let content = response
+            .bytes()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to read RSS feed content: {}", e))?;
+
+        // Parse the RSS feed
+        let channel = Channel::read_from(&content[..])
+            .map_err(|e| anyhow::anyhow!("Failed to parse RSS feed: {}", e))?;
+
+        // Convert items to our Value format
+        let items: Vec<Value> = channel
+            .items()
+            .iter()
+            .take(limit.unwrap_or(usize::MAX))
+            .map(|item| {
+                let mut map = indexmap::IndexMap::new();
+
+                // Title
+                if let Some(title) = item.title() {
+                    map.insert("title".to_string(), Value::String(title.to_string()));
+                }
+
+                // Link
+                if let Some(link) = item.link() {
+                    map.insert("link".to_string(), Value::String(link.to_string()));
+                }
+
+                // Description
+                if let Some(description) = item.description() {
+                    map.insert("description".to_string(), Value::String(description.to_string()));
+                }
+
+                // Publication date
+                if let Some(pub_date) = item.pub_date() {
+                    map.insert("pub_date".to_string(), Value::String(pub_date.to_string()));
+                }
+
+                // Author
+                if let Some(author) = item.author() {
+                    map.insert("author".to_string(), Value::String(author.to_string()));
+                }
+
+                // Content (if available)
+                if let Some(content) = item.content() {
+                    map.insert("content".to_string(), Value::String(content.to_string()));
+                }
+
+                // Categories
+                let categories: Vec<Value> = item
+                    .categories()
+                    .iter()
+                    .map(|cat| Value::String(cat.name().to_string()))
+                    .collect();
+                if !categories.is_empty() {
+                    map.insert("categories".to_string(), Value::List(categories));
+                }
+
+                // GUID
+                if let Some(guid) = item.guid() {
+                    map.insert("guid".to_string(), Value::String(guid.value().to_string()));
+                }
+
+                Value::Map(map)
+            })
+            .collect();
+
+        // Also include channel metadata
+        let mut result = indexmap::IndexMap::new();
+
+        // Channel title
+        result.insert("title".to_string(), Value::String(channel.title().to_string()));
+
+        // Channel link
+        result.insert("link".to_string(), Value::String(channel.link().to_string()));
+
+        // Channel description
+        result.insert("description".to_string(), Value::String(channel.description().to_string()));
+
+        // Items
+        result.insert("items".to_string(), Value::List(items));
+
+        Ok(Value::Map(result))
+    }
+
+    // ========================================
     // String processing functions
     // ========================================
 
@@ -1455,6 +1585,267 @@ impl BuiltinFunctions {
                 args[0].type_name()
             )),
         }
+    }
+
+    // ========================================
+    // Higher-order list functions
+    // ========================================
+
+    /// pluck() - Extract field from each map in a list
+    /// Usage: pluck(list, "field_name")
+    /// Example: pluck(items, "title") extracts all titles
+    fn pluck(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "pluck() requires exactly 2 arguments (list, field_name)"
+            ));
+        }
+
+        let items = match &args[0] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "pluck() first argument must be a list, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let field_name = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "pluck() second argument must be a field name string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let result: Vec<Value> = items
+            .iter()
+            .filter_map(|item| match item {
+                Value::Map(m) => m.get(field_name).cloned(),
+                _ => None,
+            })
+            .collect();
+
+        Ok(Value::List(result))
+    }
+
+    /// map() - Note: This is a placeholder that returns an error with instructions
+    /// True higher-order map requires first-class functions which aren't yet implemented
+    /// Use pluck() for field extraction instead
+    fn map(&self, args: Vec<Value>) -> Result<Value> {
+        // For now, map is not implemented as a true higher-order function
+        // because the DSL doesn't yet support passing functions as values
+        Err(anyhow::anyhow!(
+            "map() with functions is not yet implemented. Use pluck(list, \"field\") to extract fields from maps, or define a custom function using pattern matching"
+        ))
+    }
+
+    /// filter() - Filter list by field value
+    /// Usage: filter(list, "field_name", value)
+    /// Example: filter(items, "author", "John") keeps only items where author is "John"
+    fn filter(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 3 {
+            return Err(anyhow::anyhow!(
+                "filter() requires exactly 3 arguments (list, field_name, value)"
+            ));
+        }
+
+        let items = match &args[0] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "filter() first argument must be a list, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let field_name = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "filter() second argument must be a field name string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let target_value = &args[2];
+
+        let result: Vec<Value> = items
+            .iter()
+            .filter(|item| match item {
+                Value::Map(m) => m
+                    .get(field_name)
+                    .map(|v| values_equal(v, target_value))
+                    .unwrap_or(false),
+                _ => false,
+            })
+            .cloned()
+            .collect();
+
+        Ok(Value::List(result))
+    }
+
+    /// where() - Filter list by field existence
+    /// Usage: where(list, "field_name")
+    /// Example: where(items, "author") keeps only items that have an author field
+    fn where_fn(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "where() requires exactly 2 arguments (list, field_name)"
+            ));
+        }
+
+        let items = match &args[0] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "where() first argument must be a list, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let field_name = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "where() second argument must be a field name string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let result: Vec<Value> = items
+            .iter()
+            .filter(|item| match item {
+                Value::Map(m) => m.contains_key(field_name),
+                _ => false,
+            })
+            .cloned()
+            .collect();
+
+        Ok(Value::List(result))
+    }
+
+    /// groupby() - Group list items by field value
+    /// Usage: groupby(list, "field_name")
+    /// Returns a map where keys are field values and values are lists of matching items
+    fn group_by(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "groupby() requires exactly 2 arguments (list, field_name)"
+            ));
+        }
+
+        let items = match &args[0] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "groupby() first argument must be a list, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let field_name = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "groupby() second argument must be a field name string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let mut groups: indexmap::IndexMap<String, Vec<Value>> = indexmap::IndexMap::new();
+
+        for item in items {
+            if let Value::Map(m) = item {
+                if let Some(key_value) = m.get(field_name) {
+                    let key = match key_value {
+                        Value::String(s) => s.clone(),
+                        Value::Int(n) => n.to_string(),
+                        Value::Float(f) => f.to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        _ => continue,
+                    };
+
+                    groups.entry(key).or_insert_with(Vec::new).push(item.clone());
+                }
+            }
+        }
+
+        let result: indexmap::IndexMap<String, Value> = groups
+            .into_iter()
+            .map(|(k, v)| (k, Value::List(v)))
+            .collect();
+
+        Ok(Value::Map(result))
+    }
+
+    /// sortby() - Sort list by field value
+    /// Usage: sortby(list, "field_name")
+    /// Example: sortby(items, "pub_date") sorts items by publication date
+    fn sort_by(&self, args: Vec<Value>) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "sortby() requires exactly 2 arguments (list, field_name)"
+            ));
+        }
+
+        let items = match &args[0] {
+            Value::List(items) => items,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "sortby() first argument must be a list, got {}",
+                    args[0].type_name()
+                ))
+            }
+        };
+
+        let field_name = match &args[1] {
+            Value::String(s) => s,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "sortby() second argument must be a field name string, got {}",
+                    args[1].type_name()
+                ))
+            }
+        };
+
+        let mut sorted = items.clone();
+        sorted.sort_by(|a, b| {
+            let a_val = match a {
+                Value::Map(m) => m.get(field_name),
+                _ => None,
+            };
+            let b_val = match b {
+                Value::Map(m) => m.get(field_name),
+                _ => None,
+            };
+
+            match (a_val, b_val) {
+                (Some(Value::Int(x)), Some(Value::Int(y))) => x.cmp(y),
+                (Some(Value::Float(x)), Some(Value::Float(y))) => {
+                    x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
+                }
+                (Some(Value::String(x)), Some(Value::String(y))) => x.cmp(y),
+                (Some(Value::Int(x)), Some(Value::Float(y))) => (*x as f64)
+                    .partial_cmp(y)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                (Some(Value::Float(x)), Some(Value::Int(y))) => x
+                    .partial_cmp(&(*y as f64))
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+
+        Ok(Value::List(sorted))
     }
 
     // ========================================

@@ -1,0 +1,38 @@
+# GroupBy Tests
+# Run with: cargo run --bin dsl -- -c < examples/test_groupby.txt
+
+# Test 1: Group by string field
+groupby([{cat: "A", val: 1}, {cat: "B", val: 2}, {cat: "A", val: 3}], fn x => x.cat end)
+# Expected: {A: [{cat: "A", val: 1}, {cat: "A", val: 3}], B: [{cat: "B", val: 2}]}
+
+# Test 2: Group by integer value
+groupby([{type: 1, name: "foo"}, {type: 2, name: "bar"}, {type: 1, name: "baz"}], fn x => x.type end)
+# Expected: {1: [{type: 1, name: "foo"}, {type: 1, name: "baz"}], 2: [{type: 2, name: "bar"}]}
+
+# Test 3: Group simple numbers by value
+groupby([1, 2, 1, 3], fn x => x end)
+# Expected: {1: [1, 1], 2: [2], 3: [3]}
+
+# Test 4: Group by boolean
+groupby([{active: true, id: 1}, {active: false, id: 2}, {active: true, id: 3}], fn x => x.active end)
+# Expected: {true: [{active: true, id: 1}, {active: true, id: 3}], false: [{active: false, id: 2}]}
+
+# Test 5: Group by computed value
+groupby([{x: 10}, {x: 25}, {x: 15}, {x: 20}], fn m => m.x / 10 end)
+# Expected: {1: [{x: 10}, {x: 15}], 2: [{x: 25}, {x: 20}]} (integer division)
+
+# Test 6: Empty list
+groupby([], fn x => x end)
+# Expected: {}
+
+# Test 7: Single element
+groupby([{cat: "A", val: 1}], fn x => x.cat end)
+# Expected: {A: [{cat: "A", val: 1}]}
+
+# Test 8: All same group
+groupby([{cat: "A", val: 1}, {cat: "A", val: 2}, {cat: "A", val: 3}], fn x => x.cat end)
+# Expected: {A: [{cat: "A", val: 1}, {cat: "A", val: 2}, {cat: "A", val: 3}]}
+
+# Test 9: Group strings
+groupby(["apple", "banana", "apricot", "berry"], fn x => x end)
+# Expected: {apple: ["apple"], banana: ["banana"], apricot: ["apricot"], berry: ["berry"]}

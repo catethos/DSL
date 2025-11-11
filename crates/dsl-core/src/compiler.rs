@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dsl_ir::{
     IRBinding, IRExecution, IRFunction, IRFunctionClause, IRFunctionGroup, IRMatchCase, IRNode,
-    IRPattern, IRProperty, IRTemplateSegment, IR,
+    IRPattern, IRProperty, IRTemplateSegment, LambdaIR, IR,
 };
 use std::collections::HashMap;
 
@@ -251,6 +251,13 @@ pub fn compile_expr(expr: &Expr) -> Result<IRNode> {
                 statements: ir_statements,
                 result: Box::new(compile_expr(result)?),
             })
+        }
+
+        Expr::Lambda { params, body } => {
+            Ok(IRNode::Lambda(LambdaIR {
+                params: params.clone(),
+                body: Box::new(compile_expr(body)?),
+            }))
         }
     }
 }

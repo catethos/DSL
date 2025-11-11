@@ -153,6 +153,11 @@ pub enum IRNode {
     },
     /// Throw an error
     Throw { error: Box<IRNode> },
+
+    // Higher-order functions (Phase 11)
+    /// Inline lambda expression: fn x => expr end
+    /// Can be passed as argument to higher-order functions like map/filter
+    Lambda(LambdaIR),
 }
 
 /// Template string segments
@@ -172,6 +177,15 @@ pub enum IRBinding {
     Single(String),
     /// Destructuring: as [a, b, c]
     List(Vec<String>),
+}
+
+/// Lambda (anonymous function) IR
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LambdaIR {
+    /// Parameter names
+    pub params: Vec<String>,
+    /// Function body expression
+    pub body: Box<IRNode>,
 }
 
 /// Match case with pattern, optional guard, and body

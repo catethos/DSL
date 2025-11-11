@@ -1,0 +1,34 @@
+# Phase 2 Pipeline Tests - Combining reduce/sortby/groupby with map/filter
+# Run with: cargo run --bin dsl -- -c < examples/test_hof_phase2_pipelines.txt
+
+# Test 1: Filter then sortby
+[{name: "Bob", score: 85}, {name: "Alice", score: 92}, {name: "Charlie", score: 78}, {name: "Diana", score: 95}] |> filter(_, fn x => x.score > 80 end) |> sortby(_, fn x => x.score end)
+# Expected: [{name: "Bob", score: 85}, {name: "Alice", score: 92}, {name: "Diana", score: 95}]
+
+# Test 2: Map then reduce
+[1, 2, 3, 4, 5] |> map(_, fn x => x * x end) |> reduce(_, 0, fn acc, x => acc + x end)
+# Expected: 55 (1 + 4 + 9 + 16 + 25)
+
+# Test 3: Filter, map, then reduce (sum of squares of evens)
+[1, 2, 3, 4, 5, 6] |> filter(_, fn x => x > 2 end) |> map(_, fn x => x * x end) |> reduce(_, 0, fn acc, x => acc + x end)
+# Expected: 77 (9 + 16 + 25 + 36)
+
+# Test 4: Sortby then map (extract names from sorted list)
+[{name: "Bob", age: 30}, {name: "Alice", age: 25}, {name: "Charlie", age: 35}] |> sortby(_, fn x => x.age end) |> map(_, fn x => x.name end)
+# Expected: ["Alice", "Bob", "Charlie"]
+
+# Test 5: Groupby then map the groups
+[{cat: "A", val: 1}, {cat: "B", val: 2}, {cat: "A", val: 3}, {cat: "B", val: 4}] |> groupby(_, fn x => x.cat end)
+# Expected: {A: [{cat: "A", val: 1}, {cat: "A", val: 3}], B: [{cat: "B", val: 2}, {cat: "B", val: 4}]}
+
+# Test 6: Complex pipeline - filter, sortby, map, reduce
+[{name: "Alice", score: 85}, {name: "Bob", score: 92}, {name: "Charlie", score: 78}, {name: "Diana", score: 95}, {name: "Eve", score: 88}] |> filter(_, fn x => x.score > 80 end) |> sortby(_, fn x => x.score end) |> map(_, fn x => x.score end) |> reduce(_, 0, fn acc, x => acc + x end)
+# Expected: 360 (85 + 88 + 92 + 95)
+
+# Test 7: Sortby descending then take first N (via filter with index)
+[5, 2, 8, 1, 9, 3] |> sortby(_, fn x => 0 - x end)
+# Expected: [9, 8, 5, 3, 2, 1]
+
+# Test 8: Reduce to build a list
+[1, 2, 3, 4, 5] |> filter(_, fn x => x > 2 end) |> reduce(_, 0, fn acc, x => acc + x end)
+# Expected: 12 (3 + 4 + 5)

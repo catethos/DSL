@@ -1,0 +1,26 @@
+# Chaining Map and Filter Tests
+# Run with: cargo run --bin dsl -- -c < examples/test_hof_chaining.txt
+
+# Test 1: Filter then map
+[1, 2, 3, 4, 5] |> filter(_, fn x => x > 2 end) |> map(_, fn x => x * 2 end)
+# Expected: [6, 8, 10]
+
+# Test 2: Map then filter
+[1, 2, 3, 4, 5] |> map(_, fn x => x * 2 end) |> filter(_, fn x => x > 5 end)
+# Expected: [6, 8, 10]
+
+# Test 3: Multiple filters
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10] |> filter(_, fn x => x > 3 end) |> filter(_, fn x => x < 8 end)
+# Expected: [4, 5, 6, 7]
+
+# Test 4: Multiple maps
+[1, 2, 3] |> map(_, fn x => x * 2 end) |> map(_, fn x => x + 1 end)
+# Expected: [3, 5, 7]
+
+# Test 5: Long chain
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10] |> filter(_, fn x => x > 4 end) |> map(_, fn x => x * x end) |> filter(_, fn x => x > 30 end)
+# Expected: [36, 49, 64, 81, 100]
+
+# Test 6: Chain with underscore in pipeline
+[1, 2, 3, 4, 5] |> filter(_, fn x => x > 2 end) |> map(_, fn x => x * 3 end) |> filter(_, fn x => x < 15 end)
+# Expected: [9, 12]

@@ -1,0 +1,26 @@
+# Map and Filter with Map/Object data
+# Run with: cargo run --bin dsl -- -c < examples/test_hof_maps.txt
+
+# Test 1: Map over list of maps - extract field
+map([{name: "Alice", age: 30}, {name: "Bob", age: 25}], fn x => x.name end)
+# Expected: ["Alice", "Bob"]
+
+# Test 2: Filter list of maps by field value
+filter([{name: "Alice", age: 30}, {name: "Bob", age: 25}, {name: "Charlie", age: 35}], fn x => x.age > 28 end)
+# Expected: [{name: "Alice", age: 30}, {name: "Charlie", age: 35}]
+
+# Test 3: Map to transform map fields
+map([{x: 1, y: 2}, {x: 3, y: 4}], fn m => m.x + m.y end)
+# Expected: [3, 7]
+
+# Test 4: Map field values
+map([{x: 10}, {x: 20}, {x: 30}], fn m => m.x * 2 end)
+# Expected: [20, 40, 60]
+
+# Test 5: Filter and extract
+[{name: "Alice", score: 85}, {name: "Bob", score: 92}, {name: "Charlie", score: 78}] |> filter(_, fn x => x.score > 80 end) |> map(_, fn x => x.name end)
+# Expected: ["Alice", "Bob"]
+
+# Test 6: Filter by nested field comparison
+filter([{a: 1, b: 10}, {a: 5, b: 20}, {a: 3, b: 15}], fn m => m.a < 4 && m.b > 10 end)
+# Expected: [{a: 3, b: 15}]

@@ -14,7 +14,7 @@
 //! - Provides composability and simpler interpreter via LIR
 //! - Maintains source location information for error reporting
 
-use crate::ir::{IR, IRFunction, IRExecution, IRNode, IRTemplateSegment, Span};
+use crate::ir::{IR, IRFunction, IRExecution, IRNode, IRTemplateSegment, LambdaIR, Span};
 use std::collections::HashMap;
 
 /// Unique identifier for IR nodes, used to track debug information
@@ -425,6 +425,14 @@ impl Lowering {
                     })
                     .collect();
                 IRNode::TemplateString(lowered_segments)
+            }
+
+            // Lambda needs to lower its body
+            IRNode::Lambda(lambda_ir) => {
+                IRNode::Lambda(LambdaIR {
+                    params: lambda_ir.params.clone(),
+                    body: Box::new(self.lower_node(&lambda_ir.body, function_name)),
+                })
             }
 
             // Leaf nodes that don't need lowering: pass through unchanged

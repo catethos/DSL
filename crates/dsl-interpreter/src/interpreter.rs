@@ -2,7 +2,7 @@ use crate::builtins::BuiltinFunctions;
 use crate::error::InterpreterError;
 use crate::pattern::PatternMatcher;
 use crate::runtime::Runtime;
-use dsl_ir::{IRNode, IRTemplateSegment, IRBinding, IRExecution, IRFunction, Value, IR};
+use dsl_ir::{IRNode, IRTemplateSegment, IRBinding, IRExecution, IRFunction, LambdaIR, Value, IR};
 use dsl_ir::lowering::Lowering;
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -195,6 +195,11 @@ impl Interpreter {
 
             // ===== Function Calls =====
             IRNode::FunctionCall { name, args, effect_kind, source_span } => {
+                // Check for higher-order functions that accept lambdas
+                if name == "map" || name == "filter" || name == "reduce" || name == "sortby" || name == "groupby" {
+                    return self.eval_higher_order_function(name, args).await;
+                }
+
                 // Check for intrinsic builtin calls first
                 if name.starts_with("__") {
                     // Evaluate arguments first
@@ -316,6 +321,12 @@ impl Interpreter {
                 // Return the final result expression
                 Box::pin(self.eval(result)).await
             }
+
+            // ===== Higher-Order Functions (Phase 11) =====
+            IRNode::Lambda(_) => Err(InterpreterError::RuntimeError {
+                message: "Lambda functions can only be used as arguments to higher-order functions like map() or filter()".to_string(),
+                source_span: None,
+            }),
 
             // ===== Future variants (not yet in grammar) =====
             _ => Err(InterpreterError::RuntimeError {
@@ -583,6 +594,463 @@ impl Interpreter {
         }
     }
 
+    /// Evaluate higher-order functions like map and filter
+    async fn eval_higher_order_function(
+        &mut self,
+        name: &str,
+        args: &[IRNode],
+    ) -> Result<Value, InterpreterError> {
+        match name {
+            "map" => {
+                // map(list, callable)
+                if args.len() != 2 {
+                    return Err(InterpreterError::InvalidArguments {
+                        message: format!("map() expects 2 arguments, got {}", args.len()),
+                        source_span: None,
+                    });
+                }
+
+                // Evaluate the list
+                let list_value = Box::pin(self.eval(&args[0])).await?;
+                let items = match list_value {
+                    Value::List(ref items) => items,
+                    _ => {
+                        return Err(InterpreterError::TypeError {
+                            message: "map() first argument must be a list".to_string(),
+                            expected: "List".to_string(),
+                            got: list_value.type_name().to_string(),
+                            source_span: None,
+                        });
+                    }
+                };
+
+                // Check if second argument is a lambda or string reference
+                let mut results = Vec::new();
+                match &args[1] {
+                    IRNode::Lambda(lambda) => {
+                        // Inline lambda: map each item through the lambda
+                        for item in items {
+                            let result = self.eval_lambda(lambda, &[item.clone()]).await?;
+                            results.push(result);
+                        }
+                    }
+                    IRNode::String(func_name) => {
+                        // String reference to a function
+                        for item in items {
+                            let result = self.call_function_by_name(func_name, vec![item.clone()]).await?;
+                            results.push(result);
+                        }
+                    }
+                    _ => {
+                        return Err(InterpreterError::InvalidArguments {
+                            message: "map() second argument must be a lambda (fn x => ...) or function name string".to_string(),
+                            source_span: None,
+                        });
+                    }
+                }
+
+                Ok(Value::List(results))
+            }
+
+            "filter" => {
+                // filter(list, predicate)
+                if args.len() != 2 {
+                    return Err(InterpreterError::InvalidArguments {
+                        message: format!("filter() expects 2 arguments, got {}", args.len()),
+                        source_span: None,
+                    });
+                }
+
+                // Evaluate the list
+                let list_value = Box::pin(self.eval(&args[0])).await?;
+                let items = match list_value {
+                    Value::List(ref items) => items,
+                    _ => {
+                        return Err(InterpreterError::TypeError {
+                            message: "filter() first argument must be a list".to_string(),
+                            expected: "List".to_string(),
+                            got: list_value.type_name().to_string(),
+                            source_span: None,
+                        });
+                    }
+                };
+
+                // Check if second argument is a lambda or string reference
+                let mut results = Vec::new();
+                match &args[1] {
+                    IRNode::Lambda(lambda) => {
+                        // Inline lambda: filter items based on predicate
+                        for (idx, item) in items.iter().enumerate() {
+                            let result = self.eval_lambda(lambda, &[item.clone()]).await?;
+                            let keep = match result {
+                                Value::Bool(b) => b,
+                                _ => {
+                                    return Err(InterpreterError::TypeError {
+                                        message: format!("filter() predicate must return Bool at index {}, got {}", idx, result.type_name()),
+                                        expected: "Bool".to_string(),
+                                        got: result.type_name().to_string(),
+                                        source_span: None,
+                                    });
+                                }
+                            };
+                            if keep {
+                                results.push(item.clone());
+                            }
+                        }
+                    }
+                    IRNode::String(func_name) => {
+                        // String reference to a function
+                        for (idx, item) in items.iter().enumerate() {
+                            let result = self.call_function_by_name(func_name, vec![item.clone()]).await?;
+                            let keep = match result {
+                                Value::Bool(b) => b,
+                                _ => {
+                                    return Err(InterpreterError::TypeError {
+                                        message: format!("filter() predicate '{}' must return Bool at index {}, got {}", func_name, idx, result.type_name()),
+                                        expected: "Bool".to_string(),
+                                        got: result.type_name().to_string(),
+                                        source_span: None,
+                                    });
+                                }
+                            };
+                            if keep {
+                                results.push(item.clone());
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(InterpreterError::InvalidArguments {
+                            message: "filter() second argument must be a lambda (fn x => ...) or function name string".to_string(),
+                            source_span: None,
+                        });
+                    }
+                }
+
+                Ok(Value::List(results))
+            }
+
+            "reduce" => {
+                // reduce(list, init, reducer)
+                if args.len() != 3 {
+                    return Err(InterpreterError::InvalidArguments {
+                        message: format!("reduce() expects 3 arguments, got {}", args.len()),
+                        source_span: None,
+                    });
+                }
+
+                // Evaluate the list
+                let list_value = Box::pin(self.eval(&args[0])).await?;
+                let items = match list_value {
+                    Value::List(ref items) => items,
+                    _ => {
+                        return Err(InterpreterError::TypeError {
+                            message: "reduce() first argument must be a list".to_string(),
+                            expected: "List".to_string(),
+                            got: list_value.type_name().to_string(),
+                            source_span: None,
+                        });
+                    }
+                };
+
+                // Evaluate the initial value
+                let mut accumulator = Box::pin(self.eval(&args[1])).await?;
+
+                // Check if third argument is a lambda or string reference
+                match &args[2] {
+                    IRNode::Lambda(lambda) => {
+                        // Lambda must have 2 parameters (acc, item)
+                        if lambda.params.len() != 2 {
+                            return Err(InterpreterError::InvalidArguments {
+                                message: format!("reduce() lambda must have 2 parameters (accumulator, item), got {}", lambda.params.len()),
+                                source_span: None,
+                            });
+                        }
+
+                        // Reduce: fold over items
+                        for (idx, item) in items.iter().enumerate() {
+                            accumulator = self.eval_lambda(lambda, &[accumulator, item.clone()]).await
+                                .map_err(|e| InterpreterError::RuntimeError {
+                                    message: format!("reduce() at index {}: {}", idx, e),
+                                    source_span: None,
+                                })?;
+                        }
+                    }
+                    IRNode::String(func_name) => {
+                        // String reference to a 2-arg function
+                        for (idx, item) in items.iter().enumerate() {
+                            accumulator = self.call_function_by_name(func_name, vec![accumulator, item.clone()]).await
+                                .map_err(|e| InterpreterError::RuntimeError {
+                                    message: format!("reduce() with '{}' at index {}: {}", func_name, idx, e),
+                                    source_span: None,
+                                })?;
+                        }
+                    }
+                    _ => {
+                        return Err(InterpreterError::InvalidArguments {
+                            message: "reduce() third argument must be a lambda (fn acc, x => ...) or function name string".to_string(),
+                            source_span: None,
+                        });
+                    }
+                }
+
+                Ok(accumulator)
+            }
+
+            "sortby" => {
+                // sortby(list, key_fn)
+                if args.len() != 2 {
+                    return Err(InterpreterError::InvalidArguments {
+                        message: format!("sortby() expects 2 arguments, got {}", args.len()),
+                        source_span: None,
+                    });
+                }
+
+                // Evaluate the list
+                let list_value = Box::pin(self.eval(&args[0])).await?;
+                let items = match list_value {
+                    Value::List(ref items) => items,
+                    _ => {
+                        return Err(InterpreterError::TypeError {
+                            message: "sortby() first argument must be a list".to_string(),
+                            expected: "List".to_string(),
+                            got: list_value.type_name().to_string(),
+                            source_span: None,
+                        });
+                    }
+                };
+
+                // Phase 1: Precompute keys (CRITICAL for performance)
+                let mut keyed_items: Vec<(Value, Value)> = Vec::with_capacity(items.len());
+
+                match &args[1] {
+                    IRNode::Lambda(lambda) => {
+                        for (idx, item) in items.iter().enumerate() {
+                            let key = self.eval_lambda(lambda, &[item.clone()]).await
+                                .map_err(|e| InterpreterError::RuntimeError {
+                                    message: format!("sortby() key computation at index {}: {}", idx, e),
+                                    source_span: None,
+                                })?;
+                            self.validate_sortable_key(&key)?;
+                            keyed_items.push((key, item.clone()));
+                        }
+                    }
+                    IRNode::String(func_name) => {
+                        for (idx, item) in items.iter().enumerate() {
+                            let key = self.call_function_by_name(func_name, vec![item.clone()]).await
+                                .map_err(|e| InterpreterError::RuntimeError {
+                                    message: format!("sortby() key '{}' at index {}: {}", func_name, idx, e),
+                                    source_span: None,
+                                })?;
+                            self.validate_sortable_key(&key)?;
+                            keyed_items.push((key, item.clone()));
+                        }
+                    }
+                    _ => {
+                        return Err(InterpreterError::InvalidArguments {
+                            message: "sortby() second argument must be a lambda (fn x => ...) or function name string".to_string(),
+                            source_span: None,
+                        });
+                    }
+                }
+
+                // Phase 2: Stable sort by precomputed keys
+                keyed_items.sort_by(|(k1, _), (k2, _)| {
+                    self.compare_values(k1, k2).unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+                // Phase 3: Extract sorted items
+                let sorted: Vec<Value> = keyed_items.into_iter()
+                    .map(|(_, item)| item)
+                    .collect();
+
+                Ok(Value::List(sorted))
+            }
+
+            "groupby" => {
+                // groupby(list, key_fn)
+                if args.len() != 2 {
+                    return Err(InterpreterError::InvalidArguments {
+                        message: format!("groupby() expects 2 arguments, got {}", args.len()),
+                        source_span: None,
+                    });
+                }
+
+                // Evaluate the list
+                let list_value = Box::pin(self.eval(&args[0])).await?;
+                let items = match list_value {
+                    Value::List(ref items) => items,
+                    _ => {
+                        return Err(InterpreterError::TypeError {
+                            message: "groupby() first argument must be a list".to_string(),
+                            expected: "List".to_string(),
+                            got: list_value.type_name().to_string(),
+                            source_span: None,
+                        });
+                    }
+                };
+
+                // Use IndexMap to preserve insertion order
+                let mut groups: IndexMap<String, Vec<Value>> = IndexMap::new();
+
+                match &args[1] {
+                    IRNode::Lambda(lambda) => {
+                        for (idx, item) in items.iter().enumerate() {
+                            let key = self.eval_lambda(lambda, &[item.clone()]).await
+                                .map_err(|e| InterpreterError::RuntimeError {
+                                    message: format!("groupby() key computation at index {}: {}", idx, e),
+                                    source_span: None,
+                                })?;
+                            
+                            // Convert key to string for map key
+                            let key_str = self.value_to_map_key(&key)?;
+                            
+                            groups.entry(key_str)
+                                .or_insert_with(Vec::new)
+                                .push(item.clone());
+                        }
+                    }
+                    IRNode::String(func_name) => {
+                        for (idx, item) in items.iter().enumerate() {
+                            let key = self.call_function_by_name(func_name, vec![item.clone()]).await
+                                .map_err(|e| InterpreterError::RuntimeError {
+                                    message: format!("groupby() key '{}' at index {}: {}", func_name, idx, e),
+                                    source_span: None,
+                                })?;
+                            
+                            // Convert key to string for map key
+                            let key_str = self.value_to_map_key(&key)?;
+                            
+                            groups.entry(key_str)
+                                .or_insert_with(Vec::new)
+                                .push(item.clone());
+                        }
+                    }
+                    _ => {
+                        return Err(InterpreterError::InvalidArguments {
+                            message: "groupby() second argument must be a lambda (fn x => ...) or function name string".to_string(),
+                            source_span: None,
+                        });
+                    }
+                }
+
+                // Convert to Map of Lists
+                let result: IndexMap<String, Value> = groups.into_iter()
+                    .map(|(k, v)| (k, Value::List(v)))
+                    .collect();
+
+                Ok(Value::Map(result))
+            }
+
+            _ => Err(InterpreterError::RuntimeError {
+                message: format!("Unknown higher-order function: {}", name),
+                source_span: None,
+            }),
+        }
+    }
+
+    /// Evaluate a lambda with given arguments
+    async fn eval_lambda(
+        &mut self,
+        lambda: &LambdaIR,
+        args: &[Value],
+    ) -> Result<Value, InterpreterError> {
+        // Check arity
+        if lambda.params.len() != args.len() {
+            return Err(InterpreterError::InvalidArguments {
+                message: format!(
+                    "Lambda expects {} arguments, got {}",
+                    lambda.params.len(),
+                    args.len()
+                ),
+                source_span: None,
+            });
+        }
+
+        // Push new scope for lambda execution
+        self.runtime.push_scope();
+
+        // Bind parameters
+        for (param, arg) in lambda.params.iter().zip(args.iter()) {
+            self.runtime.set_var(param.clone(), arg.clone());
+        }
+
+        // Evaluate lambda body
+        let result = Box::pin(self.eval(&lambda.body)).await?;
+
+        // Pop lambda scope
+        self.runtime.pop_scope();
+
+        Ok(result)
+    }
+
+    /// Call a user-defined function by name (used for string references in map/filter)
+    async fn call_function_by_name(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, InterpreterError> {
+        // For now, only support regular functions (not pattern-matched overloaded functions)
+        // TODO: Add support for pattern-matched functions via call_overloaded_function
+        
+        if let Some(func) = self.runtime.functions.get(name).cloned() {
+            if func.params.len() != args.len() {
+                return Err(InterpreterError::InvalidArguments {
+                    message: format!(
+                        "Function '{}' expects {} arguments, got {}",
+                        name,
+                        func.params.len(),
+                        args.len()
+                    ),
+                    source_span: None,
+                });
+            }
+            return self.call_user_function_with_values(&func, &args).await;
+        }
+
+        Err(InterpreterError::RuntimeError {
+            message: format!("Unknown function: {}", name),
+            source_span: None,
+        })
+    }
+
+    /// Call a user-defined function with already-evaluated values
+    async fn call_user_function_with_values(
+        &mut self,
+        func: &IRFunction,
+        arg_values: &[Value],
+    ) -> Result<Value, InterpreterError> {
+        // Push a new scope for function execution
+        self.runtime.push_scope();
+
+        // Bind arguments to parameters
+        for (param_name, arg_value) in func.params.iter().zip(arg_values.iter()) {
+            self.runtime.set_var(param_name.clone(), arg_value.clone());
+        }
+
+        // Lower the execution to LIR before executing
+        let mut lowering = Lowering::new();
+        let return_type_str = func.return_type.as_ref().map(|ft| ft.to_string());
+        let lowered_execution = lowering.lower_execution_direct(&func.execution, &func.name, &return_type_str);
+
+        // Execute the lowered IR (should always be Expression after lowering)
+        let result = match lowered_execution {
+            IRExecution::Expression { body } => {
+                Box::pin(self.eval(&body)).await?
+            }
+            _ => {
+                return Err(InterpreterError::RuntimeError {
+                    message: "Internal error: lowering should produce Expression".to_string(),
+                    source_span: None,
+                });
+            }
+        };
+
+        // Pop the function scope
+        self.runtime.pop_scope();
+
+        Ok(result)
+    }
+
     /// Call a user-defined function
     pub async fn call_user_function(
         &mut self,
@@ -641,6 +1109,7 @@ impl Interpreter {
     }
 
     /// Execute an LLM-based function
+    #[allow(dead_code)]
     async fn execute_llm_function(
         &mut self,
         func: &IRFunction,
@@ -677,6 +1146,7 @@ impl Interpreter {
     }
 
     /// Execute LLM with pre-fetched input data
+    #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     async fn execute_llm_with_input(
         &mut self,
@@ -721,6 +1191,7 @@ impl Interpreter {
     }
 
     /// Execute an HTTP request
+    #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     async fn execute_http_function(
         &mut self,
@@ -826,6 +1297,7 @@ impl Interpreter {
     }
 
     /// Execute a SQL query
+    #[allow(dead_code)]
     async fn execute_sql_function(
         &mut self,
         func: &IRFunction,
@@ -843,6 +1315,7 @@ impl Interpreter {
     }
 
     /// Interpolate string template with parameter values
+    #[allow(dead_code)]
     fn interpolate_string_template(
         &self,
         template: &str,
@@ -939,6 +1412,70 @@ impl Interpreter {
             ),
             source_span: None,
         })
+    }
+
+    // ===== Helper Methods for Higher-Order Functions =====
+
+    /// Validate that a value can be used as a sort key
+    fn validate_sortable_key(&self, key: &Value) -> Result<(), InterpreterError> {
+        match key {
+            Value::Int(_) | Value::String(_) | Value::Bool(_) => Ok(()),
+            Value::Float(f) if !f.is_nan() => Ok(()),
+            Value::Float(_) => Err(InterpreterError::RuntimeError {
+                message: "Cannot use NaN as sort key".to_string(),
+                source_span: None,
+            }),
+            _ => Err(InterpreterError::RuntimeError {
+                message: format!("Cannot sort by {}", key.type_name()),
+                source_span: None,
+            }),
+        }
+    }
+
+    /// Compare two values for sorting
+    fn compare_values(&self, a: &Value, b: &Value) -> Result<std::cmp::Ordering, InterpreterError> {
+        use std::cmp::Ordering;
+
+        match (a, b) {
+            (Value::Int(x), Value::Int(y)) => Ok(x.cmp(y)),
+            (Value::Float(x), Value::Float(y)) => {
+                if x.is_nan() || y.is_nan() {
+                    return Err(InterpreterError::RuntimeError {
+                        message: "Cannot compare NaN values".to_string(),
+                        source_span: None,
+                    });
+                }
+                Ok(x.partial_cmp(y).unwrap_or(Ordering::Equal))
+            }
+            (Value::String(x), Value::String(y)) => Ok(x.cmp(y)),
+            (Value::Bool(x), Value::Bool(y)) => Ok(x.cmp(y)),
+            _ => Err(InterpreterError::RuntimeError {
+                message: format!("Cannot compare {} and {}", a.type_name(), b.type_name()),
+                source_span: None,
+            }),
+        }
+    }
+
+    /// Convert a value to a string key for use in maps
+    fn value_to_map_key(&self, value: &Value) -> Result<String, InterpreterError> {
+        match value {
+            Value::String(s) => Ok(s.clone()),
+            Value::Int(i) => Ok(i.to_string()),
+            Value::Bool(b) => Ok(b.to_string()),
+            Value::Float(f) => {
+                if f.is_nan() {
+                    return Err(InterpreterError::RuntimeError {
+                        message: "Cannot use NaN as groupby key".to_string(),
+                        source_span: None,
+                    });
+                }
+                Ok(f.to_string())
+            }
+            _ => Err(InterpreterError::RuntimeError {
+                message: format!("Cannot use {} as groupby key (use String, Int, or Bool)", value.type_name()),
+                source_span: None,
+            }),
+        }
     }
 }
 

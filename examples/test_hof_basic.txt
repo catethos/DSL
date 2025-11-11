@@ -1,0 +1,42 @@
+# Basic Map and Filter Tests
+# Run with: cargo run --bin dsl -- -c < examples/test_hof_basic.txt
+
+# Test 1: Basic map with lambda
+map([1, 2, 3], fn x => x * 2 end)
+# Expected: [2, 4, 6]
+
+# Test 2: Basic filter with lambda
+filter([1, 2, 3, 4, 5], fn x => x > 3 end)
+# Expected: [4, 5]
+
+# Test 3: Map with complex expression
+map([1, 2, 3], fn x => x * x + 1 end)
+# Expected: [2, 5, 10]
+
+# Test 4: Filter with comparison
+filter([1, 2, 3, 4, 5, 6], fn x => x > 2 && x < 6 end)
+# Expected: [3, 4, 5]
+
+# Test 5: Map on empty list
+map([], fn x => x * 2 end)
+# Expected: []
+
+# Test 6: Filter on empty list
+filter([], fn x => x > 0 end)
+# Expected: []
+
+# Test 7: Filter that matches nothing
+filter([1, 2, 3], fn x => x > 10 end)
+# Expected: []
+
+# Test 8: Filter that matches everything
+filter([1, 2, 3], fn x => x > 0 end)
+# Expected: [1, 2, 3]
+
+# Test 9: Map with string operations
+map(["hello", "world"], fn s => s + "!" end)
+# Expected: ["hello!", "world!"]
+
+# Test 10: Map with arithmetic
+map([10, 20, 30], fn x => x / 2 end)
+# Expected: [5, 10, 15]

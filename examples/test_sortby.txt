@@ -1,0 +1,42 @@
+# SortBy Tests
+# Run with: cargo run --bin dsl -- -c < examples/test_sortby.txt
+
+# Test 1: Sort numbers ascending
+sortby([3, 1, 4, 1, 5, 9, 2, 6], fn x => x end)
+# Expected: [1, 1, 2, 3, 4, 5, 6, 9]
+
+# Test 2: Sort numbers descending (by negation)
+sortby([3, 1, 4, 1, 5, 9, 2, 6], fn x => 0 - x end)
+# Expected: [9, 6, 5, 4, 3, 2, 1, 1]
+
+# Test 3: Sort strings alphabetically
+sortby(["charlie", "alice", "bob"], fn x => x end)
+# Expected: ["alice", "bob", "charlie"]
+
+# Test 4: Sort by field
+sortby([{name: "Bob", age: 30}, {name: "Alice", age: 25}, {name: "Charlie", age: 35}], fn x => x.age end)
+# Expected: [{name: "Alice", age: 25}, {name: "Bob", age: 30}, {name: "Charlie", age: 35}]
+
+# Test 5: Sort by string field
+sortby([{name: "Bob"}, {name: "Alice"}, {name: "Charlie"}], fn x => x.name end)
+# Expected: [{name: "Alice"}, {name: "Bob"}, {name: "Charlie"}]
+
+# Test 6: Sort by computed value
+sortby([{x: 3, y: 4}, {x: 1, y: 1}, {x: 2, y: 3}], fn m => m.x + m.y end)
+# Expected: [{x: 1, y: 1}, {x: 2, y: 3}, {x: 3, y: 4}] (sums: 2, 5, 7)
+
+# Test 7: Empty list
+sortby([], fn x => x end)
+# Expected: []
+
+# Test 8: Single element
+sortby([42], fn x => x end)
+# Expected: [42]
+
+# Test 9: Already sorted
+sortby([1, 2, 3, 4, 5], fn x => x end)
+# Expected: [1, 2, 3, 4, 5]
+
+# Test 10: Stable sort (preserves order of equal elements)
+sortby([{val: 1, id: "a"}, {val: 2, id: "b"}, {val: 1, id: "c"}], fn x => x.val end)
+# Expected: [{val: 1, id: "a"}, {val: 1, id: "c"}, {val: 2, id: "b"}] (stable)
