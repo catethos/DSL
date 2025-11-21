@@ -57,10 +57,17 @@ impl SQLExecutor {
             let mut map = IndexMap::new();
             for (i, col_name) in column_names.iter().enumerate() {
                 // Try different types
-                if let Ok(v) = row.get::<_, i64>(i) {
+                // NOTE: Try f64 BEFORE i64 to avoid truncation of decimal values
+                // DuckDB's get::<_, i64>() can silently truncate floats like 0.2667 to 0
+                if let Ok(v) = row.get::<_, f64>(i) {
+                    // Check if it's actually a whole number (integer)
+                    if v.fract() == 0.0 && v >= i64::MIN as f64 && v <= i64::MAX as f64 {
+                        map.insert(col_name.clone(), Value::Int(v as i64));
+                    } else {
+                        map.insert(col_name.clone(), Value::Float(v));
+                    }
+                } else if let Ok(v) = row.get::<_, i64>(i) {
                     map.insert(col_name.clone(), Value::Int(v));
-                } else if let Ok(v) = row.get::<_, f64>(i) {
-                    map.insert(col_name.clone(), Value::Float(v));
                 } else if let Ok(v) = row.get::<_, String>(i) {
                     map.insert(col_name.clone(), Value::String(v));
                 } else if let Ok(v) = row.get::<_, bool>(i) {
