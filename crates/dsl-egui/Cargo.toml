@@ -1,6 +1,6 @@
 [package]
 name = "dsl-egui"
-version = "2.1.0"
+version = "2.4.0"
 edition = "2021"
 
 [lib]
@@ -32,6 +32,7 @@ tree-sitter-dsl = { path = "../../tree-sitter-dsl" }
 
 # Async runtime
 tokio = { workspace = true }
+lazy_static = "1.4"
 
 # Clipboard support
 arboard = "3.4"

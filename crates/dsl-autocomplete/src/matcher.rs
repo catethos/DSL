@@ -77,19 +77,39 @@ impl Matcher for PrefixMatcher {
             return None;
         }
 
-        let (query, candidate) = if self.case_sensitive {
-            (query.to_string(), candidate.to_string())
+        // Avoid allocation by comparing directly with case-insensitive logic
+        if self.case_sensitive {
+            if candidate.starts_with(query) {
+                let score = query.len() as f32 / candidate.len() as f32;
+                Some(score)
+            } else {
+                None
+            }
         } else {
-            (query.to_lowercase(), candidate.to_lowercase())
-        };
+            // Case-insensitive comparison without allocation
+            // Use iterator-based char-by-char comparison
+            let mut query_chars = query.chars();
+            let mut candidate_chars = candidate.chars();
 
-        if candidate.starts_with(&query) {
-            // Score based on how much of the candidate is matched
-            // Shorter candidates with same prefix score higher
-            let score = query.len() as f32 / candidate.len() as f32;
-            Some(score)
-        } else {
-            None
+            // Check if candidate starts with query (case-insensitive)
+            loop {
+                match (query_chars.next(), candidate_chars.next()) {
+                    (Some(q), Some(c)) => {
+                        if !q.eq_ignore_ascii_case(&c) {
+                            return None;
+                        }
+                    }
+                    (None, _) => {
+                        // Query exhausted, we have a match
+                        let score = query.len() as f32 / candidate.len() as f32;
+                        return Some(score);
+                    }
+                    (Some(_), None) => {
+                        // Candidate exhausted but query still has chars
+                        return None;
+                    }
+                }
+            }
         }
     }
 }

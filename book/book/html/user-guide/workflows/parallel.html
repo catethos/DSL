@@ -1,0 +1,830 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Parallel Workflows - DSL Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A powerful Domain-Specific Language for building agentic LLM workflows">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">DSL Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL/edit/main/book/src/user-guide/workflows/parallel.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="parallel-workflows"><a class="header" href="#parallel-workflows">Parallel Workflows</a></h1>
+<p>Parallel workflows execute multiple operations concurrently, allowing independent tasks to run simultaneously. DSL uses the <code>Par()</code> function for parallel composition.</p>
+<h2 id="the-par-function"><a class="header" href="#the-par-function">The Par() Function</a></h2>
+<p><strong>Signature:</strong> <code>(...expressions) -&gt; List</code></p>
+<p>Execute multiple expressions in parallel and return results as a list.</p>
+<pre><code class="language-dsl">Par(5, 10, 15)
+
+Par(
+  Calculate(dataA),
+  Calculate(dataB),
+  Calculate(dataC)
+)
+</code></pre>
+<h3 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h3>
+<ol>
+<li>All arguments to <code>Par()</code> start executing immediately</li>
+<li>Execution happens concurrently (not sequentially)</li>
+<li><code>Par()</code> waits for all operations to complete</li>
+<li>Results are returned as a list in argument order</li>
+</ol>
+<h2 id="sequential-vs-parallel"><a class="header" href="#sequential-vs-parallel">Sequential vs Parallel</a></h2>
+<h3 id="sequential-execution"><a class="header" href="#sequential-execution">Sequential Execution</a></h3>
+<p>Operations run one after another:</p>
+<pre><code class="language-dsl">def main() {
+    let resultA = FetchData("endpoint-a")
+    let resultB = FetchData("endpoint-b")
+    let resultC = FetchData("endpoint-c")
+}
+main()
+</code></pre>
+<p><strong>Timeline:</strong></p>
+<pre><code>[A........] [B........] [C........]
+Total: 3x time
+</code></pre>
+<h3 id="parallel-execution"><a class="header" href="#parallel-execution">Parallel Execution</a></h3>
+<p>Operations run concurrently:</p>
+<pre><code class="language-dsl">Par(
+  FetchData("endpoint-a"),
+  FetchData("endpoint-b"),
+  FetchData("endpoint-c")
+) as [resultA, resultB, resultC]
+</code></pre>
+<p><strong>Timeline:</strong></p>
+<pre><code>[A........]
+[B........]
+[C........]
+Total: 1x time (if all take same time)
+</code></pre>
+<h2 id="variable-binding"><a class="header" href="#variable-binding">Variable Binding</a></h2>
+<h3 id="bind-to-list"><a class="header" href="#bind-to-list">Bind to List</a></h3>
+<pre><code class="language-dsl">Par(5, 10, 15) as numbers
+numbers
+</code></pre>
+<h3 id="destructure-results"><a class="header" href="#destructure-results">Destructure Results</a></h3>
+<pre><code class="language-dsl">Par(
+  GetUser(1),
+  GetUser(2),
+  GetUser(3)
+) as [alice, bob, charlie]
+
+alice.name
+</code></pre>
+<h3 id="named-results"><a class="header" href="#named-results">Named Results</a></h3>
+<pre><code class="language-dsl">Par(
+  FetchUsers(),
+  FetchProducts(),
+  FetchOrders()
+) as [users, products, orders]
+
+users |&gt; Length(_)
+</code></pre>
+<h2 id="use-cases"><a class="header" href="#use-cases">Use Cases</a></h2>
+<h3 id="1-multiple-llm-queries"><a class="header" href="#1-multiple-llm-queries">1. Multiple LLM Queries</a></h3>
+<pre><code class="language-dsl">
+
+type Summary { text: String, keywords: [String] }
+type Sentiment { score: Float, label: String }
+type Topics { primary: String, secondary: [String] }
+
+let text = "Long article content..."
+
+Par(
+  Ask("Summarize: " + text),
+  Ask("Sentiment analysis: " + text),
+  Ask("Extract topics: " + text)
+) as [summary, sentiment, topics]
+
+{
+  summary: summary,
+  sentiment: sentiment,
+  topics: topics
+}
+</code></pre>
+<p><strong>Time Saved:</strong></p>
+<ul>
+<li>Sequential: 3 × 2 seconds = 6 seconds</li>
+<li>Parallel: max(2, 2, 2) = 2 seconds</li>
+<li><strong>Speedup: 3x</strong></li>
+</ul>
+<h3 id="2-multiple-api-requests"><a class="header" href="#2-multiple-api-requests">2. Multiple API Requests</a></h3>
+<pre><code class="language-dsl">def FetchUserData(userId) {
+    Par(
+        HTTP("GET", "https://api.example.com/users/" + ToString(userId)),
+        HTTP("GET", "https://api.example.com/users/" + ToString(userId) + "/orders"),
+        HTTP("GET", "https://api.example.com/users/" + ToString(userId) + "/preferences")
+    ) as [profile, orders, preferences]
+
+    {
+        profile: profile,
+        orders: orders,
+        preferences: preferences
+    }
+}
+
+FetchUserData(123)
+</code></pre>
+<h3 id="3-data-processing"><a class="header" href="#3-data-processing">3. Data Processing</a></h3>
+<pre><code class="language-dsl">def ProcessDatasets(files) {
+    Par(
+    SQL("SELECT * FROM '" + files[0] + "'"),
+    SQL("SELECT * FROM '" + files[1] + "'"),
+    SQL("SELECT * FROM '" + files[2] + "'")
+  ) as datasets
+
+  datasets
+    |&gt; Flatten(_)
+    |&gt; filter(_, fn row =&gt; row.valid end)
+</code></pre>
+<h3 id="4-independent-calculations"><a class="header" href="#4-independent-calculations">4. Independent Calculations</a></h3>
+<pre><code class="language-dsl">def CalculateMetrics(data) {
+    Par(
+    Average(data),
+    Min(data),
+    Max(data),
+    Sum(data)
+  ) as [avg, min, max, sum]
+
+  {
+    average: avg,
+    minimum: min,
+    maximum: max,
+    total: sum,
+    range: max - min
+  }
+</code></pre>
+<h2 id="practical-examples"><a class="header" href="#practical-examples">Practical Examples</a></h2>
+<h3 id="example-1-multi-source-data-aggregation"><a class="header" href="#example-1-multi-source-data-aggregation">Example 1: Multi-Source Data Aggregation</a></h3>
+<pre><code class="language-dsl">
+
+type NewsArticle {
+  title: String
+  source: String
+  content: String
+}
+
+def AggregateNews(topic) {
+    Par(
+    FetchFromSource("reuters", topic),
+    FetchFromSource("bbc", topic),
+    FetchFromSource("cnn", topic)
+  ) as sources
+
+  sources
+    |&gt; Flatten(_)
+    |&gt; filter(_, fn article =&gt; Length(article.content end) &gt; 100)
+    |&gt; Take(_, 10)
+
+def FetchFromSource(source, topic) { HTTP("GET", "https://" + source + ".com/api/search?q=" + topic) }
+</code></pre>
+<h3 id="example-2-parallel-llm-analysis"><a class="header" href="#example-2-parallel-llm-analysis">Example 2: Parallel LLM Analysis</a></h3>
+<pre><code class="language-dsl">
+
+type Article { title: String, content: String }
+
+def AnalyzeArticle(article) {
+    Par(
+    Ask("Generate 5 keywords for: " + article.content),
+    Ask("Summarize in 2 sentences: " + article.content),
+    Ask("What is the tone? Options: Positive, Negative, Neutral: " + article.content),
+    Ask("Rate complexity 1-10: " + article.content)
+  ) as [keywords, summary, tone, complexity]
+
+  {
+    title: article.title,
+    keywords: Split(keywords, ","),
+    summary: summary,
+    tone: tone,
+    complexity: ToInt(complexity)
+  }
+</code></pre>
+<h3 id="example-3-batch-user-processing"><a class="header" href="#example-3-batch-user-processing">Example 3: Batch User Processing</a></h3>
+<pre><code class="language-dsl">def ProcessUserBatch(userIds) {
+  let batch = Take(userIds, 5)
+
+  Par(
+    ...map(batch, fn id =&gt; GetUserData(id end))
+  ) as results
+
+  results
+    |&gt; filter(_, fn user =&gt; user != null end)
+    |&gt; map(_, fn user =&gt; {
+         id: user.id,
+         name: user.name,
+         isActive: user.active
+       } end)
+</code></pre>
+<h3 id="example-4-parallel-search"><a class="header" href="#example-4-parallel-search">Example 4: Parallel Search</a></h3>
+<pre><code class="language-dsl">def SearchAllSources(query) {
+    Par(
+    SearchDatabase(query),
+    SearchDocuments(query),
+    SearchWeb(query)
+  ) as [dbResults, docResults, webResults]
+
+  {
+    database: dbResults,
+    documents: docResults,
+    web: webResults,
+    totalCount: Length(dbResults) + Length(docResults) + Length(webResults)
+  }
+</code></pre>
+<h3 id="example-5-multi-model-llm-ensemble"><a class="header" href="#example-5-multi-model-llm-ensemble">Example 5: Multi-Model LLM Ensemble</a></h3>
+<pre><code class="language-dsl">def EnsemblePrediction(prompt) {
+    Par(
+    AskModel("gpt-4", prompt),
+    AskModel("claude", prompt),
+    AskModel("gemini", prompt)
+  ) as [gpt4, claude, gemini]
+
+  {
+    gpt4: gpt4,
+    claude: claude,
+    gemini: gemini,
+    consensus: FindConsensus([gpt4, claude, gemini])
+  }
+</code></pre>
+<h3 id="example-6-parallel-data-transformation"><a class="header" href="#example-6-parallel-data-transformation">Example 6: Parallel Data Transformation</a></h3>
+<pre><code class="language-dsl">def TransformDatasets(data) {
+  let chunks = Chunk(data, 100)
+
+  let batches = Take(chunks, 5)
+
+  Par(
+    ...map(batches, fn chunk =&gt; chunk
+        |&gt; Filter(_, isValid end)
+        |&gt; Map(_, transform)
+        |&gt; Sort(_))
+  ) as processed
+
+  Flatten(processed)
+</code></pre>
+<h3 id="example-7-concurrent-file-processing"><a class="header" href="#example-7-concurrent-file-processing">Example 7: Concurrent File Processing</a></h3>
+<pre><code class="language-dsl">def ProcessFiles(filenames) {
+    Par(
+    ...map(filenames, fn name =&gt; SQL("SELECT * FROM '" + name + "'" end)
+        |&gt; filter(_, fn row =&gt; row.valid end)
+        |&gt; map(_, fn row =&gt; {
+             id: row.id,
+             value: ToFloat(row.value end)
+           }))
+  ) as datasets
+
+  {
+    files: filenames,
+    records: Flatten(datasets),
+    totalRecords: Sum(Map(datasets, Length))
+  }
+</code></pre>
+<h3 id="example-8-parallel-validation"><a class="header" href="#example-8-parallel-validation">Example 8: Parallel Validation</a></h3>
+<pre><code class="language-dsl">def ValidateData(data) {
+    Par(
+    All(data, fn item =&gt; item.age &gt;= 0 end),
+    All(data, fn item =&gt; Length(item.name end) &gt; 0),
+    All(data, fn item =&gt; Contains(item.email, "@" end)),
+    All(data, fn item =&gt; item.score &gt;= 0 &amp;&amp; item.score &lt;= 100 end)
+  ) as [validAge, validName, validEmail, validScore]
+
+  {
+    valid: validAge &amp;&amp; validName &amp;&amp; validEmail &amp;&amp; validScore,
+    checks: {
+      age: validAge,
+      name: validName,
+      email: validEmail,
+      score: validScore
+    }
+  }
+</code></pre>
+<h2 id="combining-sequential-and-parallel"><a class="header" href="#combining-sequential-and-parallel">Combining Sequential and Parallel</a></h2>
+<h3 id="pattern-1-parallel-fetch--sequential-process"><a class="header" href="#pattern-1-parallel-fetch--sequential-process">Pattern 1: Parallel Fetch → Sequential Process</a></h3>
+<pre><code class="language-dsl">Par(
+  FetchDataA(),
+  FetchDataB(),
+  FetchDataC()
+) as [dataA, dataB, dataC]
+
+  |&gt; CombineData(dataA, dataB, dataC) as combined
+  |&gt; ValidateData(combined) as validated
+  |&gt; TransformData(validated)
+</code></pre>
+<h3 id="pattern-2-sequential-setup--parallel-execute"><a class="header" href="#pattern-2-sequential-setup--parallel-execute">Pattern 2: Sequential Setup → Parallel Execute</a></h3>
+<pre><code class="language-dsl">def main() {
+    let config = LoadConfig()
+    let users = GetUsers()
+
+    Par(
+      ...map(users, fn user =&gt; ProcessUser(user, config end))
+    ) as results
+
+    results
+      |&gt; Flatten(_)
+      |&gt; filter(_, fn r =&gt; r.success end)
+}
+main()
+</code></pre>
+<h3 id="pattern-3-mixed-sequentialparallel-pipeline"><a class="header" href="#pattern-3-mixed-sequentialparallel-pipeline">Pattern 3: Mixed Sequential/Parallel Pipeline</a></h3>
+<pre><code class="language-dsl">LoadData("input.csv") as rawData
+
+  |&gt; Chunk(_, 100) as chunks
+  |&gt; Take(chunks, 5) as batches
+  |&gt; _ as _ |&gt; Par(
+       ...Map(batches, ProcessBatch)
+     ) as processed
+
+  |&gt; Flatten(processed)
+  |&gt; Sort(_)
+  |&gt; SaveData("output.csv")
+</code></pre>
+<h3 id="pattern-4-nested-parallel-operations"><a class="header" href="#pattern-4-nested-parallel-operations">Pattern 4: Nested Parallel Operations</a></h3>
+<pre><code class="language-dsl">def ProcessCategories(categories) {
+  Par(
+    ...map(categories, fn category =&gt;
+      Par(
+        ...Map(category.items, ProcessItem end)
+      ) as items
+      {
+        category: category.name,
+        items: items,
+        count: Length(items)
+      })
+  ) as results
+
+  {
+    categories: results,
+    totalItems: Sum(map(results, fn r =&gt; r.count end))
+  }
+</code></pre>
+<h2 id="performance-considerations"><a class="header" href="#performance-considerations">Performance Considerations</a></h2>
+<h3 id="when-to-use-parallel-execution"><a class="header" href="#when-to-use-parallel-execution">When to Use Parallel Execution</a></h3>
+<p><strong>Good Use Cases (I/O-bound):</strong></p>
+<pre><code class="language-dsl">Par(
+  HTTP("GET", "https://api1.com/data"),
+  HTTP("GET", "https://api2.com/data")
+)
+
+Par(
+  Ask("Question 1"),
+  Ask("Question 2")
+)
+
+Par(
+  SQL("SELECT * FROM users"),
+  SQL("SELECT * FROM orders")
+)
+
+Par(
+  LoadFile("data1.csv"),
+  LoadFile("data2.csv")
+)
+</code></pre>
+<p><strong>Poor Use Cases (CPU-bound):</strong></p>
+<pre><code class="language-dsl">Par(
+  Sum([1, 2, 3]),
+  Sum([4, 5, 6])
+)
+
+Par(
+  5 + 3,
+  10 * 2
+)
+</code></pre>
+<h3 id="overhead-considerations"><a class="header" href="#overhead-considerations">Overhead Considerations</a></h3>
+<p>Parallel execution has overhead:</p>
+<pre><code class="language-dsl">Par(
+  Length([1, 2, 3]),
+  First([1, 2, 3])
+)
+
+Par(
+  FetchData("url1"),
+  FetchData("url2")
+)
+</code></pre>
+<h3 id="optimal-parallelism"><a class="header" href="#optimal-parallelism">Optimal Parallelism</a></h3>
+<p>Don’t parallelize too many operations at once:</p>
+<pre><code class="language-dsl">Par(
+  ...Map(Range(1, 1001), fn i =&gt; FetchData(i end))
+)
+
+def ProcessInBatches(items, batchSize) { items }
+    |&gt; Chunk(_, batchSize)
+    |&gt; map(_, fn batch =&gt; Par(...Map(batch, ProcessItem end))
+           |&gt; Flatten(_))
+    |&gt; Flatten(_)
+
+ProcessInBatches(Range(1, 1001), 10)
+</code></pre>
+<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<h3 id="1-ensure-independence"><a class="header" href="#1-ensure-independence">1. Ensure Independence</a></h3>
+<p>Parallel operations must be independent:</p>
+<pre><code class="language-dsl">def main() {
+    Par(
+      FetchUsers(),
+      FetchProducts(),
+      FetchOrders()
+    )
+
+    let users = FetchUsers()
+    let orders = FetchOrdersForUsers(users)
+}
+main()
+</code></pre>
+<h3 id="2-handle-all-results"><a class="header" href="#2-handle-all-results">2. Handle All Results</a></h3>
+<p>Always capture parallel results:</p>
+<pre><code class="language-dsl">Par(
+  Operation1(),
+  Operation2(),
+  Operation3()
+) as [result1, result2, result3]
+
+result1 |&gt; DoSomething(_)
+
+Par(
+  Operation1(),
+  Operation2(),
+  Operation3()
+)
+</code></pre>
+<h3 id="3-keep-operations-similar"><a class="header" href="#3-keep-operations-similar">3. Keep Operations Similar</a></h3>
+<p>Group similar operations together:</p>
+<pre><code class="language-dsl">Par(
+  FetchData("endpoint1"),
+  FetchData("endpoint2"),
+  FetchData("endpoint3")
+)
+
+Par(
+  FetchData("endpoint1"),
+  QuickCalc(),
+  FetchData("endpoint3")
+)
+</code></pre>
+<h3 id="4-limit-concurrency"><a class="header" href="#4-limit-concurrency">4. Limit Concurrency</a></h3>
+<p>Control the number of parallel operations:</p>
+<pre><code class="language-dsl">Par(
+  FetchData("url1"),
+  FetchData("url2"),
+  FetchData("url3"),
+  FetchData("url4"),
+  FetchData("url5")
+)
+
+let items = Range(1, 101)
+items
+  |&gt; Chunk(_, 5)
+  |&gt; map(_, fn batch =&gt; Par(...Map(batch, ProcessItem end))
+         |&gt; Flatten(_))
+  |&gt; Flatten(_)
+</code></pre>
+<h3 id="5-use-descriptive-variable-names"><a class="header" href="#5-use-descriptive-variable-names">5. Use Descriptive Variable Names</a></h3>
+<pre><code class="language-dsl">Par(
+  GetUserProfile(userId),
+  GetUserOrders(userId),
+  GetUserPreferences(userId)
+) as [profile, orders, preferences]
+
+Par(
+  GetUserProfile(userId),
+  GetUserOrders(userId),
+  GetUserPreferences(userId)
+) as [a, b, c]
+</code></pre>
+<h2 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h2>
+<h3 id="parallel-errors"><a class="header" href="#parallel-errors">Parallel Errors</a></h3>
+<p>If any parallel operation fails, the entire <code>Par()</code> fails:</p>
+<pre><code class="language-dsl">Par(
+  SuccessfulOp(),
+  FailingOp(),
+  SuccessfulOp()
+)
+</code></pre>
+<h3 id="defensive-parallel-execution"><a class="header" href="#defensive-parallel-execution">Defensive Parallel Execution</a></h3>
+<pre><code class="language-dsl">def SafeFetch(url) { FetchData(url) }
+
+Par(
+  SafeFetch("url1"),
+  SafeFetch("url2"),
+  SafeFetch("url3")
+) as results
+
+results
+  |&gt; filter(_, fn r =&gt; r != null end)
+</code></pre>
+<h2 id="comparison-table"><a class="header" href="#comparison-table">Comparison Table</a></h2>
+<p>| Aspect | Sequential (<code>|&gt;</code>) | Parallel (<code>Par()</code>) |
+|––––|——————|—————––|
+| <strong>Execution</strong> | One after another | All at once |
+| <strong>Time</strong> | Sum of all operations | Max of all operations |
+| <strong>Use Case</strong> | Dependent operations | Independent operations |
+| <strong>Overhead</strong> | Minimal | Small constant |
+| <strong>Best For</strong> | CPU-bound, dependent | I/O-bound, independent |
+| <strong>Syntax</strong> | <code>a |&gt; b |&gt; c</code> | <code>Par(a, b, c)</code> |
+| <strong>Results</strong> | Last step only | List of all results |</p>
+<h2 id="common-patterns"><a class="header" href="#common-patterns">Common Patterns</a></h2>
+<h3 id="pattern-1-fetch-merge"><a class="header" href="#pattern-1-fetch-merge">Pattern 1: Fetch-Merge</a></h3>
+<pre><code class="language-dsl">Par(
+  FetchFromSourceA(),
+  FetchFromSourceB(),
+  FetchFromSourceC()
+) as sources
+
+sources
+  |&gt; Flatten(_)
+  |&gt; Unique(_)
+  |&gt; Sort(_)
+</code></pre>
+<h3 id="pattern-2-map-reduce"><a class="header" href="#pattern-2-map-reduce">Pattern 2: Map-Reduce</a></h3>
+<pre><code class="language-dsl">let data = Chunk(largeDataset, 100)
+
+Par(
+  ...Map(Take(data, 5), ProcessChunk)
+) as results
+
+results
+  |&gt; Flatten(_)
+  |&gt; Reduce(_, 0, def (sum, item) := sum + item.value)
+</code></pre>
+<h3 id="pattern-3-scatter-gather"><a class="header" href="#pattern-3-scatter-gather">Pattern 3: Scatter-Gather</a></h3>
+<pre><code class="language-dsl">let tasks = [task1, task2, task3, task4, task5]
+
+Par(
+  ...Map(tasks, ExecuteTask)
+) as results
+
+{
+  completed: Count(results, fn r =&gt; r.success end),
+  failed: Count(results, fn r =&gt; Not(r.success end)),
+  results: results
+}
+</code></pre>
+<h3 id="pattern-4-pipeline-with-parallel-stage"><a class="header" href="#pattern-4-pipeline-with-parallel-stage">Pattern 4: Pipeline with Parallel Stage</a></h3>
+<pre><code class="language-dsl">LoadData("input.csv") as raw
+  |&gt; CleanData(_) as cleaned
+  |&gt; ValidateData(cleaned) as validated
+
+  |&gt; Chunk(_, 50) as chunks
+  |&gt; _ as _ |&gt; Par(
+       ...Map(Take(chunks, 5), ProcessChunk)
+     ) as processed
+
+  |&gt; Flatten(processed)
+  |&gt; Sort(_)
+  |&gt; FormatOutput(_)
+</code></pre>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><a href="./sequential.html">Sequential Workflows</a> - Pipeline operator and sequential composition</li>
+<li><a href="./patterns.html">Workflow Patterns</a> - Common patterns and anti-patterns</li>
+<li><a href="../builtins/README.html">Builtin Functions</a> - Functions to use in workflows</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../user-guide/workflows/sequential.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../user-guide/workflows/patterns.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../user-guide/workflows/sequential.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../user-guide/workflows/patterns.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_line_numbers = true;
+        </script>
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../../ace.js"></script>
+        <script src="../../mode-rust.js"></script>
+        <script src="../../editor.js"></script>
+        <script src="../../theme-dawn.js"></script>
+        <script src="../../theme-tomorrow_night.js"></script>
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

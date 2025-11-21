@@ -1,0 +1,821 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Workflow Patterns - DSL Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A powerful Domain-Specific Language for building agentic LLM workflows">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">DSL Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL/edit/main/book/src/user-guide/workflows/patterns.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="workflow-patterns"><a class="header" href="#workflow-patterns">Workflow Patterns</a></h1>
+<p>Common patterns for building robust, maintainable workflows in DSL. Learn when to use sequential, parallel, or mixed approaches for different problem types.</p>
+<h2 id="data-pipeline-patterns"><a class="header" href="#data-pipeline-patterns">Data Pipeline Patterns</a></h2>
+<h3 id="extract-transform-load-etl"><a class="header" href="#extract-transform-load-etl">Extract-Transform-Load (ETL)</a></h3>
+<p>Classic data processing pattern: extract from source, transform data, load to destination.</p>
+<pre><code class="language-dsl">def ETLPipeline(sourceFile, destFile) {
+  SQL("SELECT * FROM '" + sourceFile + "'") as rawData
+
+    |&gt; filter(_, fn row =&gt; row.valid end) as validRows
+    |&gt; map(validRows, fn row =&gt; {
+         id: row.id,
+         value: ToFloat(row.value end),
+         category: Lower(Trim(row.category)),
+         timestamp: row.created_at
+       }) as transformed
+
+    |&gt; SaveData(destFile, transformed)
+
+ETLPipeline("input.csv", "output.csv")
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Batch data processing</li>
+<li>Data migration</li>
+<li>Report generation</li>
+<li>Data warehouse loading</li>
+</ul>
+<h3 id="streaming-pipeline"><a class="header" href="#streaming-pipeline">Streaming Pipeline</a></h3>
+<p>Process data continuously in small batches:</p>
+<pre><code class="language-dsl">def StreamProcess(dataStream) { dataStream }
+    |&gt; Chunk(_, 10) as batches
+    |&gt; map(batches, fn batch =&gt; batch
+           |&gt; Filter(_, isValid end)
+           |&gt; Map(_, transform)
+           |&gt; ProcessBatch(_))
+    |&gt; Flatten(_)
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Real-time data processing</li>
+<li>Large datasets (won’t fit in memory)</li>
+<li>Continuous data flow</li>
+</ul>
+<h3 id="map-reduce"><a class="header" href="#map-reduce">Map-Reduce</a></h3>
+<p>Parallel processing with aggregation:</p>
+<pre><code class="language-dsl">def MapReduce(data, mapFunc, reduceFunc, initialValue) {
+  data
+    |&gt; Chunk(_, 100) as chunks
+    |&gt; Take(chunks, 5) as batches
+    |&gt; _ as _ |&gt; Par(
+         ...map(batches, fn chunk =&gt; Map(chunk, mapFunc end))
+       ) as mapped
+
+    |&gt; Flatten(mapped)
+    |&gt; Reduce(_, initialValue, reduceFunc)
+
+MapReduce(
+  documents,
+  fn doc =&gt; Length(Split(doc.text, " " end)),
+  def (sum, count) := sum + count,
+  0
+)
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Large-scale data processing</li>
+<li>Aggregations over big datasets</li>
+<li>Distributed computation</li>
+</ul>
+<h3 id="fan-outfan-in"><a class="header" href="#fan-outfan-in">Fan-Out/Fan-In</a></h3>
+<p>Distribute work, then collect results:</p>
+<pre><code class="language-dsl">def FanOutFanIn(input, workers) {
+  Par(
+    ...map(workers, fn worker =&gt; ProcessWithWorker(input, worker end))
+  ) as results
+
+  results
+    |&gt; filter(_, fn r =&gt; r.success end)
+    |&gt; map(_, fn r =&gt; r.data end)
+    |&gt; Flatten(_)
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Parallel processing with different strategies</li>
+<li>Multiple API endpoints</li>
+<li>Ensemble methods</li>
+</ul>
+<h2 id="llm-workflow-patterns"><a class="header" href="#llm-workflow-patterns">LLM Workflow Patterns</a></h2>
+<h3 id="multi-step-reasoning"><a class="header" href="#multi-step-reasoning">Multi-Step Reasoning</a></h3>
+<p>Chain LLM calls where each step builds on the previous:</p>
+<pre><code class="language-dsl">
+
+type Analysis { insights: [String], confidence: Float }
+
+def MultiStepAnalysis(text) { text }
+    |&gt; Ask("Identify key themes in: " + _) as themes
+    |&gt; Ask("Analyze sentiment of themes: " + themes) as sentiment
+    |&gt; Ask("Generate insights from: " + sentiment) as insights
+    |&gt; {
+         themes: themes,
+         sentiment: sentiment,
+         insights: insights
+       }
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Complex reasoning tasks</li>
+<li>Dependent analysis steps</li>
+<li>Building context progressively</li>
+</ul>
+<h3 id="parallel-analysis"><a class="header" href="#parallel-analysis">Parallel Analysis</a></h3>
+<p>Multiple independent LLM queries:</p>
+<pre><code class="language-dsl">def ParallelAnalysis(text) {
+    Par(
+    Ask("Summarize: " + text),
+    Ask("Extract keywords: " + text),
+    Ask("Sentiment: " + text),
+    Ask("Category: " + text)
+  ) as [summary, keywords, sentiment, category]
+
+  {
+    summary: summary,
+    keywords: Split(keywords, ","),
+    sentiment: sentiment,
+    category: category
+  }
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Independent analyses</li>
+<li>Extracting multiple aspects</li>
+<li>Time-critical processing</li>
+</ul>
+<h3 id="critique-and-refine"><a class="header" href="#critique-and-refine">Critique and Refine</a></h3>
+<p>Generate, review, and improve:</p>
+<pre><code class="language-dsl">
+
+type Draft { content: String, issues: [String] }
+type FinalDocument { content: String, quality: Float }
+
+def CritiqueAndRefine(topic) {
+  Ask("Write an article about: " + topic) as draft
+
+    |&gt; Ask("What are issues with: " + draft) as critique
+
+    |&gt; Ask("Improve based on feedback. Original: " + draft + " Feedback: " + critique) as refined
+
+  {
+    draft: draft,
+    critique: critique,
+    final: refined
+  }
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Content generation</li>
+<li>Quality improvement loops</li>
+<li>Self-verification</li>
+</ul>
+<h3 id="branching-logic"><a class="header" href="#branching-logic">Branching Logic</a></h3>
+<p>Conditional LLM paths:</p>
+<pre><code class="language-dsl">def BranchingWorkflow(input) {
+  Ask("Classify as: technical, business, or personal: " + input) as classification
+
+  classification == "technical" ? HandleTechnical(input) :
+  classification == "business" ? HandleBusiness(input) :
+  HandlePersonal(input)
+
+def HandleTechnical(input) { Ask("Provide technical analysis: " + input) }
+
+def HandleBusiness(input) { Ask("Provide business analysis: " + input) }
+
+def HandlePersonal(input) { Ask("Provide personal advice: " + input) }
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Different handling for different inputs</li>
+<li>Specialized processing paths</li>
+<li>Context-dependent logic</li>
+</ul>
+<h3 id="ensemble-methods"><a class="header" href="#ensemble-methods">Ensemble Methods</a></h3>
+<p>Combine multiple LLM responses:</p>
+<pre><code class="language-dsl">def Ensemble(prompt) {
+    Par(
+    Ask(prompt + " (Approach: analytical)"),
+    Ask(prompt + " (Approach: creative)"),
+    Ask(prompt + " (Approach: practical)")
+  ) as [analytical, creative, practical]
+
+  Ask("Synthesize these perspectives: 1) " + analytical + " 2) " + creative + " 3) " + practical)
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>High-stakes decisions</li>
+<li>Multiple perspectives needed</li>
+<li>Bias reduction</li>
+</ul>
+<h2 id="validation-patterns"><a class="header" href="#validation-patterns">Validation Patterns</a></h2>
+<h3 id="validate-process-format"><a class="header" href="#validate-process-format">Validate-Process-Format</a></h3>
+<p>Ensure data quality throughout:</p>
+<pre><code class="language-dsl">def ValidateProcessFormat(input) {
+  input
+    |&gt; ValidateInput(_) as validated
+    |&gt; _ as _ |&gt; Length(validated) == 0
+       ? Error("No valid input data")
+       : validated
+
+    |&gt; Map(_, transform) as processed
+
+    |&gt; ValidateOutput(_) as validOutput
+
+    |&gt; FormatResults(validOutput)
+
+def ValidateInput(data) { filter(data, fn item =&gt; item.id != null &amp;&amp; }
+    Length(item.name end) &gt; 0 &amp;&amp;
+    item.value &gt;= 0)
+
+def ValidateOutput(data) { filter(data, fn item =&gt; item.result != null &amp;&amp; }
+    item.status == "success" end)
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Data quality critical</li>
+<li>Multiple processing steps</li>
+<li>Need to catch errors early</li>
+</ul>
+<h3 id="progressive-validation"><a class="header" href="#progressive-validation">Progressive Validation</a></h3>
+<p>Validate incrementally:</p>
+<pre><code class="language-dsl">def ProgressiveValidation(data) { data }
+    |&gt; filter(_, fn item =&gt; item.id != null end) as level1
+    |&gt; _ as _ |&gt; Log("Passed basic validation: " + ToString(Length(level1)))
+
+    |&gt; filter(_, fn item =&gt; item.name != null &amp;&amp;
+         item.email != null end) as level2
+    |&gt; _ as _ |&gt; Log("Passed required fields: " + ToString(Length(level2)))
+
+    |&gt; filter(_, fn item =&gt; item.age &gt;= 18 &amp;&amp;
+         Contains(item.email, "@" end)) as level3
+    |&gt; _ as _ |&gt; Log("Passed business rules: " + ToString(Length(level3)))
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Complex validation rules</li>
+<li>Debugging data issues</li>
+<li>Progress tracking</li>
+</ul>
+<h2 id="error-handling-patterns"><a class="header" href="#error-handling-patterns">Error Handling Patterns</a></h2>
+<h3 id="early-termination"><a class="header" href="#early-termination">Early Termination</a></h3>
+<p>Check conditions before expensive operations:</p>
+<pre><code class="language-dsl">def SafeProcess(data) {
+  Length(data) == 0 ? Error("No data to process") :
+  Length(data) &gt; 10000 ? Error("Too much data") :
+
+  data
+    |&gt; Filter(_, isValid)
+    |&gt; Map(_, expensiveTransform)
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Expensive operations</li>
+<li>Resource constraints</li>
+<li>Clear failure conditions</li>
+</ul>
+<h3 id="defensive-processing"><a class="header" href="#defensive-processing">Defensive Processing</a></h3>
+<p>Handle errors gracefully:</p>
+<pre><code class="language-dsl">def DefensiveProcess(data) { data }
+    |&gt; map(_, fn item =&gt; {
+         ...item,
+         processed: ProcessItem(item end) ?? defaultValue,
+         error: ProcessItem(item) == null ? "Failed" : null
+       }) as results
+
+  {
+    successful: filter(results, fn r =&gt; r.error == null end),
+    failed: filter(results, fn r =&gt; r.error != null end),
+    stats: {
+      total: Length(results),
+      success: Count(results, fn r =&gt; r.error == null end),
+      failure: Count(results, fn r =&gt; r.error != null end)
+    }
+  }
+</code></pre>
+<p><strong>When to Use:</strong></p>
+<ul>
+<li>Unreliable operations</li>
+<li>Batch processing</li>
+<li>Need to continue despite errors</li>
+</ul>
+<h2 id="optimization-patterns"><a class="header" href="#optimization-patterns">Optimization Patterns</a></h2>
+<h3 id="filter-early"><a class="header" href="#filter-early">Filter Early</a></h3>
+<p>Reduce data size as soon as possible:</p>
+<pre><code class="language-dsl">largeDataset
+  |&gt; Filter(_, isValid)
+  |&gt; Map(_, expensiveTransform)
+  |&gt; Sort(_)
+
+largeDataset
+  |&gt; Map(_, expensiveTransform)
+  |&gt; Sort(_)
+  |&gt; Filter(_, isValid)
+</code></pre>
+<h3 id="cache-expensive-computations"><a class="header" href="#cache-expensive-computations">Cache Expensive Computations</a></h3>
+<p>Calculate once, reuse many times:</p>
+<pre><code class="language-dsl">def main() {
+    let average = Average(values)
+    let standardDev = CalculateStdDev(values, average)
+
+    values
+      |&gt; map(_, fn v =&gt; {
+           value: v,
+           zScore: (v - average end) / standardDev
+         })
+
+    values
+      |&gt; map(_, fn v =&gt; {
+           value: v,
+           zScore: (v - Average(values end)) / CalculateStdDev(values, Average(values))
+         })
+}
+main()
+</code></pre>
+<h3 id="batch-processing"><a class="header" href="#batch-processing">Batch Processing</a></h3>
+<p>Process in manageable chunks:</p>
+<pre><code class="language-dsl">def BatchProcess(items, batchSize) { items }
+    |&gt; Chunk(_, batchSize) as batches
+    |&gt; map(batches, fn batch =&gt; Par(
+           ...Map(Take(batch, 5 end), ProcessItem)
+         )
+         |&gt; Flatten(_))
+    |&gt; Flatten(_)
+
+BatchProcess(largeDataset, 100)
+</code></pre>
+<h2 id="anti-patterns"><a class="header" href="#anti-patterns">Anti-Patterns</a></h2>
+<h3 id="anti-pattern-1-unnecessary-parallelization"><a class="header" href="#anti-pattern-1-unnecessary-parallelization">Anti-Pattern 1: Unnecessary Parallelization</a></h3>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">Par(
+  Length([1, 2, 3]),
+  Sum([1, 2, 3]),
+  First([1, 2, 3])
+)
+</code></pre>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">def main() {
+    let len = Length([1, 2, 3])
+    let sum = Sum([1, 2, 3])
+    let first = First([1, 2, 3])
+}
+main()
+</code></pre>
+<p><strong>Why Bad:</strong> Parallel overhead exceeds time saved.</p>
+<h3 id="anti-pattern-2-sequential-dependent-data"><a class="header" href="#anti-pattern-2-sequential-dependent-data">Anti-Pattern 2: Sequential Dependent Data</a></h3>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">def main() {
+    let dataA = FetchData("a")
+    let dataB = FetchData("b")
+    let dataC = CombineData(dataA, dataB)
+}
+main()
+</code></pre>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">Par(
+  FetchData("a"),
+  FetchData("b")
+) as [dataA, dataB]
+
+let dataC = CombineData(dataA, dataB)
+</code></pre>
+<p><strong>Why Bad:</strong> Wastes time when operations could run in parallel.</p>
+<h3 id="anti-pattern-3-nested-pipeline-chaos"><a class="header" href="#anti-pattern-3-nested-pipeline-chaos">Anti-Pattern 3: Nested Pipeline Chaos</a></h3>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">ProcessData(
+  TransformData(
+    FilterData(
+      LoadData("file.csv")
+    )
+  )
+)
+</code></pre>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">LoadData("file.csv")
+  |&gt; FilterData(_)
+  |&gt; TransformData(_)
+  |&gt; ProcessData(_)
+</code></pre>
+<p><strong>Why Bad:</strong> Hard to read and debug.</p>
+<h3 id="anti-pattern-4-ignored-intermediate-results"><a class="header" href="#anti-pattern-4-ignored-intermediate-results">Anti-Pattern 4: Ignored Intermediate Results</a></h3>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">data
+  |&gt; Process1(_)
+  |&gt; Process2(_)
+  |&gt; Process3(_)
+</code></pre>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">data
+  |&gt; Process1(_) as step1
+  |&gt; _ as _ |&gt; Log("After step 1: " + ToString(Length(step1)))
+  |&gt; Process2(step1) as step2
+  |&gt; _ as _ |&gt; Log("After step 2: " + ToString(Length(step2)))
+  |&gt; Process3(step2)
+</code></pre>
+<p><strong>Why Bad:</strong> Hard to debug when something goes wrong.</p>
+<h3 id="anti-pattern-5-over-parallelization"><a class="header" href="#anti-pattern-5-over-parallelization">Anti-Pattern 5: Over-Parallelization</a></h3>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">Par(
+  ...Map(Range(1, 10001), FetchData)
+)
+</code></pre>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">def ProcessInBatches(ids, batchSize) { ids }
+    |&gt; Chunk(_, batchSize)
+    |&gt; map(_, fn batch =&gt; Par(...Map(batch, FetchData end))
+           |&gt; Flatten(_))
+    |&gt; Flatten(_)
+
+ProcessInBatches(Range(1, 10001), 10)
+</code></pre>
+<p><strong>Why Bad:</strong> Overwhelms system resources.</p>
+<h3 id="anti-pattern-6-no-error-handling"><a class="header" href="#anti-pattern-6-no-error-handling">Anti-Pattern 6: No Error Handling</a></h3>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">data
+  |&gt; Map(_, riskyOperation)
+  |&gt; Process(_)
+</code></pre>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">data
+  |&gt; map(_, fn item =&gt; {
+       ...item,
+       result: riskyOperation(item end) ?? null,
+       failed: riskyOperation(item) == null
+     })
+  |&gt; filter(_, fn item =&gt; Not(item.failed end))
+  |&gt; map(_, fn item =&gt; item.result end)
+  |&gt; Process(_)
+</code></pre>
+<p><strong>Why Bad:</strong> One failure breaks entire pipeline.</p>
+<h3 id="anti-pattern-7-repeated-expensive-calls"><a class="header" href="#anti-pattern-7-repeated-expensive-calls">Anti-Pattern 7: Repeated Expensive Calls</a></h3>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">users
+  |&gt; filter(_, fn u =&gt; IsValidUser(u, GetConfig( end)))
+  |&gt; map(_, fn u =&gt; ProcessUser(u, GetConfig( end)))
+  |&gt; Sort(_, fn u =&gt; ScoreUser(u, GetConfig( end)))
+</code></pre>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">let config = GetConfig()
+
+users
+  |&gt; filter(_, fn u =&gt; IsValidUser(u, config end))
+  |&gt; map(_, fn u =&gt; ProcessUser(u, config end))
+  |&gt; Sort(_, fn u =&gt; ScoreUser(u, config end))
+</code></pre>
+<p><strong>Why Bad:</strong> Unnecessary repeated work.</p>
+<h3 id="anti-pattern-8-monolithic-functions"><a class="header" href="#anti-pattern-8-monolithic-functions">Anti-Pattern 8: Monolithic Functions</a></h3>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">def ProcessEverything(data) {
+  ...
+</code></pre>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">def ProcessEverything(data) { data }
+    |&gt; Validate(_) as validated
+    |&gt; Transform(validated) as transformed
+    |&gt; Enrich(transformed) as enriched
+    |&gt; Format(enriched)
+
+def Validate(data) { ... }
+def Transform(data) { ... }
+def Enrich(data) { ... }
+def Format(data) { ... }
+</code></pre>
+<p><strong>Why Bad:</strong> Hard to maintain and test.</p>
+<h2 id="composition-patterns"><a class="header" href="#composition-patterns">Composition Patterns</a></h2>
+<h3 id="pattern-composition"><a class="header" href="#pattern-composition">Pattern Composition</a></h3>
+<p>Combine patterns for complex workflows:</p>
+<pre><code class="language-dsl">def ComplexWorkflow(input) {
+  input
+    |&gt; Extract(_) as raw
+    |&gt; Transform(raw) as transformed
+
+    |&gt; Chunk(transformed, 100) as chunks
+    |&gt; _ as _ |&gt; Par(
+         ...Map(Take(chunks, 5), ProcessChunk)
+       ) as processed
+
+    |&gt; Flatten(processed) as flattened
+    |&gt; Reduce(flattened, initialState, aggregateFunc) as aggregated
+
+    |&gt; ValidateOutput(aggregated) as validated
+    |&gt; FormatOutput(validated)
+</code></pre>
+<h3 id="layered-architecture"><a class="header" href="#layered-architecture">Layered Architecture</a></h3>
+<p>Separate concerns into layers:</p>
+<pre><code class="language-dsl">def LoadUsers() { SQL("SELECT * FROM users") }
+def LoadOrders() { SQL("SELECT * FROM orders") }
+
+def ProcessUsers(users) { users }
+    |&gt; Filter(_, isActive)
+    |&gt; Map(_, enrichUser)
+
+def ProcessOrders(orders, users) { orders }
+    |&gt; Filter(_, isValid)
+    |&gt; map(_, fn o =&gt; AttachUser(o, users end))
+
+def FullPipeline() {
+    Par(
+    LoadUsers(),
+    LoadOrders()
+  ) as [users, orders]
+
+  let processedUsers = ProcessUsers(users)
+  let processedOrders = ProcessOrders(orders, processedUsers)
+
+  {
+    users: processedUsers,
+    orders: processedOrders
+  }
+</code></pre>
+<h2 id="best-practices-summary"><a class="header" href="#best-practices-summary">Best Practices Summary</a></h2>
+<h3 id="1-choose-the-right-pattern"><a class="header" href="#1-choose-the-right-pattern">1. Choose the Right Pattern</a></h3>
+<ul>
+<li><strong>Sequential</strong> for dependent operations</li>
+<li><strong>Parallel</strong> for independent I/O operations</li>
+<li><strong>Batch</strong> for large datasets</li>
+<li><strong>Streaming</strong> for continuous data</li>
+</ul>
+<h3 id="2-name-intermediate-results"><a class="header" href="#2-name-intermediate-results">2. Name Intermediate Results</a></h3>
+<pre><code class="language-dsl">data
+  |&gt; Process1(_) as step1
+  |&gt; Process2(step1) as step2
+  |&gt; Process3(step2)
+
+data
+  |&gt; Process1(_)
+  |&gt; Process2(_)
+  |&gt; Process3(_)
+</code></pre>
+<h3 id="3-validate-early-and-often"><a class="header" href="#3-validate-early-and-often">3. Validate Early and Often</a></h3>
+<pre><code class="language-dsl">input
+  |&gt; ValidateInput(_)
+  |&gt; Process(_)
+  |&gt; ValidateOutput(_)
+</code></pre>
+<h3 id="4-handle-errors-gracefully"><a class="header" href="#4-handle-errors-gracefully">4. Handle Errors Gracefully</a></h3>
+<pre><code class="language-dsl">data
+  |&gt; Map(_, safeTransform)
+  |&gt; Filter(_, isNotNull)
+</code></pre>
+<h3 id="5-optimize-for-readability"><a class="header" href="#5-optimize-for-readability">5. Optimize for Readability</a></h3>
+<pre><code class="language-dsl">LoadData("input.csv")
+  |&gt; CleanData(_) as cleaned
+  |&gt; ValidateData(cleaned) as validated
+  |&gt; TransformData(validated) as transformed
+  |&gt; SaveData("output.csv", transformed)
+</code></pre>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><a href="./sequential.html">Sequential Workflows</a> - Pipeline operator and sequential composition</li>
+<li><a href="./parallel.html">Parallel Workflows</a> - Concurrent execution with Par()</li>
+<li><a href="../builtins/README.html">Builtin Functions</a> - Functions to use in workflows</li>
+<li><a href="../type-system/custom-types.html">Type System</a> - Defining structured data</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../user-guide/workflows/parallel.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../user-guide/interfaces/tui.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../user-guide/workflows/parallel.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../user-guide/interfaces/tui.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_line_numbers = true;
+        </script>
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../../ace.js"></script>
+        <script src="../../mode-rust.js"></script>
+        <script src="../../editor.js"></script>
+        <script src="../../theme-dawn.js"></script>
+        <script src="../../theme-tomorrow_night.js"></script>
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

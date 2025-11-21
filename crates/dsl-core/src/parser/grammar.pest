@@ -446,17 +446,7 @@ map_literal = {
 }
 
 map_entry = {
-    (identifier | string_literal) ~ ":" ~ value
-}
-
-value = _{
-    string_literal
-    | float
-    | integer
-    | boolean
-    | identifier
-    | map_literal
-    | list_literal
+    (identifier | string_literal) ~ ":" ~ expr
 }
 
 description = { string_literal }

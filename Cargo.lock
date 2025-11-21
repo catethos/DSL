@@ -1647,7 +1647,7 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "dsl-autocomplete"
-version = "2.1.0"
+version = "2.4.0"
 dependencies = [
  "dsl-core",
  "nucleo-matcher",
@@ -1656,7 +1656,7 @@ dependencies = [
 
 [[package]]
 name = "dsl-core"
-version = "2.1.0"
+version = "2.4.0"
 dependencies = [
  "anyhow",
  "dsl-ir",
@@ -1670,7 +1670,7 @@ dependencies = [
 
 [[package]]
 name = "dsl-egui"
-version = "2.1.0"
+version = "2.4.0"
 dependencies = [
  "arboard",
  "dsl-autocomplete",
@@ -1684,6 +1684,7 @@ dependencies = [
  "egui_plot",
  "image 0.25.8",
  "indexmap 2.12.0",
+ "lazy_static",
  "pulldown-cmark 0.12.2",
  "rfd",
  "serde",
@@ -1731,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "dsl-repl"
-version = "2.1.0"
+version = "2.4.0"
 dependencies = [
  "clap",
  "dsl-core",
@@ -1747,7 +1748,7 @@ dependencies = [
 
 [[package]]
 name = "dsl-tui"
-version = "2.1.0"
+version = "2.4.0"
 dependencies = [
  "arboard",
  "crossterm",

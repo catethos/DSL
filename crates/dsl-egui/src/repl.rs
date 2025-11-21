@@ -12,6 +12,11 @@ use crate::theme::Theme;
 
 use dsl_core::{compile_function_group, resolve_program, SymbolTable};
 
+// Lazy static tokio runtime to avoid creating new runtime on every evaluation
+lazy_static::lazy_static! {
+    static ref TOKIO_RT: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+}
+
 // Re-export AnimationType for convenience
 pub use crate::animations::AnimationType as Animation;
 
@@ -63,6 +68,9 @@ pub struct ReplPane {
     /// Flag to indicate we're accepting an autocomplete suggestion
     accepting_suggestion: bool,
 
+    /// Flag to indicate autocomplete needs runtime refresh (after declarations)
+    needs_autocomplete_refresh: bool,
+
     /// Persistent symbol table for resolver (thread-safe)
     symbol_table: Arc<Mutex<SymbolTable>>,
 
@@ -76,6 +84,7 @@ pub struct ReplPane {
 #[derive(Debug)]
 struct EvalResult {
     result: Result<dsl_ir::Value, String>,
+    needs_autocomplete_refresh: bool,
 }
 
 impl ReplPane {
@@ -125,6 +134,7 @@ impl ReplPane {
             animation_type: AnimationType::None, // Default to None for best performance
             autocomplete,
             accepting_suggestion: false,
+            needs_autocomplete_refresh: false,
             symbol_table: Arc::new(Mutex::new(SymbolTable::new())),
             markdown_cache: egui_commonmark::CommonMarkCache::default(),
             theme: Theme::dark(),
@@ -501,12 +511,12 @@ impl ReplPane {
             let symbol_table = Arc::clone(&self.symbol_table);
             let tx = self.result_tx.clone();
 
+            let is_declaration_flag = is_declaration; // Capture for later use
             std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let result = rt.block_on(async {
+                let result = TOKIO_RT.block_on(async {
                     // This runs in block_on() within a spawned thread, so std::sync::Mutex is appropriate
                     #![allow(clippy::await_holding_lock)]
-                    if is_declaration {
+                    if is_declaration_flag {
                         // Handle declarations and statements using resolver
                         match dsl_core::parse_program(&input_clone) {
                             Ok(mut program) => {
@@ -743,7 +753,10 @@ impl ReplPane {
                     }
                 });
 
-                let _ = tx.send(EvalResult { result });
+                let _ = tx.send(EvalResult {
+                    result,
+                    needs_autocomplete_refresh: is_declaration_flag,
+                });
             });
         }
 
@@ -761,6 +774,12 @@ impl ReplPane {
                 self.push_output(OutputItem::Error(ErrorDetail::from_string(err)));
             }
         }
+
+        // Mark autocomplete for refresh if runtime state changed
+        if result.needs_autocomplete_refresh {
+            self.needs_autocomplete_refresh = true;
+        }
+
         self.auto_scroll = true;
     }
 
@@ -785,6 +804,8 @@ impl ReplPane {
                         self.autocomplete = AutocompleteState::new(&interp.runtime);
                         // Reset symbol table
                         self.symbol_table = Arc::new(Mutex::new(SymbolTable::new()));
+                        // Mark for refresh since runtime changed
+                        self.needs_autocomplete_refresh = false; // Already refreshed via new()
                     }
                     Err(e) => {
                         self.push_output(OutputItem::Error(
@@ -841,13 +862,14 @@ impl ReplPane {
     }
 
     fn trigger_autocomplete(&mut self) {
-        // Update autocomplete with current runtime state
-        {
+        // Only refresh runtime data if needed (after declarations)
+        if self.needs_autocomplete_refresh {
             let interp = self.interpreter.lock().unwrap();
             self.autocomplete.update_with_runtime(&interp.runtime);
+            self.needs_autocomplete_refresh = false;
         }
 
-        // Get suggestions for current input
+        // Get suggestions for current input (lightweight operation)
         self.autocomplete.update(&self.input, self.cursor_position);
     }
 

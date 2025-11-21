@@ -1,0 +1,55 @@
+[book]
+title = "DSL Documentation"
+description = "A powerful Domain-Specific Language for building agentic LLM workflows"
+authors = ["DSL Contributors"]
+language = "en"
+multilingual = false
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = true
+
+[preprocessor.admonish]
+command = "mdbook-admonish"
+assets_version = "3.1.0" # do not edit: managed by `mdbook-admonish install`
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+smart-punctuation = true
+git-repository-url = "https://github.com/catethos/DSL"
+edit-url-template = "https://github.com/catethos/DSL/edit/main/book/{path}"
+mathjax-support = false
+additional-css = ["mdbook-admonish.css"]
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 30
+teaser-word-count = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 1
+boost-paragraph = 1
+expand = true
+heading-split-level = 3
+
+[output.html.playground]
+editable = true
+copyable = true
+copy-js = true
+line-numbers = true
+
+[output.html.code]
+hideable = true
+
+[output.linkcheck]
+follow-web-links = true
+exclude = ["^http://localhost"]

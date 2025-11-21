@@ -1,0 +1,775 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Terminal UI (TUI) - DSL Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A powerful Domain-Specific Language for building agentic LLM workflows">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">DSL Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL/edit/main/book/src/user-guide/interfaces/tui.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="terminal-ui-tui"><a class="header" href="#terminal-ui-tui">Terminal UI (TUI)</a></h1>
+<p>The DSL Terminal User Interface provides a powerful, interactive environment for developing and testing DSL code directly in your terminal. Built with Ratatui, it features a split-pane workspace, syntax highlighting, autocomplete, and image rendering support.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The TUI offers three main components:</p>
+<ol>
+<li><strong>REPL</strong> - Interactive Read-Eval-Print Loop for quick experimentation</li>
+<li><strong>Editor</strong> - Full-featured text editor for writing DSL scripts</li>
+<li><strong>Preview</strong> - Visual execution tracker showing workflow steps</li>
+</ol>
+<h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
+<h3 id="launching-the-tui"><a class="header" href="#launching-the-tui">Launching the TUI</a></h3>
+<pre><code class="language-bash"># Start the interactive TUI
+dsl
+
+# Or explicitly run TUI mode
+dsl tui
+</code></pre>
+<h3 id="first-steps"><a class="header" href="#first-steps">First Steps</a></h3>
+<p>When you launch the TUI:</p>
+<ol>
+<li>You’ll see a banner with version info and quick tips</li>
+<li>The REPL pane is active by default</li>
+<li>Type DSL expressions and press Enter to evaluate</li>
+<li>Use <code>:help</code> to see available commands</li>
+</ol>
+<h3 id="basic-usage"><a class="header" href="#basic-usage">Basic Usage</a></h3>
+<pre><code class="language-dsl">5 + 3
+
+let x = 10
+
+Upper("hello")
+
+[1, 2, 3, 4, 5]
+  |&gt; filter(_, fn x =&gt; x % 2 == 0 end)
+  |&gt; map(_, fn x =&gt; x * x end)
+</code></pre>
+<h2 id="workspace-panes"><a class="header" href="#workspace-panes">Workspace Panes</a></h2>
+<h3 id="repl-pane"><a class="header" href="#repl-pane">REPL Pane</a></h3>
+<p>The <strong>Read-Eval-Print Loop</strong> is the primary interface for interactive development.</p>
+<p><strong>Features:</strong></p>
+<ul>
+<li>Immediate evaluation of expressions</li>
+<li>Command history (Up/Down arrows)</li>
+<li>Autocomplete (Tab)</li>
+<li>Multiline input support</li>
+<li>Syntax error reporting</li>
+<li>Variable persistence between evaluations</li>
+</ul>
+<p><strong>Example Session:</strong></p>
+<pre><code class="language-dsl">type User {
+  name: String
+  age: Int
+}
+
+let user = {name: "Alice", age: 30}
+
+user.name
+
+def greet(u) { "Hello, " + u.name }
+greet(user)
+</code></pre>
+<h3 id="editor-pane"><a class="header" href="#editor-pane">Editor Pane</a></h3>
+<p>The <strong>Editor</strong> provides a full-featured text editor for writing longer scripts.</p>
+<p><strong>Features:</strong></p>
+<ul>
+<li>Syntax highlighting with Tree-sitter</li>
+<li>File loading and saving</li>
+<li>Multi-line editing</li>
+<li>Standard editor keybindings</li>
+</ul>
+<p><strong>Workflow:</strong></p>
+<ol>
+<li>Switch to Editor pane (Ctrl+E)</li>
+<li>Write your DSL script</li>
+<li>Save to file (<code>:save filename.dsl</code>)</li>
+<li>Execute in REPL or run as script</li>
+</ol>
+<p><strong>Example:</strong></p>
+<pre><code class="language-dsl">
+type Article {
+  title: String
+  content: String
+}
+
+def analyzeArticle(article) {
+    Par(
+    Ask("Summarize: " + article.content),
+    Ask("Extract keywords: " + article.content),
+    Ask("Sentiment: " + article.content)
+  ) as [summary, keywords, sentiment]
+
+  {
+    title: article.title,
+    summary: summary,
+    keywords: Split(keywords, ","),
+    sentiment: sentiment
+  }
+
+analyzeArticle({
+  title: "AI Ethics",
+  content: "Long article text..."
+})
+</code></pre>
+<h3 id="preview-pane"><a class="header" href="#preview-pane">Preview Pane</a></h3>
+<p>The <strong>Preview</strong> shows execution steps for workflows, useful for debugging.</p>
+<p><strong>Features:</strong></p>
+<ul>
+<li>Step-by-step execution tracking</li>
+<li>Duration timing for each step</li>
+<li>Status indicators (Pending, Running, Complete, Error)</li>
+<li>Output display for each step</li>
+</ul>
+<p><strong>Use Case:</strong></p>
+<p>When running complex workflows, switch to Preview (Ctrl+P) to see:</p>
+<pre><code>Step 1: FetchData("api/users")      [Complete] 523ms
+Step 2: Filter(data, isActive)      [Complete] 12ms
+Step 3: Map(data, transform)        [Complete] 45ms
+Step 4: Par(process1, process2)     [Running]  ...
+</code></pre>
+<h2 id="repl-commands"><a class="header" href="#repl-commands">REPL Commands</a></h2>
+<p>Commands start with <code>:</code> and provide meta-operations.</p>
+<h3 id="information-commands"><a class="header" href="#information-commands">Information Commands</a></h3>
+<h4 id="help"><a class="header" href="#help"><code>:help</code></a></h4>
+<p>Show help message with keybindings and available commands.</p>
+<pre><code>:help
+</code></pre>
+<h4 id="vars"><a class="header" href="#vars"><code>:vars</code></a></h4>
+<p>List all currently bound variables with their types.</p>
+<pre><code>:vars
+
+Variables:
+  x: Int = 10
+  name: String = "Alice"
+  users: List = [...]
+</code></pre>
+<h4 id="types"><a class="header" href="#types"><code>:types</code></a></h4>
+<p>Show all defined custom types.</p>
+<pre><code>:types
+
+Types:
+  User { name: String, age: Int }
+  Article { title: String, content: String }
+  Status (enum): Pending | InProgress | Completed
+</code></pre>
+<h4 id="funcs"><a class="header" href="#funcs"><code>:funcs</code></a></h4>
+<p>List all defined functions with signatures.</p>
+<pre><code>:funcs
+
+Functions:
+  greet(user) -&gt; String
+  analyzeArticle(article) -&gt; Map
+  processData(data) -&gt; List
+</code></pre>
+<h4 id="globals"><a class="header" href="#globals"><code>:globals</code></a></h4>
+<p>Show global scope variables only.</p>
+<pre><code>:globals
+</code></pre>
+<h4 id="scopes-debug"><a class="header" href="#scopes-debug"><code>:scopes</code> (Debug)</a></h4>
+<p>Show the entire scope stack for debugging.</p>
+<pre><code>:scopes
+</code></pre>
+<h3 id="session-management"><a class="header" href="#session-management">Session Management</a></h3>
+<h4 id="save-filename"><a class="header" href="#save-filename"><code>:save [filename]</code></a></h4>
+<p>Save current session (variables, types, functions) to a file.</p>
+<pre><code>:save my_session.dsl
+</code></pre>
+<p>The session file can be loaded later or executed as a script.</p>
+<h4 id="load-filename"><a class="header" href="#load-filename"><code>:load [filename]</code></a></h4>
+<p>Load a session file, restoring all definitions.</p>
+<pre><code>:load my_session.dsl
+</code></pre>
+<h3 id="utility-commands"><a class="header" href="#utility-commands">Utility Commands</a></h3>
+<h4 id="clear"><a class="header" href="#clear"><code>:clear</code></a></h4>
+<p>Clear the output pane (doesn’t reset variables).</p>
+<pre><code>:clear
+</code></pre>
+<h4 id="copy"><a class="header" href="#copy"><code>:copy</code></a></h4>
+<p>Copy the last evaluation result to clipboard.</p>
+<pre><code>:copy
+</code></pre>
+<h4 id="debug"><a class="header" href="#debug"><code>:debug</code></a></h4>
+<p>Toggle debug mode for verbose output.</p>
+<pre><code>:debug
+</code></pre>
+<h4 id="quit-or-q"><a class="header" href="#quit-or-q"><code>:quit</code> or <code>:q</code></a></h4>
+<p>Exit the TUI.</p>
+<pre><code>:quit
+</code></pre>
+<h2 id="keyboard-shortcuts"><a class="header" href="#keyboard-shortcuts">Keyboard Shortcuts</a></h2>
+<h3 id="navigation"><a class="header" href="#navigation">Navigation</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>Ctrl+E</strong></td><td>Switch to Editor pane</td></tr>
+<tr><td><strong>Ctrl+R</strong></td><td>Switch to REPL pane</td></tr>
+<tr><td><strong>Ctrl+P</strong></td><td>Switch to Preview pane</td></tr>
+<tr><td><strong>Tab</strong></td><td>Cycle between panes</td></tr>
+</tbody></table>
+</div>
+<h3 id="repl-input"><a class="header" href="#repl-input">REPL Input</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>Enter</strong></td><td>Execute input (single-line mode)</td></tr>
+<tr><td><strong>Shift+Enter</strong></td><td>New line (multiline mode)</td></tr>
+<tr><td><strong>Ctrl+Enter</strong></td><td>Execute (multiline mode)</td></tr>
+<tr><td><strong>Tab</strong></td><td>Show autocomplete</td></tr>
+<tr><td><strong>Esc</strong></td><td>Close autocomplete</td></tr>
+<tr><td><strong>Up/Down</strong></td><td>Navigate history</td></tr>
+<tr><td><strong>Ctrl+C</strong></td><td>Clear input</td></tr>
+<tr><td><strong>Ctrl+U</strong></td><td>Clear line</td></tr>
+</tbody></table>
+</div>
+<h3 id="editor"><a class="header" href="#editor">Editor</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>Ctrl+S</strong></td><td>Save file</td></tr>
+<tr><td><strong>Ctrl+O</strong></td><td>Open file</td></tr>
+<tr><td><strong>Ctrl+K</strong></td><td>Cut line</td></tr>
+<tr><td><strong>Ctrl+Y</strong></td><td>Paste</td></tr>
+<tr><td><strong>Ctrl+Z</strong></td><td>Undo</td></tr>
+<tr><td><strong>Ctrl+Y</strong></td><td>Redo</td></tr>
+<tr><td><strong>Home</strong></td><td>Start of line</td></tr>
+<tr><td><strong>End</strong></td><td>End of line</td></tr>
+</tbody></table>
+</div>
+<h3 id="output"><a class="header" href="#output">Output</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>PgUp/PgDn</strong></td><td>Scroll output</td></tr>
+<tr><td><strong>Ctrl+Up/Down</strong></td><td>Scroll output</td></tr>
+<tr><td><strong>Mouse Wheel</strong></td><td>Scroll output</td></tr>
+<tr><td><strong>Mouse Drag</strong></td><td>Select text</td></tr>
+<tr><td><strong>Ctrl+C</strong></td><td>Copy selection</td></tr>
+</tbody></table>
+</div>
+<h3 id="general"><a class="header" href="#general">General</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>Ctrl+L</strong></td><td>Clear screen</td></tr>
+<tr><td><strong>Ctrl+D</strong></td><td>Quit TUI</td></tr>
+<tr><td><strong>Ctrl+I</strong></td><td>Toggle images</td></tr>
+</tbody></table>
+</div>
+<h2 id="features"><a class="header" href="#features">Features</a></h2>
+<h3 id="autocomplete"><a class="header" href="#autocomplete">Autocomplete</a></h3>
+<p>The TUI provides intelligent autocomplete for:</p>
+<ul>
+<li>REPL commands (<code>:help</code>, <code>:vars</code>, etc.)</li>
+<li>Variable names</li>
+<li>Function names</li>
+<li>Type names</li>
+<li>Builtin functions</li>
+</ul>
+<p><strong>Usage:</strong></p>
+<ol>
+<li>Type prefix (e.g., <code>Fil</code>)</li>
+<li>Press <strong>Tab</strong></li>
+<li>Select from suggestions with <strong>Up/Down</strong></li>
+<li>Press <strong>Enter</strong> to accept or <strong>Esc</strong> to cancel</li>
+</ol>
+<p><strong>Example:</strong></p>
+<pre><code class="language-dsl">Filter
+FilterData
+
+:help
+:vars
+:types
+:clear
+...
+</code></pre>
+<h3 id="multiline-mode"><a class="header" href="#multiline-mode">Multiline Mode</a></h3>
+<p>For complex expressions, the REPL automatically enters multiline mode when it detects unclosed delimiters.</p>
+<p><strong>Automatic Multiline:</strong></p>
+<pre><code class="language-dsl">[1, 2, 3]
+  |&gt; map(_, fn x =&gt; {
+       value: x,
+       squared: x * x
+     } end)
+  |&gt; filter(_, fn item =&gt; item.squared &gt; 5 end)
+</code></pre>
+<p><strong>Manual Multiline:</strong></p>
+<p>Use <strong>Shift+Enter</strong> to explicitly add new lines:</p>
+<pre><code class="language-dsl">let result =
+  FetchData("api/users")
+    |&gt; Filter(_, isActive)
+    |&gt; Map(_, transform)
+</code></pre>
+<h3 id="command-history"><a class="header" href="#command-history">Command History</a></h3>
+<p>The REPL maintains a history of executed commands.</p>
+<p><strong>Navigation:</strong></p>
+<ul>
+<li><strong>Up Arrow</strong>: Previous command</li>
+<li><strong>Down Arrow</strong>: Next command</li>
+<li>History persists between sessions</li>
+</ul>
+<p><strong>Tips:</strong></p>
+<ul>
+<li>Edit historical commands before re-executing</li>
+<li>Search history by typing prefix, then Up</li>
+<li>History includes both expressions and commands</li>
+</ul>
+<h3 id="syntax-highlighting"><a class="header" href="#syntax-highlighting">Syntax Highlighting</a></h3>
+<p>Tree-sitter provides real-time syntax highlighting for:</p>
+<ul>
+<li>Keywords (<code>def</code>, <code>type</code>, <code>let</code>)</li>
+<li>Operators (<code>|&gt;</code>, <code>+</code>, <code>==</code>)</li>
+<li>Literals (strings, numbers, booleans)</li>
+<li>Comments</li>
+<li>Function calls</li>
+<li>Type annotations</li>
+</ul>
+<h3 id="image-rendering"><a class="header" href="#image-rendering">Image Rendering</a></h3>
+<p>The TUI can render images directly in the output pane.</p>
+<p><strong>Supported:</strong></p>
+<ul>
+<li>PNG, JPEG, GIF</li>
+<li>Terminal graphics protocols (iTerm2, Kitty, Sixel)</li>
+<li>Fallback to half-block rendering</li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre><code class="language-dsl">let imagePath = "diagram.png"
+
+LoadImage(imagePath)
+</code></pre>
+<p><strong>Toggle Images:</strong></p>
+<ul>
+<li>Press <strong>Ctrl+I</strong> to show/hide images (performance)</li>
+</ul>
+<h3 id="variable-persistence"><a class="header" href="#variable-persistence">Variable Persistence</a></h3>
+<p>Variables, types, and functions persist across evaluations:</p>
+<pre><code class="language-dsl">let x = 10
+def double(n) { n * 2 }
+
+double(x)
+</code></pre>
+<p><strong>Scoping:</strong></p>
+<ul>
+<li>REPL uses global scope</li>
+<li>Variables shadow previous definitions</li>
+<li>Use <code>:vars</code> to check what’s defined</li>
+</ul>
+<h3 id="error-reporting"><a class="header" href="#error-reporting">Error Reporting</a></h3>
+<p>Clear error messages with context:</p>
+<pre><code class="language-dsl">5 + "hello"
+
+unknownVar
+
+[1, 2, 3
+</code></pre>
+<h2 id="tips-and-tricks"><a class="header" href="#tips-and-tricks">Tips and Tricks</a></h2>
+<h3 id="rapid-prototyping"><a class="header" href="#rapid-prototyping">Rapid Prototyping</a></h3>
+<p>Use REPL for quick experiments:</p>
+<pre><code class="language-dsl">[1, 2, 3, 4, 5]
+  |&gt; filter(_, fn x =&gt; x &gt; 2 end)
+  |&gt; map(_, fn x =&gt; x * 2 end)
+
+</code></pre>
+<h3 id="debugging-workflows"><a class="header" href="#debugging-workflows">Debugging Workflows</a></h3>
+<p>Add intermediate bindings to inspect values:</p>
+<pre><code class="language-dsl">data
+  |&gt; Process1(_) as step1
+  |&gt; _ as _ |&gt; step1
+  |&gt; Process2(step1) as step2
+  |&gt; _ as _ |&gt; step2
+</code></pre>
+<h3 id="using-the-editor"><a class="header" href="#using-the-editor">Using the Editor</a></h3>
+<ol>
+<li>Write complete programs in Editor</li>
+<li>Save to file (<code>:save script.dsl</code>)</li>
+<li>Load in REPL to test functions (<code>:load script.dsl</code>)</li>
+<li>Iterate between Editor and REPL</li>
+</ol>
+<h3 id="exploratory-data-analysis"><a class="header" href="#exploratory-data-analysis">Exploratory Data Analysis</a></h3>
+<pre><code class="language-dsl">SQL("SELECT * FROM 'data.csv'") as data
+
+Length(data)
+First(data)
+data[0]
+
+filter(data, fn row =&gt; row.value &gt; 100 end)
+  |&gt; map(_, fn row =&gt; row.category end)
+  |&gt; Unique(_)
+</code></pre>
+<h3 id="quick-documentation"><a class="header" href="#quick-documentation">Quick Documentation</a></h3>
+<p>Use builtin functions to explore:</p>
+<pre><code class="language-dsl">:funcs
+
+map([1, 2, 3], fn x =&gt; x * 2 end)
+filter([1, 2, 3, 4], fn x =&gt; x % 2 == 0 end)
+</code></pre>
+<h3 id="saving-work"><a class="header" href="#saving-work">Saving Work</a></h3>
+<p>Regularly save sessions:</p>
+<pre><code class="language-dsl">:save progress.dsl
+
+:load progress.dsl
+</code></pre>
+<h3 id="performance-tips"><a class="header" href="#performance-tips">Performance Tips</a></h3>
+<ol>
+<li><strong>Disable images</strong> for large outputs: <strong>Ctrl+I</strong></li>
+<li><strong>Clear output</strong> frequently: <code>:clear</code> or <strong>Ctrl+L</strong></li>
+<li><strong>Use variables</strong> instead of recomputing:
+<pre><code class="language-dsl">let expensive = ComputeExpensive(data)
+</code></pre>
+</li>
+</ol>
+<h3 id="keyboard-efficiency"><a class="header" href="#keyboard-efficiency">Keyboard Efficiency</a></h3>
+<p>Master these shortcuts:</p>
+<ul>
+<li><strong>Ctrl+C</strong>: Clear input without executing</li>
+<li><strong>Ctrl+L</strong>: Clear screen</li>
+<li><strong>Up/Down</strong>: Navigate history</li>
+<li><strong>Tab</strong>: Autocomplete</li>
+<li><strong>Ctrl+Enter</strong>: Execute multiline</li>
+</ul>
+<h2 id="common-workflows"><a class="header" href="#common-workflows">Common Workflows</a></h2>
+<h3 id="1-interactive-development"><a class="header" href="#1-interactive-development">1. Interactive Development</a></h3>
+<pre><code class="language-dsl">type User { name: String, age: Int }
+
+let testUser = {name: "Alice", age: 30}
+
+def greet(user) { "Hello, " + user.name }
+
+greet(testUser)
+
+</code></pre>
+<h3 id="2-data-pipeline-development"><a class="header" href="#2-data-pipeline-development">2. Data Pipeline Development</a></h3>
+<pre><code class="language-dsl">SQL("SELECT * FROM 'sales.csv'") as sales
+
+sales |&gt; filter(_, fn s =&gt; s.amount &gt; 100 end) as filtered
+filtered |&gt; map(_, fn s =&gt; s.category end) as categories
+categories |&gt; Unique(_) as uniqueCategories
+
+let result = sales
+  |&gt; filter(_, fn s =&gt; s.amount &gt; 100 end)
+  |&gt; map(_, fn s =&gt; s.category end)
+  |&gt; Unique(_)
+</code></pre>
+<h3 id="3-llm-workflow-testing"><a class="header" href="#3-llm-workflow-testing">3. LLM Workflow Testing</a></h3>
+<pre><code class="language-dsl">Ask("What is the capital of France?")
+
+let topic = "AI Ethics"
+let research = Ask("Research " + topic)
+let outline = Ask("Create outline for: " + research)
+let draft = Ask("Write article: " + outline)
+
+def generateArticle(topic) { Ask("Research " + topic) }
+    |&gt; Ask("Create outline for: " + _)
+    |&gt; Ask("Write article: " + _)
+</code></pre>
+<h3 id="4-type-driven-development"><a class="header" href="#4-type-driven-development">4. Type-Driven Development</a></h3>
+<pre><code class="language-dsl">type Request {
+  method: String
+  url: String
+  body: String
+}
+
+type Response {
+  status: Int
+  body: String
+}
+
+def makeRequest(req) { ... }
+
+let testReq = {
+  method: "GET",
+  url: "https://api.example.com",
+  body: ""
+}
+
+makeRequest(testReq)
+</code></pre>
+<h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
+<h3 id="input-not-working"><a class="header" href="#input-not-working">Input Not Working</a></h3>
+<p><strong>Problem:</strong> Typing doesn’t show characters</p>
+<p><strong>Solution:</strong></p>
+<ul>
+<li>Ensure REPL pane is active (Ctrl+R)</li>
+<li>Check terminal supports raw mode</li>
+<li>Try restarting TUI</li>
+</ul>
+<h3 id="autocomplete-not-showing"><a class="header" href="#autocomplete-not-showing">Autocomplete Not Showing</a></h3>
+<p><strong>Problem:</strong> Tab doesn’t show suggestions</p>
+<p><strong>Solution:</strong></p>
+<ul>
+<li>Type at least one character</li>
+<li>Ensure cursor is at end of word</li>
+<li>Check if suggestions exist for prefix</li>
+</ul>
+<h3 id="images-not-rendering"><a class="header" href="#images-not-rendering">Images Not Rendering</a></h3>
+<p><strong>Problem:</strong> Images show as placeholders</p>
+<p><strong>Solution:</strong></p>
+<ul>
+<li>Check terminal supports graphics (iTerm2, Kitty, Sixel)</li>
+<li>Verify image file exists and is valid</li>
+<li>Try toggling images: Ctrl+I</li>
+</ul>
+<h3 id="history-not-persisting"><a class="header" href="#history-not-persisting">History Not Persisting</a></h3>
+<p><strong>Problem:</strong> Command history lost between sessions</p>
+<p><strong>Solution:</strong></p>
+<ul>
+<li>History saves to <code>~/.dsl_history</code></li>
+<li>Check file permissions</li>
+<li>Ensure TUI exits cleanly (<code>:quit</code>, not kill)</li>
+</ul>
+<h3 id="slow-performance"><a class="header" href="#slow-performance">Slow Performance</a></h3>
+<p><strong>Problem:</strong> TUI becomes sluggish</p>
+<p><strong>Solution:</strong></p>
+<ul>
+<li>Clear output: <code>:clear</code></li>
+<li>Disable images: Ctrl+I</li>
+<li>Reduce output size</li>
+<li>Check for infinite loops</li>
+</ul>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><a href="./egui.html">Desktop GUI (egui)</a> - Visual interface with graphical editor</li>
+<li><a href="./cli.html">CLI Reference</a> - Command-line usage and batch processing</li>
+<li><a href="../workflows/sequential.html">Workflows</a> - Building complex workflows</li>
+<li><a href="../builtins/README.html">Builtin Functions</a> - Available functions</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../user-guide/workflows/patterns.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../user-guide/interfaces/egui.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../user-guide/workflows/patterns.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../user-guide/interfaces/egui.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_line_numbers = true;
+        </script>
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../../ace.js"></script>
+        <script src="../../mode-rust.js"></script>
+        <script src="../../editor.js"></script>
+        <script src="../../theme-dawn.js"></script>
+        <script src="../../theme-tomorrow_night.js"></script>
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

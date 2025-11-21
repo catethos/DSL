@@ -66,16 +66,37 @@ impl<'a> Parser<'a> {
         }
 
         // Try to find JSON object or array boundaries
-        if let Some(start) = response.find('{') {
-            if let Some(end) = response.rfind('}') {
+        // Check which comes first: [ or {
+        let array_start = response.find('[');
+        let object_start = response.find('{');
+
+        // Prioritize arrays over objects if array comes first
+        if let (Some(arr_start), Some(obj_start)) = (array_start, object_start) {
+            if arr_start < obj_start {
+                // Array comes first
+                if let Some(end) = response.rfind(']') {
+                    if end > arr_start {
+                        return Ok(response[arr_start..=end].to_string());
+                    }
+                }
+            } else {
+                // Object comes first
+                if let Some(end) = response.rfind('}') {
+                    if end > obj_start {
+                        return Ok(response[obj_start..=end].to_string());
+                    }
+                }
+            }
+        } else if let Some(start) = array_start {
+            // Only array found
+            if let Some(end) = response.rfind(']') {
                 if end > start {
                     return Ok(response[start..=end].to_string());
                 }
             }
-        }
-
-        if let Some(start) = response.find('[') {
-            if let Some(end) = response.rfind(']') {
+        } else if let Some(start) = object_start {
+            // Only object found
+            if let Some(end) = response.rfind('}') {
                 if end > start {
                     return Ok(response[start..=end].to_string());
                 }

@@ -16,6 +16,8 @@ pub struct AutocompleteState {
     pub suggestions: Vec<Suggestion>,
     pub selected_index: usize,
     pub show_popup: bool,
+    /// Cache last input to avoid re-computing suggestions
+    last_input: Option<(String, usize)>,
 }
 
 impl AutocompleteState {
@@ -43,15 +45,26 @@ impl AutocompleteState {
             suggestions: Vec::new(),
             selected_index: 0,
             show_popup: false,
+            last_input: None,
         }
     }
 
     /// Update suggestions based on current input
     pub fn update(&mut self, input: &str, cursor_position: usize) {
+        // Check cache: if input and cursor are the same, skip recomputation
+        if let Some((cached_input, cached_cursor)) = &self.last_input {
+            if cached_input == input && *cached_cursor == cursor_position {
+                return; // Use cached suggestions
+            }
+        }
+
         let result = self.engine.complete(input, cursor_position);
         self.suggestions = result.suggestions;
         self.selected_index = 0;
         self.show_popup = !self.suggestions.is_empty();
+
+        // Update cache
+        self.last_input = Some((input.to_string(), cursor_position));
     }
 
     /// Update with runtime context (to refresh variables, functions, types)
@@ -126,6 +139,7 @@ impl AutocompleteState {
         self.show_popup = false;
         self.suggestions.clear();
         self.selected_index = 0;
+        self.last_input = None; // Clear cache when hiding
     }
 
     /// Check if popup should be shown

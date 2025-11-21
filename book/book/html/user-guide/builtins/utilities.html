@@ -1,0 +1,652 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Utilities - DSL Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A powerful Domain-Specific Language for building agentic LLM workflows">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">DSL Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL/edit/main/book/src/user-guide/builtins/utilities.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="utilities"><a class="header" href="#utilities">Utilities</a></h1>
+<p>Miscellaneous utility functions for common programming tasks.</p>
+<h2 id="zip"><a class="header" href="#zip">Zip</a></h2>
+<p><strong>Signature:</strong> <code>(List, List) -&gt; List</code></p>
+<p>Combine two lists into a list of pairs (2-element lists).</p>
+<pre><code class="language-dsl">Zip([1, 2, 3], ["a", "b", "c"])
+
+Zip([1, 2], [10, 20])
+</code></pre>
+<p><strong>Behavior:</strong></p>
+<ul>
+<li>Stops at the shorter list length</li>
+<li>Returns empty list if either input is empty</li>
+</ul>
+<pre><code class="language-dsl">Zip([1, 2, 3], ["a", "b"])
+Zip([], [1, 2, 3])
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">def main() {
+    let keys = ["name", "age", "email"]
+    let values = ["Alice", 30, "alice@example.com"]
+    Zip(keys, values)
+
+    let names = ["Alice", "Bob"]
+    let scores = [85, 92]
+    Map(Zip(names, scores), fn pair =&gt; {
+      name: pair[0],
+      score: pair[1]
+    } end)
+}
+main()
+</code></pre>
+<h2 id="range"><a class="header" href="#range">Range</a></h2>
+<p><strong>Signature:</strong> <code>(Int, Int) -&gt; List</code></p>
+<p>Generate a list of integers from start (inclusive) to end (exclusive).</p>
+<pre><code class="language-dsl">Range(1, 5)
+Range(0, 3)
+Range(5, 10)
+Range(3, 3)
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Range(1, 11)
+
+Map(Range(0, 5), fn i =&gt; i * 2 end)
+
+let items = ["a", "b", "c"]
+Range(0, Length(items))
+
+Map(Range(0, 10), fn _ =&gt; fetchData( end))
+</code></pre>
+<h2 id="repeat"><a class="header" href="#repeat">Repeat</a></h2>
+<p><strong>Signature:</strong> <code>(Any, Int) -&gt; List</code></p>
+<p>Create a list with a value repeated N times.</p>
+<pre><code class="language-dsl">Repeat("x", 3)
+Repeat(0, 5)
+Repeat([1, 2], 2)
+Repeat("hello", 0)
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Repeat(0, 10)
+
+Repeat({id: 0, value: ""}, 5)
+
+Join([...Repeat(" ", 5), "text"], "")
+</code></pre>
+<h2 id="chunk"><a class="header" href="#chunk">Chunk</a></h2>
+<p><strong>Signature:</strong> <code>(List, Int) -&gt; List</code></p>
+<p>Split a list into chunks of a given size. Last chunk may be smaller.</p>
+<pre><code class="language-dsl">Chunk([1, 2, 3, 4, 5], 2)
+
+Chunk(["a", "b", "c", "d"], 3)
+
+Chunk([1, 2, 3], 5)
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">def main() {
+    let items = Range(1, 101)
+    let batches = Chunk(items, 10)
+    Map(batches, processBatch)
+
+    Chunk(data, 3)
+
+    Chunk(allItems, pageSize)
+}
+main()
+</code></pre>
+<h2 id="rendermarkdown"><a class="header" href="#rendermarkdown">RenderMarkdown</a></h2>
+<p><strong>Signature:</strong> <code>(String) -&gt; Markdown</code></p>
+<p>Render a string as formatted markdown in the TUI.</p>
+<pre><code class="language-dsl">RenderMarkdown("# Hello\n\nThis is **bold** text")
+
+RenderMarkdown("""
+
+- Point 1
+- Point 2
+
+**Total**: 100
+""")
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">let response = Ask("Write a summary")
+RenderMarkdown(response)
+
+RenderMarkdown(generateReport(data))
+
+RenderMarkdown(docString)
+</code></pre>
+<h2 id="par"><a class="header" href="#par">Par</a></h2>
+<p><strong>Signature:</strong> <code>(...expressions) -&gt; List</code></p>
+<p>Execute multiple expressions in parallel and return results as a list.</p>
+<pre><code class="language-dsl">Par(5, 10, 15)
+
+Par(5 + 1, 10 + 2, 15 + 3)
+</code></pre>
+<p><strong>With Variable Binding:</strong></p>
+<pre><code class="language-dsl">Par(5, 10, 15) as numbers
+numbers
+
+Par(10, 20, 30) as [a, b, c]
+a + b + c
+</code></pre>
+<p><strong>Parallel Operations:</strong></p>
+<pre><code class="language-dsl">Par(
+  fetchUsers(),
+  fetchProducts(),
+  fetchOrders()
+) as [users, products, orders]
+
+def GetUser(id) { fetchFromAPI("users/" + ToString(id)) }
+
+Par(GetUser(1), GetUser(2), GetUser(3)) as users
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Par(
+  Ask("What is the capital of France?"),
+  Ask("What is the capital of Germany?"),
+  Ask("What is the capital of Italy?")
+) as [france, germany, italy]
+
+Par(
+  SQL("SELECT * FROM users"),
+  SQL("SELECT * FROM orders"),
+  SQL("SELECT * FROM products")
+) as [users, orders, products]
+
+Par(
+  processA(data),
+  processB(data),
+  processC(data)
+) as results
+</code></pre>
+<h2 id="not"><a class="header" href="#not">Not</a></h2>
+<p><strong>Signature:</strong> <code>(Bool) -&gt; Bool</code></p>
+<p>Logical NOT operation.</p>
+<pre><code class="language-dsl">Not(true)
+Not(false)
+Not(5 &gt; 3)
+Not(5 &lt; 3)
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Not(isValid)
+
+filter(items, fn item =&gt; Not(item.deleted end))
+
+Not(a) &amp;&amp; b
+</code></pre>
+<h2 id="tostring"><a class="header" href="#tostring">ToString</a></h2>
+<p><strong>Signature:</strong> <code>(Any) -&gt; String</code></p>
+<p>Convert any value to its string representation.</p>
+<pre><code class="language-dsl">ToString(42)
+ToString(3.14)
+ToString(true)
+ToString([1, 2, 3])
+ToString({a: 1, b: 2})
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Map(numbers, ToString)
+
+"Value: " + ToString(value)
+
+Log(ToString(debugData))
+
+buildURL("id=" + ToString(userId))
+</code></pre>
+<h2 id="practical-examples"><a class="header" href="#practical-examples">Practical Examples</a></h2>
+<h3 id="example-1-parallel-data-processing"><a class="header" href="#example-1-parallel-data-processing">Example 1: Parallel Data Processing</a></h3>
+<pre><code class="language-dsl">def processInParallel(urls) {
+    Par(
+    ...map(urls, fn url =&gt; fetchData(url end))
+  ) as results
+  Flatten(results)
+
+let urls = [
+  "https://api.example.com/data1",
+  "https://api.example.com/data2",
+  "https://api.example.com/data3"
+]
+
+processInParallel(urls)
+</code></pre>
+<h3 id="example-2-batch-processing-with-chunks"><a class="header" href="#example-2-batch-processing-with-chunks">Example 2: Batch Processing with Chunks</a></h3>
+<pre><code class="language-dsl">def processBatches(items, batchSize) { items }
+    |&gt; Chunk(_, batchSize)
+    |&gt; map(_, fn batch =&gt; {
+         processed: Map(batch, processItem end),
+         count: Length(batch)
+       })
+
+processBatches(Range(1, 101), 10)
+</code></pre>
+<h3 id="example-3-create-index-mapping"><a class="header" href="#example-3-create-index-mapping">Example 3: Create Index Mapping</a></h3>
+<pre><code class="language-dsl">def createIndex(items) { let indices = Range(0, Length(items)) }
+  Zip(indices, items)
+
+createIndex(["a", "b", "c"])
+
+def toIndexMap(items) {
+    Reduce(
+    Zip(Range(0, Length(items)), items),
+    {},
+    def (map, pair) := {
+      ...map,
+      [ToString(pair[0])]: pair[1]
+    }
+  )
+</code></pre>
+<h3 id="example-4-parallel-llm-analysis"><a class="header" href="#example-4-parallel-llm-analysis">Example 4: Parallel LLM Analysis</a></h3>
+<pre><code class="language-dsl">def analyzeText(text) {
+    Par(
+    getSummary(text),
+    extractKeywords(text),
+    getSentiment(text),
+    getTopics(text)
+  ) as [summary, keywords, sentiment, topics]
+
+  {
+    summary: summary,
+    keywords: keywords,
+    sentiment: sentiment,
+    topics: topics
+  }
+
+def getSummary(text) { Ask("Summarize: " + text) }
+def extractKeywords(text) { Ask("Extract keywords: " + text) }
+def getSentiment(text) { Ask("Sentiment: " + text) }
+def getTopics(text) { Ask("Topics: " + text) }
+</code></pre>
+<h3 id="example-5-matrix-operations-with-zip"><a class="header" href="#example-5-matrix-operations-with-zip">Example 5: Matrix Operations with Zip</a></h3>
+<pre><code class="language-dsl">def dotProduct(vec1, vec2) { Zip(vec1, vec2) }
+    |&gt; map(_, fn pair =&gt; pair[0] * pair[1] end)
+    |&gt; Sum(_)
+
+dotProduct([1, 2, 3], [4, 5, 6])
+
+def addVectors(vec1, vec2) { Zip(vec1, vec2) }
+    |&gt; map(_, fn pair =&gt; pair[0] + pair[1] end)
+
+addVectors([1, 2, 3], [4, 5, 6])
+</code></pre>
+<h3 id="example-6-generate-test-data"><a class="header" href="#example-6-generate-test-data">Example 6: Generate Test Data</a></h3>
+<pre><code class="language-dsl">def generateTestUsers(count) { Range(1, count + 1) }
+    |&gt; map(_, fn i =&gt; {
+         id: i,
+         name: "User" + ToString(i end),
+         email: "user" + ToString(i) + "@test.com",
+         active: i % 2 == 0
+       })
+
+generateTestUsers(5)
+</code></pre>
+<h3 id="example-7-repeat-with-variation"><a class="header" href="#example-7-repeat-with-variation">Example 7: Repeat with Variation</a></h3>
+<pre><code class="language-dsl">def createGrid(rows, cols, initValue) { Range(0, rows) }
+    |&gt; map(_, fn row =&gt; Range(0, cols end)
+           |&gt; map(_, fn col =&gt; initValue end))
+
+createGrid(3, 3, 0)
+
+def createStaircase(height) { Range(1, height + 1) }
+    |&gt; map(_, fn i =&gt; Repeat("*", i end))
+
+createStaircase(5)
+</code></pre>
+<h3 id="example-8-combining-utilities"><a class="header" href="#example-8-combining-utilities">Example 8: Combining Utilities</a></h3>
+<pre><code class="language-dsl">def processDataPipeline(data) {
+  let batches = Chunk(data, 10)
+
+  let results = Par(
+    ...map(batches, fn batch =&gt; Map(batch, processItem end))
+  )
+
+  results
+    |&gt; Flatten(_)
+    |&gt; filter(_, fn r =&gt; Not(r.hasError end))
+    |&gt; map(_, fn r =&gt; r.value end)
+</code></pre>
+<h2 id="combining-utilities"><a class="header" href="#combining-utilities">Combining Utilities</a></h2>
+<h3 id="range--map-for-iteration"><a class="header" href="#range--map-for-iteration">Range + Map for Iteration</a></h3>
+<pre><code class="language-dsl">Range(0, 10)
+  |&gt; map(_, fn i =&gt; performOperation(i end))
+
+Range(1, 6)
+  |&gt; map(_, fn i =&gt; i * i end)
+</code></pre>
+<h3 id="zip--reduce-for-dictionaries"><a class="header" href="#zip--reduce-for-dictionaries">Zip + Reduce for Dictionaries</a></h3>
+<pre><code class="language-dsl">def zipToMap(keys, values) { Zip(keys, values) }
+    |&gt; Reduce(_, {}, def (map, pair) := {
+         ...map,
+         [pair[0]]: pair[1]
+       })
+
+zipToMap(["a", "b", "c"], [1, 2, 3])
+</code></pre>
+<h3 id="chunk--par-for-parallel-batches"><a class="header" href="#chunk--par-for-parallel-batches">Chunk + Par for Parallel Batches</a></h3>
+<pre><code class="language-dsl">def processInParallelBatches(items, batchSize) { items }
+    |&gt; Chunk(_, batchSize)
+    |&gt; Take(_, 5)
+    |&gt; _ as batches |&gt; Par(
+         ...Map(batches, processBatch)
+       )
+    |&gt; Flatten(_)
+</code></pre>
+<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<h3 id="1-use-range-for-counted-loops"><a class="header" href="#1-use-range-for-counted-loops">1. Use Range for Counted Loops</a></h3>
+<pre><code class="language-dsl">Map(Range(0, 10), fn _ =&gt; generateRandomNumber( end))
+
+Repeat(null, 10) |&gt; map(_, fn _ =&gt; generateRandomNumber( end))
+</code></pre>
+<h3 id="2-parallel-operations-for-independence"><a class="header" href="#2-parallel-operations-for-independence">2. Parallel Operations for Independence</a></h3>
+<pre><code class="language-dsl">def main() {
+    Par(fetchA(), fetchB(), fetchC())
+
+    let a = fetchA()
+    let b = fetchB(a)
+    let c = fetchC(b)
+}
+main()
+</code></pre>
+<h3 id="3-chunk-for-memory-efficiency"><a class="header" href="#3-chunk-for-memory-efficiency">3. Chunk for Memory Efficiency</a></h3>
+<pre><code class="language-dsl">largeData
+  |&gt; Chunk(_, 100)
+  |&gt; Map(_, processBatch)
+
+Map(largeData, processItem)
+</code></pre>
+<h3 id="4-zip-for-parallel-lists"><a class="header" href="#4-zip-for-parallel-lists">4. Zip for Parallel Lists</a></h3>
+<pre><code class="language-dsl">let users = Zip(names, emails)
+  |&gt; map(_, fn pair =&gt; {name: pair[0], email: pair[1]} end)
+
+Map(Range(0, Length(names)), fn i =&gt; {
+  name: names[i],
+  email: emails[i]
+} end)
+</code></pre>
+<h2 id="performance-tips"><a class="header" href="#performance-tips">Performance Tips</a></h2>
+<h3 id="1-use-par-for-io-operations"><a class="header" href="#1-use-par-for-io-operations">1. Use Par for I/O Operations</a></h3>
+<p>Parallel execution is most beneficial for I/O-bound operations:</p>
+<pre><code class="language-dsl">Par(
+  fetchFromAPI("endpoint1"),
+  fetchFromAPI("endpoint2"),
+  fetchFromAPI("endpoint3")
+)
+
+Par(
+  Sum([1, 2, 3]),
+  Sum([4, 5, 6]),
+  Sum([7, 8, 9])
+)
+</code></pre>
+<h3 id="2-batch-size-optimization"><a class="header" href="#2-batch-size-optimization">2. Batch Size Optimization</a></h3>
+<pre><code class="language-dsl">Chunk(items, 1)
+
+Chunk(items, Length(items))
+
+Chunk(items, 50)
+</code></pre>
+<h3 id="3-minimize-zip-operations"><a class="header" href="#3-minimize-zip-operations">3. Minimize Zip Operations</a></h3>
+<pre><code class="language-dsl">let pairs = Zip(list1, list2)
+Map(pairs, process)
+
+Map(Range(0, Length(list1)), fn i =&gt; {
+  a: list1[i],
+  b: list2[i]
+} end)
+</code></pre>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><a href="./strings.html">String Operations</a> - Text manipulation</li>
+<li><a href="./lists.html">List Operations</a> - Collection operations</li>
+<li><a href="./math.html">Math Operations</a> - Numerical functions</li>
+<li><a href="./functional.html">Functional Programming</a> - Map, Filter, Reduce</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../user-guide/builtins/functional.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../user-guide/workflows/sequential.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../user-guide/builtins/functional.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../user-guide/workflows/sequential.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_line_numbers = true;
+        </script>
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../../ace.js"></script>
+        <script src="../../mode-rust.js"></script>
+        <script src="../../editor.js"></script>
+        <script src="../../theme-dawn.js"></script>
+        <script src="../../theme-tomorrow_night.js"></script>
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

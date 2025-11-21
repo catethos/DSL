@@ -1,0 +1,585 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Sequential Workflows - DSL Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A powerful Domain-Specific Language for building agentic LLM workflows">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">DSL Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL/edit/main/book/src/user-guide/workflows/sequential.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="sequential-workflows"><a class="header" href="#sequential-workflows">Sequential Workflows</a></h1>
+<p>Sequential workflows chain operations together, where the output of each step becomes the input to the next. DSL uses the pipeline operator <code>|&gt;</code> for sequential composition.</p>
+<h2 id="the-pipeline-operator-"><a class="header" href="#the-pipeline-operator-">The Pipeline Operator (<code>|&gt;</code>)</a></h2>
+<h3 id="concept"><a class="header" href="#concept">Concept</a></h3>
+<p>The <code>|&gt;</code> operator chains operations, passing the result of each step to the next. Think of it like Unix pipes:</p>
+<pre><code class="language-bash"># Unix pipes
+cat file.txt | grep "keyword" | sort | uniq
+</code></pre>
+<pre><code class="language-dsl">LoadFile("file.txt") |&gt; Filter(_) |&gt; Sort(_) |&gt; Unique(_)
+</code></pre>
+<h3 id="basic-usage"><a class="header" href="#basic-usage">Basic Usage</a></h3>
+<pre><code class="language-dsl">"hello" |&gt; Upper(_)
+
+"hello" |&gt; Upper(_) |&gt; Length(_)
+
+5 |&gt; _ * 2 |&gt; _ + 3
+</code></pre>
+<h2 id="the-underscore-variable-_"><a class="header" href="#the-underscore-variable-_">The Underscore Variable (<code>_</code>)</a></h2>
+<p>The <code>_</code> variable always contains the result of the previous step in a pipeline:</p>
+<pre><code class="language-dsl">[1, 2, 3, 4, 5] |&gt; Length(_)
+
+"test" |&gt; Upper(_) |&gt; Length(_)
+
+[1, 2, 3] |&gt; map(_, fn x =&gt; x * 2 end) |&gt; Sum(_)
+</code></pre>
+<h3 id="explicit-access"><a class="header" href="#explicit-access">Explicit Access</a></h3>
+<pre><code class="language-dsl">[1, 2, 3, 4] |&gt; filter(_, fn x =&gt; x % 2 == 0 end)
+
+10 |&gt; _ * 2 |&gt; _ + 5 |&gt; _ / 3
+</code></pre>
+<h2 id="variable-binding-with-as"><a class="header" href="#variable-binding-with-as">Variable Binding with <code>as</code></a></h2>
+<p>Bind intermediate results to named variables for clarity and reuse:</p>
+<pre><code class="language-dsl">["a", "b", "c"] |&gt; Join(_, "-") as joined |&gt; Upper(joined)
+
+5 |&gt; _ * 2 as doubled |&gt; doubled + 3
+
+[1, 2, 3, 4, 5]
+  |&gt; filter(_, fn x =&gt; x % 2 == 0 end) as evens
+  |&gt; map(evens, fn x =&gt; x * x end) as squares
+  |&gt; Sum(squares)
+</code></pre>
+<h3 id="naming-improves-readability"><a class="header" href="#naming-improves-readability">Naming Improves Readability</a></h3>
+<pre><code class="language-dsl">data
+  |&gt; cleanData(_) as cleaned
+  |&gt; validateData(cleaned) as validated
+  |&gt; transformData(validated) as transformed
+  |&gt; saveData(transformed)
+
+data
+  |&gt; cleanData(_)
+  |&gt; validateData(_)
+  |&gt; transformData(_)
+  |&gt; saveData(_)
+</code></pre>
+<h2 id="complex-workflows"><a class="header" href="#complex-workflows">Complex Workflows</a></h2>
+<h3 id="data-processing-pipeline"><a class="header" href="#data-processing-pipeline">Data Processing Pipeline</a></h3>
+<pre><code class="language-dsl">SQL("SELECT * FROM 'data.csv'") as raw
+  |&gt; SQL("SELECT * FROM raw WHERE score &gt; 0.8") as filtered
+  |&gt; SQL("SELECT AVG(score) FROM filtered") as avg
+  |&gt; "Average score: " + ToString(avg)
+</code></pre>
+<h3 id="text-processing"><a class="header" href="#text-processing">Text Processing</a></h3>
+<pre><code class="language-dsl">"  hello,world,test  "
+  |&gt; Trim(_) as cleaned
+  |&gt; Split(cleaned, ",") as words
+  |&gt; Map(words, Upper) as uppercased
+  |&gt; Join(uppercased, " | ")
+</code></pre>
+<h3 id="llm-workflow"><a class="header" href="#llm-workflow">LLM Workflow</a></h3>
+<pre><code class="language-dsl">
+
+type Article {
+  title: String
+  summary: String
+  keywords: [String]
+}
+
+"AI Ethics" as topic
+  |&gt; Research(topic) as research
+  |&gt; CreateOutline(research, topic) as outline
+  |&gt; WriteArticle(outline) as draft
+  |&gt; ReviewArticle(draft) as feedback
+  |&gt; ReviseArticle(draft, feedback) as final
+</code></pre>
+<h2 id="practical-examples"><a class="header" href="#practical-examples">Practical Examples</a></h2>
+<h3 id="example-1-data-transformation"><a class="header" href="#example-1-data-transformation">Example 1: Data Transformation</a></h3>
+<pre><code class="language-dsl">def processUserData(users) {
+  users
+    |&gt; filter(_, fn u =&gt; u.active end) as activeUsers
+    |&gt; map(activeUsers, fn u =&gt; {
+         id: u.id,
+         name: Trim(u.name end),
+         email: Lower(Trim(u.email))
+       } end) as normalized
+    |&gt; Sort(normalized) as sorted
+    |&gt; Take(sorted, 10)
+}
+
+processUserData(rawUsers)
+</code></pre>
+<h3 id="example-2-score-analysis"><a class="header" href="#example-2-score-analysis">Example 2: Score Analysis</a></h3>
+<pre><code class="language-dsl">def analyzeScores(scores) {
+  scores
+    |&gt; filter(_, fn s =&gt; s &gt; 0 end) as valid
+    |&gt; Sort(valid) as sorted
+    |&gt; Reverse(sorted) as descending
+    |&gt; Take(descending, 5) as top5
+    |&gt; {
+         topScores: top5,
+         average: Average(top5),
+         highest: First(top5)
+       }
+}
+
+analyzeScores([85, 92, 78, 95, 88, 76, 91, 89])
+</code></pre>
+<h3 id="example-3-content-generation"><a class="header" href="#example-3-content-generation">Example 3: Content Generation</a></h3>
+<pre><code class="language-dsl">
+
+type Outline { title: String, sections: [String] }
+type Article { title: String, content: String, wordCount: Int }
+
+def generateArticle(topic) { topic }
+    |&gt; Research(_) as research
+    |&gt; CreateOutline(research, topic) as outline
+    |&gt; WriteArticle(outline) as draft
+    |&gt; ReviewArticle(draft) as review
+    |&gt; review.score &gt; 0.8
+       ? draft
+       : ReviseArticle(draft, review.suggestions)
+
+generateArticle("Machine Learning Basics")
+</code></pre>
+<h3 id="example-4-api-data-pipeline"><a class="header" href="#example-4-api-data-pipeline">Example 4: API Data Pipeline</a></h3>
+<pre><code class="language-dsl">def fetchAndProcess(userId) { userId }
+    |&gt; ToString(_) as userIdStr
+    |&gt; fetchUserData(userIdStr) as userData
+    |&gt; userData.orders as orders
+    |&gt; map(orders, fn o =&gt; {
+         id: o.id,
+         total: o.amount * (1 + o.tax end)
+       }) as processedOrders
+    |&gt; Sort(processedOrders) as sortedOrders
+    |&gt; {
+         userId: userId,
+         orderCount: Length(sortedOrders),
+         totalSpent: Sum(map(sortedOrders, fn o =&gt; o.total end))
+       }
+</code></pre>
+<h3 id="example-5-csv-processing"><a class="header" href="#example-5-csv-processing">Example 5: CSV Processing</a></h3>
+<pre><code class="language-dsl">def processCSV(filename) { SQL("SELECT * FROM '" + filename + "'") as raw }
+    |&gt; SQL("SELECT * FROM raw WHERE valid = true") as valid
+    |&gt; map(valid, fn row =&gt; {
+         name: Trim(row.name end),
+         value: ToFloat(row.value),
+         category: Lower(row.category)
+       }) as normalized
+    |&gt; filter(normalized, fn r =&gt; r.value &gt; 0 end) as filtered
+    |&gt; {
+         count: Length(filtered),
+         total: Sum(map(filtered, fn r =&gt; r.value end)),
+         categories: Unique(map(filtered, fn r =&gt; r.category end))
+       }
+
+processCSV("data.csv")
+</code></pre>
+<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<h3 id="1-name-intermediate-results"><a class="header" href="#1-name-intermediate-results">1. Name Intermediate Results</a></h3>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">data
+  |&gt; cleanData(_) as cleaned
+  |&gt; validateData(cleaned) as validated
+  |&gt; transformData(validated) as result
+</code></pre>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">data
+  |&gt; cleanData(_)
+  |&gt; validateData(_)
+  |&gt; transformData(_)
+</code></pre>
+<h3 id="2-break-long-pipelines"><a class="header" href="#2-break-long-pipelines">2. Break Long Pipelines</a></h3>
+<p><strong>Good:</strong></p>
+<pre><code class="language-dsl">fetchDataA() as dataA
+fetchDataB() as dataB
+
+combineData(dataA, dataB) as combined
+
+combined
+  |&gt; analyzeData(_) as analysis
+  |&gt; formatResults(analysis)
+</code></pre>
+<p><strong>Bad:</strong></p>
+<pre><code class="language-dsl">fetchDataA() |&gt; combineWith(fetchDataB()) |&gt; analyze(_) |&gt; format(_) |&gt; validate(_) |&gt; save(_)
+</code></pre>
+<h3 id="3-use-descriptive-variable-names"><a class="header" href="#3-use-descriptive-variable-names">3. Use Descriptive Variable Names</a></h3>
+<pre><code class="language-dsl">users
+  |&gt; Filter(_, isActive) as activeUsers
+  |&gt; Map(activeUsers, extractEmail) as emails
+
+users
+  |&gt; Filter(_, isActive) as x
+  |&gt; Map(x, extractEmail) as y
+</code></pre>
+<h3 id="4-keep-functions-pure"><a class="header" href="#4-keep-functions-pure">4. Keep Functions Pure</a></h3>
+<pre><code class="language-dsl">def double(x) { x * 2 }
+
+data |&gt; Map(_, double)
+
+data |&gt; map(_, fn x =&gt; {
+  Log("Processing: " + ToString(x end))
+  x * 2
+})
+</code></pre>
+<h3 id="5-handle-errors-early"><a class="header" href="#5-handle-errors-early">5. Handle Errors Early</a></h3>
+<pre><code class="language-dsl">data
+  |&gt; validateInput(_) as validated
+  |&gt; processData(validated) as processed
+  |&gt; formatOutput(processed)
+
+data
+  |&gt; processData(_) as processed
+  |&gt; validateOutput(processed)
+</code></pre>
+<h2 id="performance-considerations"><a class="header" href="#performance-considerations">Performance Considerations</a></h2>
+<h3 id="sequential-execution-time"><a class="header" href="#sequential-execution-time">Sequential Execution Time</a></h3>
+<p>Operations execute one after another:</p>
+<pre><code class="language-dsl">slowOperation1()
+  |&gt; slowOperation2(_)
+  |&gt; slowOperation3(_)
+
+</code></pre>
+<h3 id="optimization-tips"><a class="header" href="#optimization-tips">Optimization Tips</a></h3>
+<h4 id="1-filter-early"><a class="header" href="#1-filter-early">1. Filter Early</a></h4>
+<pre><code class="language-dsl">largeData
+  |&gt; Filter(_, isValid)
+  |&gt; Map(_, expensiveTransform)
+
+largeData
+  |&gt; Map(_, expensiveTransform)
+  |&gt; Filter(_, isValid)
+</code></pre>
+<h4 id="2-minimize-data-transfer"><a class="header" href="#2-minimize-data-transfer">2. Minimize Data Transfer</a></h4>
+<pre><code class="language-dsl">hugeDataset
+  |&gt; aggregateByKey(_) as summary
+  |&gt; processSmallSummary(summary)
+
+hugeDataset
+  |&gt; transferAllData(_)
+  |&gt; aggregateRemotely(_)
+</code></pre>
+<h4 id="3-cache-expensive-computations"><a class="header" href="#3-cache-expensive-computations">3. Cache Expensive Computations</a></h4>
+<pre><code class="language-dsl">let average = Average(scores)
+scores
+  |&gt; map(_, fn s =&gt; s - average end)
+
+scores
+  |&gt; map(_, fn s =&gt; s - Average(scores end))
+</code></pre>
+<h2 id="common-patterns"><a class="header" href="#common-patterns">Common Patterns</a></h2>
+<h3 id="pattern-1-extract-transform-load-etl"><a class="header" href="#pattern-1-extract-transform-load-etl">Pattern 1: Extract-Transform-Load (ETL)</a></h3>
+<pre><code class="language-dsl">source
+  |&gt; extractData(_) as rawData
+
+  |&gt; cleanData(rawData) as cleanedData
+  |&gt; validateData(cleanedData) as validatedData
+  |&gt; transformData(validatedData) as transformedData
+
+  |&gt; saveData(transformedData)
+</code></pre>
+<h3 id="pattern-2-validate-process-format"><a class="header" href="#pattern-2-validate-process-format">Pattern 2: Validate-Process-Format</a></h3>
+<pre><code class="language-dsl">input
+  |&gt; validateInput(_) as validated
+  |&gt; processData(validated) as processed
+  |&gt; formatOutput(processed)
+</code></pre>
+<h3 id="pattern-3-fetch-parse-aggregate"><a class="header" href="#pattern-3-fetch-parse-aggregate">Pattern 3: Fetch-Parse-Aggregate</a></h3>
+<pre><code class="language-dsl">url
+  |&gt; fetchData(_) as response
+  |&gt; parseJSON(response) as data
+  |&gt; extractRecords(data) as records
+  |&gt; aggregateResults(records)
+</code></pre>
+<h3 id="pattern-4-filter-map-reduce"><a class="header" href="#pattern-4-filter-map-reduce">Pattern 4: Filter-Map-Reduce</a></h3>
+<pre><code class="language-dsl">data
+  |&gt; Filter(_, isValid) as validData
+  |&gt; Map(validData, transform) as transformedData
+  |&gt; Reduce(transformedData, initialValue, combine)
+</code></pre>
+<h2 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h2>
+<h3 id="error-propagation"><a class="header" href="#error-propagation">Error Propagation</a></h3>
+<p>Errors stop execution and propagate:</p>
+<pre><code class="language-dsl">step1()
+  |&gt; step2(_)
+  |&gt; step3(_)
+
+</code></pre>
+<h3 id="defensive-programming"><a class="header" href="#defensive-programming">Defensive Programming</a></h3>
+<pre><code class="language-dsl">data
+  |&gt; _ as input
+  |&gt; Length(input) &gt; 0
+     ? processData(input)
+     : defaultResult
+</code></pre>
+<h2 id="debugging-pipelines"><a class="header" href="#debugging-pipelines">Debugging Pipelines</a></h2>
+<h3 id="inspect-intermediate-values"><a class="header" href="#inspect-intermediate-values">Inspect Intermediate Values</a></h3>
+<pre><code class="language-dsl">data
+  |&gt; step1(_) as result1
+  |&gt; step2(result1) as result2
+  |&gt; step3(result2)
+</code></pre>
+<h3 id="log-pipeline-steps"><a class="header" href="#log-pipeline-steps">Log Pipeline Steps</a></h3>
+<pre><code class="language-dsl">data
+  |&gt; cleanData(_) as cleaned
+  |&gt; _ as _ |&gt; Log("Cleaned: " + ToString(Length(cleaned)))
+  |&gt; validateData(cleaned) as validated
+  |&gt; _ as _ |&gt; Log("Validated: " + ToString(Length(validated)))
+  |&gt; processData(validated)
+</code></pre>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><a href="./parallel.html">Parallel Workflows</a> - Execute operations concurrently</li>
+<li><a href="./patterns.html">Workflow Patterns</a> - Common patterns and anti-patterns</li>
+<li><a href="../builtins/README.html">Builtin Functions</a> - Functions to use in pipelines</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../user-guide/builtins/utilities.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../user-guide/workflows/parallel.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../user-guide/builtins/utilities.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../user-guide/workflows/parallel.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_line_numbers = true;
+        </script>
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../../ace.js"></script>
+        <script src="../../mode-rust.js"></script>
+        <script src="../../editor.js"></script>
+        <script src="../../theme-dawn.js"></script>
+        <script src="../../theme-tomorrow_night.js"></script>
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

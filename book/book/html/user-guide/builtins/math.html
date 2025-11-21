@@ -1,0 +1,585 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Math Operations - DSL Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A powerful Domain-Specific Language for building agentic LLM workflows">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">DSL Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL/edit/main/book/src/user-guide/builtins/math.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="math-operations"><a class="header" href="#math-operations">Math Operations</a></h1>
+<p>Mathematical functions for numerical calculations and aggregations.</p>
+<h2 id="abs"><a class="header" href="#abs">Abs</a></h2>
+<p><strong>Signature:</strong> <code>(Int | Float) -&gt; Int | Float</code></p>
+<p>Calculate the absolute value of a number.</p>
+<pre><code class="language-dsl">Abs(-42)
+Abs(42)
+Abs(-3.14)
+Abs(0)
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Abs(x1 - x2)
+
+Abs(expected - actual)
+
+Map(numbers, Abs)
+</code></pre>
+<h2 id="min"><a class="header" href="#min">Min</a></h2>
+<p><strong>Signature:</strong> <code>(List) -&gt; Int | Float</code></p>
+<p>Find the minimum value in a list of numbers. <strong>Errors on empty list.</strong></p>
+<pre><code class="language-dsl">Min([3, 1, 4, 1, 5])
+Min([2.5, 1.2, 3.7])
+Min([-5, -2, -10])
+Min([42])
+Min([])
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Min(scores)
+
+Min(map(products, fn p =&gt; p.price end))
+
+let range = Max(values) - Min(values)
+</code></pre>
+<h2 id="max"><a class="header" href="#max">Max</a></h2>
+<p><strong>Signature:</strong> <code>(List) -&gt; Int | Float</code></p>
+<p>Find the maximum value in a list of numbers. <strong>Errors on empty list.</strong></p>
+<pre><code class="language-dsl">Max([3, 1, 4, 1, 5])
+Max([2.5, 1.2, 3.7])
+Max([-5, -2, -10])
+Max([42])
+Max([])
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Max(scores)
+
+Max(temperatures)
+
+Max(dataPoints)
+</code></pre>
+<h2 id="sum"><a class="header" href="#sum">Sum</a></h2>
+<p><strong>Signature:</strong> <code>(List) -&gt; Int | Float</code></p>
+<p>Sum all numbers in a list. Returns <code>0</code> for empty list.</p>
+<pre><code class="language-dsl">Sum([1, 2, 3, 4])
+Sum([1.5, 2.5, 3.0])
+Sum([-5, 3, 2])
+Sum([42])
+Sum([])
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Sum(map(orders, fn o =&gt; o.amount end))
+
+Sum(map(items, fn i =&gt; i.isActive ? 1 : 0 end))
+
+Sum(values)
+</code></pre>
+<h2 id="average"><a class="header" href="#average">Average</a></h2>
+<p><strong>Signature:</strong> <code>(List) -&gt; Float</code></p>
+<p>Calculate the average of numbers in a list. <strong>Errors on empty list.</strong></p>
+<pre><code class="language-dsl">Average([1, 2, 3, 4])
+Average([10, 20, 30])
+Average([5])
+Average([1, 2, 3, 4, 5])
+Average([])
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">def main() {
+    Average(scores)
+
+    Average(temperatures)
+
+    let mean = Average(values)
+    let variance = Average(map(values, fn x =&gt; (x - mean end) * (x - mean)))
+}
+main()
+</code></pre>
+<h2 id="round"><a class="header" href="#round">Round</a></h2>
+<p><strong>Signature:</strong> <code>(Float) -&gt; Int</code></p>
+<p>Round a float to the nearest integer.</p>
+<pre><code class="language-dsl">Round(3.7)
+Round(3.2)
+Round(3.5)
+Round(-2.5)
+Round(0.0)
+</code></pre>
+<p><strong>Rounding Rules:</strong></p>
+<ul>
+<li><code>.5</code> and above rounds up</li>
+<li>Below <code>.5</code> rounds down</li>
+<li>Negative numbers round toward zero for <code>.5</code></li>
+</ul>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Map(prices, Round)
+
+Round(calculation)
+</code></pre>
+<h2 id="floor"><a class="header" href="#floor">Floor</a></h2>
+<p><strong>Signature:</strong> <code>(Float) -&gt; Int</code></p>
+<p>Round down to the nearest integer (toward negative infinity).</p>
+<pre><code class="language-dsl">Floor(3.7)
+Floor(3.2)
+Floor(-2.3)
+Floor(-2.7)
+Floor(5.0)
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Floor(a / b)
+
+Floor(value / bucketSize)
+
+Floor(price)
+</code></pre>
+<h2 id="ceil"><a class="header" href="#ceil">Ceil</a></h2>
+<p><strong>Signature:</strong> <code>(Float) -&gt; Int</code></p>
+<p>Round up to the nearest integer (toward positive infinity).</p>
+<pre><code class="language-dsl">Ceil(3.2)
+Ceil(3.7)
+Ceil(-2.3)
+Ceil(-2.7)
+Ceil(5.0)
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<pre><code class="language-dsl">Ceil(result)
+
+Ceil(totalItems / itemsPerPage)
+
+Ceil(estimate)
+</code></pre>
+<h2 id="type-conversion"><a class="header" href="#type-conversion">Type Conversion</a></h2>
+<h3 id="toint"><a class="header" href="#toint">ToInt</a></h3>
+<p><strong>Signature:</strong> <code>(String | Float) -&gt; Int</code></p>
+<p>Convert a string or float to an integer.</p>
+<pre><code class="language-dsl">ToInt("123")
+ToInt("42")
+ToInt(3.7)
+ToInt(3.2)
+ToInt("-10")
+</code></pre>
+<p><strong>Error Cases:</strong></p>
+<pre><code class="language-dsl">ToInt("abc")
+ToInt("12.5")
+</code></pre>
+<h3 id="tofloat"><a class="header" href="#tofloat">ToFloat</a></h3>
+<p><strong>Signature:</strong> <code>(String | Int) -&gt; Float</code></p>
+<p>Convert a string or integer to a float.</p>
+<pre><code class="language-dsl">ToFloat("3.14")
+ToFloat("42")
+ToFloat(42)
+ToFloat("2.5")
+</code></pre>
+<p><strong>Error Cases:</strong></p>
+<pre><code class="language-dsl">ToFloat("abc")
+</code></pre>
+<h3 id="tostring"><a class="header" href="#tostring">ToString</a></h3>
+<p><strong>Signature:</strong> <code>(Any) -&gt; String</code></p>
+<p>Convert any value to a string representation.</p>
+<pre><code class="language-dsl">ToString(42)
+ToString(3.14)
+ToString(true)
+ToString([1, 2, 3])
+</code></pre>
+<h2 id="practical-examples"><a class="header" href="#practical-examples">Practical Examples</a></h2>
+<h3 id="example-1-statistical-summary"><a class="header" href="#example-1-statistical-summary">Example 1: Statistical Summary</a></h3>
+<pre><code class="language-dsl">def stats(numbers) { { }
+  min: Min(numbers),
+  max: Max(numbers),
+  sum: Sum(numbers),
+  avg: Average(numbers),
+  count: Length(numbers)
+}
+
+stats([85, 92, 78, 95, 88])
+</code></pre>
+<h3 id="example-2-normalize-values"><a class="header" href="#example-2-normalize-values">Example 2: Normalize Values</a></h3>
+<pre><code class="language-dsl">def normalize(values) { let minVal = Min(values) }
+  let maxVal = Max(values)
+  let range = maxVal - minVal
+  map(values, fn v =&gt; (v - minVal end) / range)
+
+normalize([10, 20, 30, 40, 50])
+</code></pre>
+<h3 id="example-3-grade-calculator"><a class="header" href="#example-3-grade-calculator">Example 3: Grade Calculator</a></h3>
+<pre><code class="language-dsl">def calculateGrade(scores) { let avg = Average(scores) }
+  avg &gt;= 90 ? "A" :
+  avg &gt;= 80 ? "B" :
+  avg &gt;= 70 ? "C" :
+  avg &gt;= 60 ? "D" : "F"
+
+calculateGrade([85, 92, 88, 95])
+</code></pre>
+<h3 id="example-4-pagination-page-count"><a class="header" href="#example-4-pagination-page-count">Example 4: Pagination Page Count</a></h3>
+<pre><code class="language-dsl">def pageCount(totalItems, itemsPerPage) { Ceil(totalItems / itemsPerPage) }
+
+pageCount(100, 10)
+pageCount(95, 10)
+pageCount(101, 10)
+</code></pre>
+<h3 id="example-5-price-calculation"><a class="header" href="#example-5-price-calculation">Example 5: Price Calculation</a></h3>
+<pre><code class="language-dsl">def calculateTotal(items) { items }
+    |&gt; map(_, fn item =&gt; item.price * item.quantity end)
+    |&gt; Sum(_)
+    |&gt; Round(_)
+
+let cart = [
+  {price: 10.99, quantity: 2},
+  {price: 5.49, quantity: 3},
+  {price: 7.25, quantity: 1}
+]
+
+calculateTotal(cart)
+</code></pre>
+<h3 id="example-6-temperature-conversion"><a class="header" href="#example-6-temperature-conversion">Example 6: Temperature Conversion</a></h3>
+<pre><code class="language-dsl">def celsiusToFahrenheit(celsius) { Round(celsius * 9 / 5 + 32) }
+
+def fahrenheitToCelsius(fahrenheit) { Round((fahrenheit - 32) * 5 / 9) }
+
+celsiusToFahrenheit(25)
+fahrenheitToCelsius(77)
+</code></pre>
+<h3 id="example-7-range-and-variance"><a class="header" href="#example-7-range-and-variance">Example 7: Range and Variance</a></h3>
+<pre><code class="language-dsl">def range(values) { Max(values) - Min(values) }
+
+def variance(values) { let mean = Average(values) }
+  let squaredDiffs = map(values, fn x =&gt; (x - mean end) * (x - mean))
+  Average(squaredDiffs)
+
+let data = [10, 20, 30, 40, 50]
+range(data)
+variance(data)
+</code></pre>
+<h3 id="example-8-moving-average"><a class="header" href="#example-8-moving-average">Example 8: Moving Average</a></h3>
+<pre><code class="language-dsl">def movingAverage(values, windowSize) { Range(0, Length(values) - windowSize + 1) }
+    |&gt; map(_, fn i =&gt; Average(Take(Skip(values, i end), windowSize)))
+
+movingAverage([1, 2, 3, 4, 5, 6, 7], 3)
+</code></pre>
+<h2 id="combining-math-operations"><a class="header" href="#combining-math-operations">Combining Math Operations</a></h2>
+<h3 id="data-analysis-pipeline"><a class="header" href="#data-analysis-pipeline">Data Analysis Pipeline</a></h3>
+<pre><code class="language-dsl">def main() {
+    let scores = [85, 92, 78, 95, 88, 76, 91, 89]
+
+    let analysis = {
+      total: Sum(scores),
+      average: Average(scores),
+      highest: Max(scores),
+      lowest: Min(scores),
+      range: Max(scores) - Min(scores),
+      aboveAvg: Count(scores, fn s =&gt; s &gt; Average(scores end)),
+      roundedAvg: Round(Average(scores))
+    }
+}
+main()
+</code></pre>
+<h3 id="financial-calculations"><a class="header" href="#financial-calculations">Financial Calculations</a></h3>
+<pre><code class="language-dsl">def calculateInvoice(lineItems) { let subtotal = Sum(map(lineItems, fn item =&gt; item.total end)) }
+  let tax = Round(subtotal * 0.08 * 100) / 100
+  let total = subtotal + tax
+  {
+    subtotal: subtotal,
+    tax: tax,
+    total: total
+  }
+</code></pre>
+<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<h3 id="1-check-for-empty-lists"><a class="header" href="#1-check-for-empty-lists">1. Check for Empty Lists</a></h3>
+<p>Always validate before using Min, Max, or Average:</p>
+<pre><code class="language-dsl">Length(values) &gt; 0 ? Average(values) : 0
+
+Average(values)
+</code></pre>
+<h3 id="2-handle-division-by-zero"><a class="header" href="#2-handle-division-by-zero">2. Handle Division by Zero</a></h3>
+<pre><code class="language-dsl">let divisor = Max(values)
+divisor != 0 ? Sum(values) / divisor : 0
+
+Sum(values) / Max(values)
+</code></pre>
+<h3 id="3-use-appropriate-rounding"><a class="header" href="#3-use-appropriate-rounding">3. Use Appropriate Rounding</a></h3>
+<p>Choose the right rounding function for your use case:</p>
+<pre><code class="language-dsl">Round(3.5)
+
+Floor(3.9)
+
+Ceil(3.1)
+</code></pre>
+<h3 id="4-precision-in-financial-calculations"><a class="header" href="#4-precision-in-financial-calculations">4. Precision in Financial Calculations</a></h3>
+<pre><code class="language-dsl">Round(price * 100) / 100
+
+ToInt(price * 100)
+</code></pre>
+<h2 id="performance-tips"><a class="header" href="#performance-tips">Performance Tips</a></h2>
+<h3 id="1-cache-expensive-calculations"><a class="header" href="#1-cache-expensive-calculations">1. Cache Expensive Calculations</a></h3>
+<pre><code class="language-dsl">def main() {
+    let avg = Average(values)
+    let results = map(values, fn v =&gt; v - avg end)
+
+    let results = map(values, fn v =&gt; v - Average(values end))
+}
+main()
+</code></pre>
+<h3 id="2-combine-operations"><a class="header" href="#2-combine-operations">2. Combine Operations</a></h3>
+<pre><code class="language-dsl">let stats = Reduce(values, {sum: 0, count: 0}, def (acc, val) := {
+  sum: acc.sum + val,
+  count: acc.count + 1
+})
+
+let sum = Sum(values)
+let count = Length(values)
+</code></pre>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><a href="./strings.html">String Operations</a> - Text manipulation</li>
+<li><a href="./lists.html">List Operations</a> - Collection operations</li>
+<li><a href="./functional.html">Functional Programming</a> - Higher-order functions</li>
+<li><a href="./utilities.html">Utilities</a> - Additional tools</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../user-guide/builtins/lists.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../user-guide/builtins/functional.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../user-guide/builtins/lists.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../user-guide/builtins/functional.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_line_numbers = true;
+        </script>
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../../ace.js"></script>
+        <script src="../../mode-rust.js"></script>
+        <script src="../../editor.js"></script>
+        <script src="../../theme-dawn.js"></script>
+        <script src="../../theme-tomorrow_night.js"></script>
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

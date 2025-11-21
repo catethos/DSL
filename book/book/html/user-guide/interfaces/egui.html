@@ -1,0 +1,873 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Desktop GUI (egui) - DSL Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A powerful Domain-Specific Language for building agentic LLM workflows">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">DSL Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL/edit/main/book/src/user-guide/interfaces/egui.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="desktop-gui-egui"><a class="header" href="#desktop-gui-egui">Desktop GUI (egui)</a></h1>
+<p>The DSL Desktop GUI provides a modern, visually rich interface for developing DSL applications. Built with egui, it offers a polished workspace with syntax highlighting, autocomplete, rich output rendering, and a customizable split-pane layout.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The egui interface combines the power of an IDE with the interactivity of a REPL:</p>
+<ul>
+<li><strong>Visual Editor</strong> with syntax highlighting and Tree-sitter integration</li>
+<li><strong>Interactive REPL</strong> for immediate feedback</li>
+<li><strong>Rich Output Rendering</strong> (tables, trees, images, markdown)</li>
+<li><strong>Resizable Split Panes</strong> for flexible workspace layout</li>
+<li><strong>Modern Theme</strong> with smooth animations and intuitive controls</li>
+</ul>
+<h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
+<h3 id="launching-the-gui"><a class="header" href="#launching-the-gui">Launching the GUI</a></h3>
+<pre><code class="language-bash"># Start the desktop GUI
+dsl gui
+
+# Or run dsl-egui directly
+dsl-egui
+</code></pre>
+<h3 id="first-impressions"><a class="header" href="#first-impressions">First Impressions</a></h3>
+<p>When you launch the GUI:</p>
+<ol>
+<li>Split workspace with Editor (left) and REPL (right)</li>
+<li>Modern dark theme with accent colors</li>
+<li>Resizable panes (drag the divider)</li>
+<li>Menu bar with File, Edit, View, Help options</li>
+<li>Status bar showing keyboard hints</li>
+</ol>
+<h2 id="workspace-layout"><a class="header" href="#workspace-layout">Workspace Layout</a></h2>
+<h3 id="split-pane-interface"><a class="header" href="#split-pane-interface">Split-Pane Interface</a></h3>
+<p>The GUI uses a horizontal split layout:</p>
+<pre><code>┌─────────────────────────────┬─────────────────────────────┐
+│                             │                             │
+│         Editor Pane         │         REPL Pane           │
+│     (Write Scripts)         │   (Interactive Testing)     │
+│                             │                             │
+│  • Syntax highlighting      │  • Immediate evaluation     │
+│  • Multi-file tabs          │  • Command history          │
+│  • File operations          │  • Rich output              │
+│  • Line numbers             │  • Autocomplete             │
+│                             │                             │
+└─────────────────────────────┴─────────────────────────────┘
+</code></pre>
+<p><strong>Adjusting Layout:</strong></p>
+<ul>
+<li>Drag the center divider to resize panes</li>
+<li>Double-click divider to reset to 50/50</li>
+<li>Hide Editor: drag all the way left</li>
+<li>Hide REPL: drag all the way right</li>
+</ul>
+<h3 id="active-pane-focus"><a class="header" href="#active-pane-focus">Active Pane Focus</a></h3>
+<p>The active pane is highlighted with a colored border:</p>
+<ul>
+<li><strong>Blue border</strong>: Active pane (receives keyboard input)</li>
+<li>Click to switch focus</li>
+<li>Or use <strong>Ctrl+Tab</strong> to toggle between panes</li>
+</ul>
+<h2 id="editor-pane"><a class="header" href="#editor-pane">Editor Pane</a></h2>
+<p>The Editor provides a full-featured code editor for writing DSL scripts.</p>
+<h3 id="features"><a class="header" href="#features">Features</a></h3>
+<p><strong>Syntax Highlighting:</strong></p>
+<ul>
+<li>Tree-sitter powered</li>
+<li>Real-time as you type</li>
+<li>Semantic highlighting (types, functions, variables)</li>
+<li>Error underlining</li>
+</ul>
+<p><strong>Code Navigation:</strong></p>
+<ul>
+<li>Line numbers</li>
+<li>Goto line (Ctrl+G)</li>
+<li>Find (Ctrl+F)</li>
+<li>Replace (Ctrl+H)</li>
+</ul>
+<p><strong>Editing:</strong></p>
+<ul>
+<li>Multi-line selection</li>
+<li>Block indent/outdent (Tab/Shift+Tab)</li>
+<li>Comment toggle (Ctrl+/)</li>
+<li>Auto-indent</li>
+<li>Bracket matching</li>
+</ul>
+<p><strong>File Operations:</strong></p>
+<ul>
+<li>New file (Ctrl+N)</li>
+<li>Open file (Ctrl+O)</li>
+<li>Save (Ctrl+S)</li>
+<li>Save As (Ctrl+Shift+S)</li>
+<li>Recent files list</li>
+</ul>
+<h3 id="example-workflow"><a class="header" href="#example-workflow">Example Workflow</a></h3>
+<pre><code class="language-dsl">
+type User {
+  id: Int
+  name: String
+  email: String
+  active: Bool
+}
+
+def getActiveUsers(users) { users }
+    |&gt; filter(_, fn u =&gt; u.active end)
+    |&gt; map(_, fn u =&gt; {
+         id: u.id,
+         name: u.name,
+         email: u.email
+       } end)
+    |&gt; Sort(_)
+
+</code></pre>
+<h3 id="multi-tab-support"><a class="header" href="#multi-tab-support">Multi-Tab Support</a></h3>
+<p>Work on multiple files simultaneously:</p>
+<ul>
+<li><strong>New Tab</strong>: Ctrl+T</li>
+<li><strong>Close Tab</strong>: Ctrl+W</li>
+<li><strong>Switch Tabs</strong>: Ctrl+1, Ctrl+2, etc.</li>
+<li>Tab bar shows all open files</li>
+<li>Unsaved files marked with *</li>
+</ul>
+<h3 id="syntax-highlighting-colors"><a class="header" href="#syntax-highlighting-colors">Syntax Highlighting Colors</a></h3>
+<p>The modern theme uses semantic colors:</p>
+<div class="table-wrapper"><table><thead><tr><th>Element</th><th>Color</th><th>Example</th></tr></thead><tbody>
+<tr><td><strong>Keywords</strong></td><td>Blue</td><td><code>def</code>, <code>type</code>, <code>let</code></td></tr>
+<tr><td><strong>Strings</strong></td><td>Green</td><td><code>"hello world"</code></td></tr>
+<tr><td><strong>Numbers</strong></td><td>Orange</td><td><code>42</code>, <code>3.14</code></td></tr>
+<tr><td><strong>Comments</strong></td><td>Gray</td><td><code>// comment</code></td></tr>
+<tr><td><strong>Functions</strong></td><td>Yellow</td><td><code>Map</code>, <code>Filter</code></td></tr>
+<tr><td><strong>Types</strong></td><td>Cyan</td><td><code>Int</code>, <code>String</code>, <code>User</code></td></tr>
+<tr><td><strong>Operators</strong></td><td>White</td><td>`</td></tr>
+<tr><td><strong>Variables</strong></td><td>White</td><td><code>x</code>, <code>users</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="repl-pane"><a class="header" href="#repl-pane">REPL Pane</a></h2>
+<p>The REPL (Read-Eval-Print Loop) provides immediate, interactive evaluation.</p>
+<h3 id="features-1"><a class="header" href="#features-1">Features</a></h3>
+<p><strong>Input Area:</strong></p>
+<ul>
+<li>Multi-line input support</li>
+<li>Syntax highlighting as you type</li>
+<li>Auto-completion (Tab)</li>
+<li>History navigation (Up/Down)</li>
+<li>Smart indentation</li>
+</ul>
+<p><strong>Output Area:</strong></p>
+<ul>
+<li>Rich rendering (tables, trees, markdown)</li>
+<li>Syntax-highlighted values</li>
+<li>Image display</li>
+<li>Scrollable history</li>
+<li>Selectable text (for copying)</li>
+</ul>
+<p><strong>Evaluation:</strong></p>
+<ul>
+<li>Press Enter to evaluate (single-line)</li>
+<li>Shift+Enter for multi-line</li>
+<li>Ctrl+Enter to execute multi-line input</li>
+<li>Clear button to reset output</li>
+</ul>
+<h3 id="example-session"><a class="header" href="#example-session">Example Session</a></h3>
+<pre><code class="language-dsl">5 + 3
+→ 8
+
+let users = [
+  {id: 1, name: "Alice", active: true},
+  {id: 2, name: "Bob", active: false},
+  {id: 3, name: "Charlie", active: true}
+]
+→ ✓ Bound 'users' : List
+
+getActiveUsers(users)
+→ [
+    {id: 1, name: "Alice", email: "alice@example.com"},
+    {id: 3, name: "Charlie", email: "charlie@example.com"}
+  ]
+</code></pre>
+<h3 id="rich-output-rendering"><a class="header" href="#rich-output-rendering">Rich Output Rendering</a></h3>
+<p>The REPL renders different data types with appropriate formatting:</p>
+<p><strong>Lists:</strong></p>
+<pre><code class="language-dsl">[1, 2, 3, 4, 5]
+</code></pre>
+<p>Renders as:</p>
+<pre><code>[1, 2, 3, 4, 5]
+</code></pre>
+<p><strong>Maps/Objects:</strong></p>
+<pre><code class="language-dsl">{name: "Alice", age: 30, active: true}
+</code></pre>
+<p>Renders as formatted JSON:</p>
+<pre><code class="language-json">{
+  "name": "Alice",
+  "age": 30,
+  "active": true
+}
+</code></pre>
+<p><strong>Tables:</strong>
+Large lists of objects render as tables:</p>
+<pre><code class="language-dsl">users
+</code></pre>
+<p>Renders as:</p>
+<pre><code>┌────┬──────────┬──────────┐
+│ id │ name     │ active   │
+├────┼──────────┼──────────┤
+│ 1  │ Alice    │ true     │
+│ 2  │ Bob      │ false    │
+│ 3  │ Charlie  │ true     │
+└────┴──────────┴──────────┘
+</code></pre>
+<p><strong>Markdown:</strong></p>
+<pre><code class="language-dsl">RenderMarkdown("# Hello\n\nThis is **bold**")
+</code></pre>
+<p>Renders with formatting (headers, bold, lists, etc.)</p>
+<p><strong>Images:</strong></p>
+<pre><code class="language-dsl">LoadImage("diagram.png")
+</code></pre>
+<p>Displays the image inline in the output</p>
+<h3 id="autocomplete"><a class="header" href="#autocomplete">Autocomplete</a></h3>
+<p>Intelligent suggestions as you type:</p>
+<p><strong>Trigger:</strong></p>
+<ul>
+<li>Automatic after typing <code>.</code> or first letter</li>
+<li>Manual with <strong>Tab</strong> key</li>
+</ul>
+<p><strong>Suggestions Include:</strong></p>
+<ul>
+<li>Builtin functions (<code>Map</code>, <code>Filter</code>, <code>Sum</code>)</li>
+<li>Defined functions (<code>getActiveUsers</code>)</li>
+<li>Variables (<code>users</code>, <code>data</code>)</li>
+<li>Type names (<code>User</code>, <code>Status</code>)</li>
+<li>REPL commands (<code>:help</code>, <code>:vars</code>)</li>
+</ul>
+<p><strong>Usage:</strong></p>
+<ol>
+<li>Start typing: <code>Fil</code></li>
+<li>Suggestions appear in popup</li>
+<li>Arrow keys to navigate</li>
+<li>Enter to accept</li>
+<li>Esc to dismiss</li>
+</ol>
+<h3 id="history-navigation"><a class="header" href="#history-navigation">History Navigation</a></h3>
+<p>Access previously executed commands:</p>
+<ul>
+<li><strong>Up Arrow</strong>: Previous command</li>
+<li><strong>Down Arrow</strong>: Next command</li>
+<li><strong>Ctrl+R</strong>: Search history (type to filter)</li>
+<li>History persists between sessions</li>
+</ul>
+<h2 id="menu-bar"><a class="header" href="#menu-bar">Menu Bar</a></h2>
+<h3 id="file-menu"><a class="header" href="#file-menu">File Menu</a></h3>
+<ul>
+<li><strong>New</strong> (Ctrl+N): Create new file</li>
+<li><strong>Open</strong> (Ctrl+O): Open existing file</li>
+<li><strong>Save</strong> (Ctrl+S): Save current file</li>
+<li><strong>Save As</strong> (Ctrl+Shift+S): Save with new name</li>
+<li><strong>Recent Files</strong>: Quick access to recently opened</li>
+<li><strong>Exit</strong> (Ctrl+Q): Quit application</li>
+</ul>
+<h3 id="edit-menu"><a class="header" href="#edit-menu">Edit Menu</a></h3>
+<ul>
+<li><strong>Undo</strong> (Ctrl+Z): Undo last edit</li>
+<li><strong>Redo</strong> (Ctrl+Y): Redo undone edit</li>
+<li><strong>Cut</strong> (Ctrl+X): Cut selection</li>
+<li><strong>Copy</strong> (Ctrl+C): Copy selection</li>
+<li><strong>Paste</strong> (Ctrl+V): Paste from clipboard</li>
+<li><strong>Select All</strong> (Ctrl+A): Select entire editor</li>
+<li><strong>Find</strong> (Ctrl+F): Search in editor</li>
+<li><strong>Replace</strong> (Ctrl+H): Find and replace</li>
+</ul>
+<h3 id="view-menu"><a class="header" href="#view-menu">View Menu</a></h3>
+<ul>
+<li><strong>Toggle Theme</strong>: Switch light/dark mode</li>
+<li><strong>Increase Font Size</strong> (Ctrl++): Larger text</li>
+<li><strong>Decrease Font Size</strong> (Ctrl+-): Smaller text</li>
+<li><strong>Reset Font Size</strong> (Ctrl+0): Default size</li>
+<li><strong>Toggle Line Numbers</strong>: Show/hide in editor</li>
+<li><strong>Toggle Minimap</strong>: Code overview (if enabled)</li>
+</ul>
+<h3 id="repl-menu"><a class="header" href="#repl-menu">REPL Menu</a></h3>
+<ul>
+<li><strong>Clear Output</strong> (Ctrl+L): Clear REPL output</li>
+<li><strong>Clear Variables</strong>: Reset interpreter state</li>
+<li><strong>Show Variables</strong> (:vars): List all variables</li>
+<li><strong>Show Types</strong> (:types): List defined types</li>
+<li><strong>Show Functions</strong> (:funcs): List defined functions</li>
+</ul>
+<h3 id="help-menu"><a class="header" href="#help-menu">Help Menu</a></h3>
+<ul>
+<li><strong>Documentation</strong>: Open user guide</li>
+<li><strong>Keyboard Shortcuts</strong>: Shortcut cheat sheet</li>
+<li><strong>About</strong>: Version and credits</li>
+</ul>
+<h2 id="keyboard-shortcuts"><a class="header" href="#keyboard-shortcuts">Keyboard Shortcuts</a></h2>
+<h3 id="global"><a class="header" href="#global">Global</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Shortcut</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>Ctrl+Tab</strong></td><td>Switch between Editor/REPL</td></tr>
+<tr><td><strong>Ctrl+Q</strong></td><td>Quit application</td></tr>
+<tr><td><strong>F11</strong></td><td>Toggle fullscreen</td></tr>
+</tbody></table>
+</div>
+<h3 id="editor"><a class="header" href="#editor">Editor</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Shortcut</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>Ctrl+N</strong></td><td>New file</td></tr>
+<tr><td><strong>Ctrl+O</strong></td><td>Open file</td></tr>
+<tr><td><strong>Ctrl+S</strong></td><td>Save file</td></tr>
+<tr><td><strong>Ctrl+Shift+S</strong></td><td>Save As</td></tr>
+<tr><td><strong>Ctrl+W</strong></td><td>Close tab</td></tr>
+<tr><td><strong>Ctrl+Z</strong></td><td>Undo</td></tr>
+<tr><td><strong>Ctrl+Y</strong></td><td>Redo</td></tr>
+<tr><td><strong>Ctrl+F</strong></td><td>Find</td></tr>
+<tr><td><strong>Ctrl+H</strong></td><td>Replace</td></tr>
+<tr><td><strong>Ctrl+G</strong></td><td>Go to line</td></tr>
+<tr><td><strong>Ctrl+/</strong></td><td>Toggle comment</td></tr>
+<tr><td><strong>Tab</strong></td><td>Indent selection</td></tr>
+<tr><td><strong>Shift+Tab</strong></td><td>Outdent selection</td></tr>
+</tbody></table>
+</div>
+<h3 id="repl"><a class="header" href="#repl">REPL</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Shortcut</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>Enter</strong></td><td>Execute (single-line)</td></tr>
+<tr><td><strong>Shift+Enter</strong></td><td>New line</td></tr>
+<tr><td><strong>Ctrl+Enter</strong></td><td>Execute (multi-line)</td></tr>
+<tr><td><strong>Up/Down</strong></td><td>History navigation</td></tr>
+<tr><td><strong>Ctrl+R</strong></td><td>Search history</td></tr>
+<tr><td><strong>Tab</strong></td><td>Show autocomplete</td></tr>
+<tr><td><strong>Esc</strong></td><td>Close autocomplete</td></tr>
+<tr><td><strong>Ctrl+L</strong></td><td>Clear output</td></tr>
+<tr><td><strong>Ctrl+C</strong></td><td>Copy selection (from output)</td></tr>
+</tbody></table>
+</div>
+<h3 id="text-editing"><a class="header" href="#text-editing">Text Editing</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Shortcut</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>Ctrl+A</strong></td><td>Select all</td></tr>
+<tr><td><strong>Ctrl+X</strong></td><td>Cut</td></tr>
+<tr><td><strong>Ctrl+C</strong></td><td>Copy</td></tr>
+<tr><td><strong>Ctrl+V</strong></td><td>Paste</td></tr>
+<tr><td><strong>Ctrl+Left/Right</strong></td><td>Jump by word</td></tr>
+<tr><td><strong>Home</strong></td><td>Start of line</td></tr>
+<tr><td><strong>End</strong></td><td>End of line</td></tr>
+<tr><td><strong>Ctrl+Home</strong></td><td>Start of file</td></tr>
+<tr><td><strong>Ctrl+End</strong></td><td>End of file</td></tr>
+</tbody></table>
+</div>
+<h2 id="features-2"><a class="header" href="#features-2">Features</a></h2>
+<h3 id="persistent-workspace"><a class="header" href="#persistent-workspace">Persistent Workspace</a></h3>
+<p>Your workspace state is saved automatically:</p>
+<ul>
+<li>Open files and tabs</li>
+<li>Split pane ratio</li>
+<li>REPL history</li>
+<li>Recent files list</li>
+<li>Theme preference</li>
+<li>Font size</li>
+</ul>
+<p><strong>Location:</strong> <code>~/.dsl_workspace.json</code></p>
+<h3 id="drag-and-drop"><a class="header" href="#drag-and-drop">Drag and Drop</a></h3>
+<p>Convenient file operations:</p>
+<ul>
+<li>Drag <code>.dsl</code> file into Editor to open</li>
+<li>Drag multiple files to open in tabs</li>
+<li>Drag text from external apps into Editor</li>
+</ul>
+<h3 id="status-bar"><a class="header" href="#status-bar">Status Bar</a></h3>
+<p>Bottom status bar shows:</p>
+<ul>
+<li><strong>Left</strong>: File path, line:column position</li>
+<li><strong>Center</strong>: Current mode (Insert/Command)</li>
+<li><strong>Right</strong>: File encoding, type, modified status</li>
+</ul>
+<h3 id="error-highlighting"><a class="header" href="#error-highlighting">Error Highlighting</a></h3>
+<p>Real-time error detection:</p>
+<ul>
+<li>Red underlines for syntax errors</li>
+<li>Yellow for warnings</li>
+<li>Hover to see error message</li>
+<li>Error list panel (if enabled)</li>
+</ul>
+<h3 id="themes"><a class="header" href="#themes">Themes</a></h3>
+<p>Choose between light and dark themes:</p>
+<p><strong>Dark Theme (default):</strong></p>
+<ul>
+<li>Modern dark background</li>
+<li>High contrast</li>
+<li>Blue accents</li>
+<li>Easy on eyes for long sessions</li>
+</ul>
+<p><strong>Light Theme:</strong></p>
+<ul>
+<li>Clean white background</li>
+<li>Black text</li>
+<li>Blue accents</li>
+<li>Better for bright environments</li>
+</ul>
+<p><strong>Toggle:</strong> View → Toggle Theme or Ctrl+Shift+T</p>
+<h3 id="font-customization"><a class="header" href="#font-customization">Font Customization</a></h3>
+<p>Adjust text size for comfort:</p>
+<ul>
+<li><strong>Ctrl++</strong>: Increase size</li>
+<li><strong>Ctrl+-</strong>: Decrease size</li>
+<li><strong>Ctrl+0</strong>: Reset to default (16pt)</li>
+<li>Font: JetBrains Mono (monospace with ligatures)</li>
+</ul>
+<h3 id="animation-and-polish"><a class="header" href="#animation-and-polish">Animation and Polish</a></h3>
+<p>Smooth, responsive UI:</p>
+<ul>
+<li>Animated pane resizing</li>
+<li>Fade-in autocomplete</li>
+<li>Smooth scrolling</li>
+<li>Ripple effects on buttons</li>
+<li>Loading spinners for async operations</li>
+</ul>
+<h2 id="advanced-features"><a class="header" href="#advanced-features">Advanced Features</a></h2>
+<h3 id="multi-file-projects"><a class="header" href="#multi-file-projects">Multi-File Projects</a></h3>
+<p>Organize complex projects:</p>
+<ol>
+<li>Create project directory</li>
+<li>Open files in separate tabs</li>
+<li>Reference types/functions across files</li>
+<li>Use Editor for definitions, REPL for testing</li>
+</ol>
+<p><strong>Example Structure:</strong></p>
+<pre><code>my_project/
+  ├── types.dsl       # Type definitions
+  ├── utils.dsl       # Utility functions
+  └── workflow.dsl    # Main workflow
+</code></pre>
+<p>Load in REPL:</p>
+<pre><code class="language-dsl">:load types.dsl
+:load utils.dsl
+:load workflow.dsl
+</code></pre>
+<h3 id="session-management"><a class="header" href="#session-management">Session Management</a></h3>
+<p>Save and restore work sessions:</p>
+<p><strong>Auto-Save:</strong></p>
+<ul>
+<li>Workspace state saves on exit</li>
+<li>Unsaved files prompt before quit</li>
+<li>Crash recovery (auto-save every 30s)</li>
+</ul>
+<p><strong>Manual Save:</strong></p>
+<pre><code class="language-dsl">:save session.dsl
+
+:load session.dsl
+</code></pre>
+<h3 id="integration-with-terminal"><a class="header" href="#integration-with-terminal">Integration with Terminal</a></h3>
+<p>Seamless workflow between GUI and CLI:</p>
+<ol>
+<li>Develop in GUI (visual, interactive)</li>
+<li>Save to <code>.dsl</code> file</li>
+<li>Run from terminal: <code>dsl run script.dsl</code></li>
+<li>Or execute in REPL: <code>:load script.dsl</code></li>
+</ol>
+<h3 id="performance-optimization"><a class="header" href="#performance-optimization">Performance Optimization</a></h3>
+<p>The GUI is optimized for responsiveness:</p>
+<ul>
+<li>Incremental parsing (Tree-sitter)</li>
+<li>Syntax highlighting on visible lines only</li>
+<li>Lazy rendering for large outputs</li>
+<li>Async evaluation (non-blocking UI)</li>
+<li>Efficient re-renders (egui immediate mode)</li>
+</ul>
+<h2 id="tips-and-tricks"><a class="header" href="#tips-and-tricks">Tips and Tricks</a></h2>
+<h3 id="rapid-prototyping"><a class="header" href="#rapid-prototyping">Rapid Prototyping</a></h3>
+<p>Use split panes effectively:</p>
+<ol>
+<li><strong>Editor</strong>: Write complete functions/types</li>
+<li><strong>REPL</strong>: Test immediately without saving</li>
+<li>Iterate quickly without switching windows</li>
+</ol>
+<h3 id="code-organization"><a class="header" href="#code-organization">Code Organization</a></h3>
+<p>Keep editor organized:</p>
+<ul>
+<li>One file per major component (types, functions, workflows)</li>
+<li>Use tabs to switch between related files</li>
+<li>Save frequently (Ctrl+S becomes muscle memory)</li>
+</ul>
+<h3 id="repl-driven-development"><a class="header" href="#repl-driven-development">REPL-Driven Development</a></h3>
+<ol>
+<li>Experiment in REPL first</li>
+<li>Once satisfied, move to Editor</li>
+<li>Refine and document in Editor</li>
+<li>Verify in REPL one more time</li>
+</ol>
+<h3 id="keyboard-efficiency"><a class="header" href="#keyboard-efficiency">Keyboard Efficiency</a></h3>
+<p>Master these workflows:</p>
+<ul>
+<li><strong>Ctrl+O → Ctrl+Tab → Enter</strong>: Open file, test in REPL</li>
+<li><strong>Ctrl+C → Ctrl+Tab → Ctrl+V</strong>: Copy from Editor to REPL</li>
+<li><strong>Ctrl+L</strong>: Clear REPL clutter frequently</li>
+</ul>
+<h3 id="large-datasets"><a class="header" href="#large-datasets">Large Datasets</a></h3>
+<p>When working with large data:</p>
+<ol>
+<li>Load in REPL once: <code>let data = SQL("SELECT * FROM 'big.csv'")</code></li>
+<li>Experiment with transformations</li>
+<li>Reuse <code>data</code> variable (no re-loading)</li>
+<li>Use <code>:clear</code> to clean output, not variables</li>
+</ol>
+<h3 id="visual-debugging"><a class="header" href="#visual-debugging">Visual Debugging</a></h3>
+<p>Use rich output rendering:</p>
+<pre><code class="language-dsl">data
+  |&gt; Take(_, 5)
+  |&gt; _ as sample
+
+</code></pre>
+<h2 id="common-workflows"><a class="header" href="#common-workflows">Common Workflows</a></h2>
+<h3 id="1-building-a-data-pipeline"><a class="header" href="#1-building-a-data-pipeline">1. Building a Data Pipeline</a></h3>
+<pre><code class="language-dsl">def processSales(filename) { SQL("SELECT * FROM '" + filename + "'") }
+    |&gt; filter(_, fn row =&gt; row.amount &gt; 100 end)
+    |&gt; map(_, fn row =&gt; {
+         category: row.category,
+         total: row.amount * (1 + row.tax end)
+       })
+    |&gt; GroupBy(_, "category")
+
+processSales("sales_sample.csv")
+
+</code></pre>
+<h3 id="2-llm-workflow-development"><a class="header" href="#2-llm-workflow-development">2. LLM Workflow Development</a></h3>
+<pre><code class="language-dsl">def analyzeText(text) {
+    Par(
+    Ask("Summarize: " + text),
+    Ask("Keywords: " + text),
+    Ask("Sentiment: " + text)
+  ) as [summary, keywords, sentiment]
+
+  {
+    summary: summary,
+    keywords: Split(keywords, ","),
+    sentiment: sentiment
+  }
+
+let sampleText = "AI is transforming..."
+analyzeText(sampleText)
+
+</code></pre>
+<h3 id="3-type-driven-development"><a class="header" href="#3-type-driven-development">3. Type-Driven Development</a></h3>
+<pre><code class="language-dsl">type User {
+  id: Int
+  name: String
+  email: String
+}
+
+type UserProfile {
+  user: User
+  posts: [Post]
+  followers: Int
+}
+
+let testUser = {
+  id: 1,
+  name: "Alice",
+  email: "alice@example.com"
+}
+
+def enrichUser(user) { { }
+    user: user,
+    posts: fetchPosts(user.id),
+    followers: countFollowers(user.id)
+  }
+
+enrichUser(testUser)
+</code></pre>
+<h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
+<h3 id="application-wont-launch"><a class="header" href="#application-wont-launch">Application Won’t Launch</a></h3>
+<p><strong>Problem:</strong> GUI window doesn’t appear</p>
+<p><strong>Solutions:</strong></p>
+<ul>
+<li>Check GPU drivers are up to date</li>
+<li>Try software rendering: <code>dsl gui --renderer software</code></li>
+<li>Verify egui dependencies are installed</li>
+</ul>
+<h3 id="slow-performance"><a class="header" href="#slow-performance">Slow Performance</a></h3>
+<p><strong>Problem:</strong> UI is laggy or unresponsive</p>
+<p><strong>Solutions:</strong></p>
+<ul>
+<li>Close unused tabs (Ctrl+W)</li>
+<li>Clear REPL output (Ctrl+L)</li>
+<li>Reduce font size (Ctrl+-)</li>
+<li>Disable animations in settings</li>
+<li>Check for infinite loops in code</li>
+</ul>
+<h3 id="autocomplete-not-working"><a class="header" href="#autocomplete-not-working">Autocomplete Not Working</a></h3>
+<p><strong>Problem:</strong> Tab doesn’t show suggestions</p>
+<p><strong>Solutions:</strong></p>
+<ul>
+<li>Ensure cursor is at end of word</li>
+<li>Type at least one character</li>
+<li>Check if symbols are defined (<code>:vars</code>, <code>:funcs</code>)</li>
+<li>Restart application to rebuild symbol cache</li>
+</ul>
+<h3 id="syntax-highlighting-off"><a class="header" href="#syntax-highlighting-off">Syntax Highlighting Off</a></h3>
+<p><strong>Problem:</strong> Code appears unstyled</p>
+<p><strong>Solutions:</strong></p>
+<ul>
+<li>Check file has <code>.dsl</code> extension</li>
+<li>Restart application</li>
+<li>Verify Tree-sitter grammar is installed</li>
+<li>Check theme settings (View → Toggle Theme)</li>
+</ul>
+<h3 id="files-not-saving"><a class="header" href="#files-not-saving">Files Not Saving</a></h3>
+<p><strong>Problem:</strong> Changes not persisting</p>
+<p><strong>Solutions:</strong></p>
+<ul>
+<li>Check file permissions</li>
+<li>Verify disk space available</li>
+<li>Use “Save As” to different location</li>
+<li>Check status bar for save confirmation</li>
+</ul>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><a href="./tui.html">Terminal UI (TUI)</a> - Command-line interface alternative</li>
+<li><a href="./cli.html">CLI Reference</a> - Batch processing and automation</li>
+<li><a href="../workflows/sequential.html">Workflows</a> - Building complex workflows</li>
+<li><a href="../type-system/custom-types.html">Type System</a> - Defining structured data</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../user-guide/interfaces/tui.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../user-guide/interfaces/cli.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../user-guide/interfaces/tui.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../user-guide/interfaces/cli.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_line_numbers = true;
+        </script>
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../../ace.js"></script>
+        <script src="../../mode-rust.js"></script>
+        <script src="../../editor.js"></script>
+        <script src="../../theme-dawn.js"></script>
+        <script src="../../theme-tomorrow_night.js"></script>
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

@@ -66,7 +66,6 @@ impl AutocompleteEngine {
 
         CompletionResult {
             suggestions,
-            context: context.clone(),
         }
     }
 }
@@ -78,13 +77,10 @@ impl Default for AutocompleteEngine {
 }
 
 /// The result of a completion request
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CompletionResult {
     /// The list of suggestions
     pub suggestions: Vec<Suggestion>,
-
-    /// The context that generated these suggestions
-    pub context: CompletionContext,
 }
 
 impl CompletionResult {

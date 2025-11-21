@@ -1,0 +1,987 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Command Line Interface - DSL Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A powerful Domain-Specific Language for building agentic LLM workflows">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">DSL Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/catethos/DSL/edit/main/book/src/user-guide/interfaces/cli.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="command-line-interface"><a class="header" href="#command-line-interface">Command Line Interface</a></h1>
+<p>The DSL Command Line Interface provides powerful tools for batch processing, automation, CI/CD integration, and script execution. Use it for headless execution, syntax checking, compilation, and performance profiling.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The <code>dsl</code> CLI offers several modes:</p>
+<ul>
+<li><strong>Interactive TUI</strong>: Full-featured terminal interface (default)</li>
+<li><strong>Non-Interactive Mode</strong>: Batch execution from stdin/scripts</li>
+<li><strong>Check Mode</strong>: Syntax validation without execution</li>
+<li><strong>IR Compilation</strong>: Compile to Intermediate Representation</li>
+<li><strong>Run Mode</strong>: Execute scripts with optional tracing</li>
+<li><strong>Update Mode</strong>: Self-update to latest version</li>
+</ul>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<pre><code class="language-bash"># Install from source
+cargo install dsl
+
+# Or use pre-built binaries
+curl -sSL https://dsl-lang.org/install.sh | sh
+
+# Verify installation
+dsl --version
+</code></pre>
+<h2 id="command-syntax"><a class="header" href="#command-syntax">Command Syntax</a></h2>
+<pre><code class="language-bash">dsl [OPTIONS] [COMMAND]
+</code></pre>
+<h3 id="global-options"><a class="header" href="#global-options">Global Options</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>--version</code></td><td>Show version information</td></tr>
+<tr><td><code>--help</code></td><td>Show help message</td></tr>
+<tr><td><code>-c, --stdin</code></td><td>Read from stdin (non-interactive)</td></tr>
+</tbody></table>
+</div>
+<h2 id="commands"><a class="header" href="#commands">Commands</a></h2>
+<h3 id="interactive-mode-default"><a class="header" href="#interactive-mode-default">Interactive Mode (Default)</a></h3>
+<p>Launch the TUI for interactive development:</p>
+<pre><code class="language-bash"># Start interactive TUI
+dsl
+
+# Equivalent
+dsl tui
+</code></pre>
+<p><strong>Use When:</strong></p>
+<ul>
+<li>Developing interactively</li>
+<li>Experimenting with code</li>
+<li>Debugging workflows</li>
+<li>Learning the language</li>
+</ul>
+<p><strong>See:</strong> <a href="./tui.html">Terminal UI (TUI)</a> for full documentation</p>
+<h3 id="non-interactive-mode"><a class="header" href="#non-interactive-mode">Non-Interactive Mode</a></h3>
+<p>Execute DSL code from stdin for batch processing:</p>
+<pre><code class="language-bash"># Execute from stdin
+echo "5 + 3" | dsl -c
+# Output: 8
+
+# Execute multi-line program
+cat &lt;&lt;EOF | dsl -c
+let x = 10
+let y = 20
+x + y
+EOF
+# Output: 30
+
+# From file
+dsl -c &lt; script.dsl
+
+# With pipes
+cat data.csv | dsl -c &lt; process.dsl
+</code></pre>
+<p><strong>Features:</strong></p>
+<ul>
+<li>No interactive prompts</li>
+<li>Reads continuously from stdin</li>
+<li>Outputs results to stdout</li>
+<li>Errors to stderr</li>
+<li>Suitable for pipes and scripts</li>
+</ul>
+<p><strong>Example Pipeline:</strong></p>
+<pre><code class="language-bash">#!/bin/bash
+# process_data.sh
+
+# Generate data | Process with DSL | Save output
+generate_data | dsl -c &lt;&lt;'DSL' &gt; output.json
+  SQL("SELECT * FROM stdin")
+    |&gt; filter(_, fn row =&gt; row.value &gt; 100 end)
+    |&gt; map(_, fn row =&gt; {id: row.id, value: row.value} end)
+DSL
+</code></pre>
+<h3 id="dsl-check---syntax-validation"><a class="header" href="#dsl-check---syntax-validation"><code>dsl check</code> - Syntax Validation</a></h3>
+<p>Check DSL files for syntax and type errors without executing:</p>
+<pre><code class="language-bash"># Check a single file
+dsl check script.dsl
+
+# Output
+Checking script.dsl...
+✓ No errors found
+
+# With errors
+dsl check invalid.dsl
+Checking invalid.dsl...
+✗ Compilation failed:
+Error: Undefined variable: unknownVar
+  at line 5, column 10
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<ul>
+<li>Pre-commit hooks</li>
+<li>CI/CD validation</li>
+<li>Editor integrations</li>
+<li>Quick syntax verification</li>
+</ul>
+<p><strong>Exit Codes:</strong></p>
+<ul>
+<li><code>0</code>: No errors</li>
+<li><code>1</code>: Compilation errors found</li>
+</ul>
+<p><strong>CI/CD Integration:</strong></p>
+<pre><code class="language-yaml"># .github/workflows/test.yml
+name: Validate DSL Scripts
+
+on: [push, pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install DSL
+        run: curl -sSL https://dsl-lang.org/install.sh | sh
+      - name: Check all scripts
+        run: |
+          for file in *.dsl; do
+            dsl check "$file" || exit 1
+          done
+</code></pre>
+<h3 id="dsl-ir---ir-compilation"><a class="header" href="#dsl-ir---ir-compilation"><code>dsl ir</code> - IR Compilation</a></h3>
+<p>Compile DSL to Intermediate Representation (IR) for inspection or optimization:</p>
+<pre><code class="language-bash"># Compile to MessagePack (default)
+dsl ir input.dsl -o output.ir
+
+# Compile to JSON (human-readable)
+dsl ir input.dsl -o output.json --json
+
+# Example output
+Parsing input.dsl...
+Compiling to IR...
+Saving IR to output.json...
+✓ IR saved successfully
+</code></pre>
+<p><strong>IR Formats:</strong></p>
+<p><strong>MessagePack (default):</strong></p>
+<ul>
+<li>Binary format</li>
+<li>Compact size</li>
+<li>Fast parsing</li>
+<li>Production use</li>
+</ul>
+<p><strong>JSON (<code>--json</code>):</strong></p>
+<ul>
+<li>Human-readable</li>
+<li>Easy inspection</li>
+<li>Debugging</li>
+<li>Tooling integration</li>
+</ul>
+<p><strong>IR Structure Example:</strong></p>
+<pre><code class="language-json">{
+  "version": "1.0",
+  "nodes": [
+    {
+      "type": "FunctionDef",
+      "name": "processData",
+      "params": ["data"],
+      "body": {
+        "type": "Pipeline",
+        "steps": [...]
+      }
+    }
+  ],
+  "types": [...],
+  "metadata": {
+    "source_file": "input.dsl",
+    "compiled_at": "2025-11-13T..."
+  }
+}
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<ul>
+<li>Inspect compilation output</li>
+<li>Debug optimization issues</li>
+<li>Build tooling (formatters, linters)</li>
+<li>Cross-platform distribution (compile once, run anywhere)</li>
+</ul>
+<h3 id="dsl-run---execute-scripts"><a class="header" href="#dsl-run---execute-scripts"><code>dsl run</code> - Execute Scripts</a></h3>
+<p>Run DSL scripts directly from files:</p>
+<pre><code class="language-bash"># Simple execution
+dsl run script.dsl
+
+# Output
+Running script.dsl...
+Compiling to IR...
+Executing...
+Result: 42
+</code></pre>
+<p><strong>Example Script:</strong></p>
+<pre><code class="language-dsl">type User {
+  id: Int
+  name: String
+}
+
+def getUsers() { SQL("SELECT * FROM 'users.csv'") }
+    |&gt; filter(_, fn u =&gt; u.active end)
+    |&gt; map(_, fn u =&gt; {id: u.id, name: u.name} end)
+
+let users = getUsers()
+let count = Length(users)
+
+"Found " + ToString(count) + " active users"
+</code></pre>
+<p><strong>Execution:</strong></p>
+<pre><code class="language-bash">$ dsl run script.dsl
+Running script.dsl...
+Compiling to IR...
+Executing...
+Found 42 active users
+</code></pre>
+<p><strong>With Tracing:</strong></p>
+<pre><code class="language-bash"># Enable execution tracing
+dsl run script.dsl --trace
+
+# Save trace to file
+dsl run script.dsl --trace --trace-output trace.json
+
+# Verbose tracing
+dsl run script.dsl --trace --trace-verbose
+
+# Filter by node types
+dsl run script.dsl --trace --trace-filter FunctionCall,Pipeline
+
+# Only show slow operations (&gt; 1000 microseconds)
+dsl run script.dsl --trace --trace-min-duration 1000
+</code></pre>
+<p><strong>Tracing Options:</strong></p>
+<div class="table-wrapper"><table><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>--trace</code></td><td>Enable execution tracing</td></tr>
+<tr><td><code>--trace-output &lt;file&gt;</code></td><td>Save trace to JSON file</td></tr>
+<tr><td><code>--trace-verbose</code></td><td>Show detailed trace events</td></tr>
+<tr><td><code>--trace-filter &lt;types&gt;</code></td><td>Filter by node types (comma-separated)</td></tr>
+<tr><td><code>--trace-min-duration &lt;μs&gt;</code></td><td>Only show events slower than N microseconds</td></tr>
+</tbody></table>
+</div>
+<p><strong>Trace Output Example:</strong></p>
+<pre><code class="language-json">{
+  "total_duration_us": 1523,
+  "events": [
+    {
+      "node_type": "FunctionCall",
+      "name": "SQL",
+      "duration_us": 1245,
+      "start_time": "2025-11-13T...",
+      "success": true
+    },
+    {
+      "node_type": "Pipeline",
+      "steps": 3,
+      "duration_us": 245,
+      "success": true
+    }
+  ]
+}
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<ul>
+<li>Production execution</li>
+<li>Batch processing</li>
+<li>Scheduled jobs (cron)</li>
+<li>Performance profiling</li>
+<li>Debugging slow operations</li>
+</ul>
+<h3 id="dsl-update---self-update"><a class="header" href="#dsl-update---self-update"><code>dsl update</code> - Self-Update</a></h3>
+<p>Update DSL to the latest version:</p>
+<pre><code class="language-bash"># Check for updates
+dsl update --check
+
+# Output
+New version available: 0.1.0 -&gt; 0.2.0
+Run 'dsl update' to install the update.
+
+# Install update
+dsl update
+
+# Output
+Downloading version 0.2.0...
+Installing...
+✓ Successfully updated to 0.2.0
+</code></pre>
+<p><strong>Automatic Update Checks:</strong></p>
+<p>DSL automatically checks for updates periodically (in interactive mode only):</p>
+<pre><code>🔔 New version available: 0.1.0 -&gt; 0.2.0
+   Run 'dsl update' to install the update.
+</code></pre>
+<p><strong>Configuration:</strong></p>
+<p>Update checks stored in <code>~/.dsl_config.json</code>:</p>
+<pre><code class="language-json">{
+  "last_update_check": "2025-11-13T12:00:00Z",
+  "update_check_interval_days": 7
+}
+</code></pre>
+<h2 id="scripting-and-automation"><a class="header" href="#scripting-and-automation">Scripting and Automation</a></h2>
+<h3 id="shebang-support"><a class="header" href="#shebang-support">Shebang Support</a></h3>
+<p>Make DSL scripts executable:</p>
+<pre><code class="language-dsl">
+type Task {
+  name: String
+  status: String
+}
+
+def main() { SQL("SELECT * FROM 'tasks.csv'") }
+    |&gt; filter(_, fn t =&gt; t.status == "pending")
+    |&gt; map(_, fn t =&gt; "- " + t.name end)
+    |&gt; Join(_, "\n")
+
+main()
+</code></pre>
+<p><strong>Make executable:</strong></p>
+<pre><code class="language-bash">chmod +x script.dsl
+./script.dsl
+</code></pre>
+<h3 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h3>
+<p>Access environment variables in scripts:</p>
+<pre><code class="language-dsl">def main() {
+    let apiKey = GetEnv("API_KEY")
+
+    let apiKey = GetEnv("API_KEY") ?? "default-key"
+
+    let hasKey = GetEnv("API_KEY") != null
+}
+main()
+</code></pre>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-bash"># Set environment variable
+export API_KEY="secret-key"
+
+# Run script
+dsl run workflow.dsl
+</code></pre>
+<h3 id="exit-codes"><a class="header" href="#exit-codes">Exit Codes</a></h3>
+<p>DSL scripts return meaningful exit codes:</p>
+<div class="table-wrapper"><table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>0</code></td><td>Success</td></tr>
+<tr><td><code>1</code></td><td>Compilation error</td></tr>
+<tr><td><code>2</code></td><td>Runtime error</td></tr>
+<tr><td><code>3</code></td><td>Type error</td></tr>
+</tbody></table>
+</div>
+<p><strong>Example:</strong></p>
+<pre><code class="language-bash">#!/bin/bash
+
+dsl run workflow.dsl
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "Workflow completed successfully"
+else
+  echo "Workflow failed with code $EXIT_CODE"
+  exit $EXIT_CODE
+fi
+</code></pre>
+<h3 id="standard-streams"><a class="header" href="#standard-streams">Standard Streams</a></h3>
+<p>DSL respects standard Unix streams:</p>
+<p><strong>stdin</strong>: Input data
+<strong>stdout</strong>: Normal output
+<strong>stderr</strong>: Errors and logging</p>
+<pre><code class="language-bash"># Input from file
+dsl -c &lt; input.dsl &gt; output.txt 2&gt; errors.log
+
+# Pipe through DSL
+cat data.csv | dsl -c &lt;&lt;'DSL' | process_output
+  SQL("SELECT * FROM stdin")
+    |&gt; Filter(_, isValid)
+DSL
+
+# Suppress errors
+dsl run script.dsl 2&gt;/dev/null
+</code></pre>
+<h2 id="batch-processing"><a class="header" href="#batch-processing">Batch Processing</a></h2>
+<h3 id="processing-multiple-files"><a class="header" href="#processing-multiple-files">Processing Multiple Files</a></h3>
+<pre><code class="language-bash">#!/bin/bash
+# process_all.sh
+
+for file in data/*.csv; do
+  echo "Processing $file..."
+  dsl -c &lt;&lt;DSL
+    SQL("SELECT * FROM '$file'")
+      |&gt; filter(_, fn row =&gt; row.valid end)
+      |&gt; Map(_, transform)
+      |&gt; SaveAs("output/$(basename $file)")
+DSL
+done
+</code></pre>
+<h3 id="parallel-processing"><a class="header" href="#parallel-processing">Parallel Processing</a></h3>
+<pre><code class="language-bash">#!/bin/bash
+# parallel_process.sh
+
+# GNU parallel
+find data/*.csv | parallel dsl run process.dsl {}
+
+# xargs
+find data/*.csv | xargs -P 4 -I {} dsl run process.dsl {}
+</code></pre>
+<h3 id="cron-jobs"><a class="header" href="#cron-jobs">Cron Jobs</a></h3>
+<pre><code class="language-bash"># crontab -e
+
+# Run daily at 2 AM
+0 2 * * * /usr/local/bin/dsl run /path/to/daily_job.dsl &gt;&gt; /var/log/dsl.log 2&gt;&amp;1
+
+# Run every hour
+0 * * * * /usr/local/bin/dsl run /path/to/hourly_sync.dsl
+</code></pre>
+<h2 id="cicd-integration"><a class="header" href="#cicd-integration">CI/CD Integration</a></h2>
+<h3 id="github-actions"><a class="header" href="#github-actions">GitHub Actions</a></h3>
+<pre><code class="language-yaml">name: DSL Workflows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install DSL
+        run: |
+          curl -sSL https://dsl-lang.org/install.sh | sh
+          echo "$HOME/.dsl/bin" &gt;&gt; $GITHUB_PATH
+
+      - name: Check syntax
+        run: |
+          for file in workflows/*.dsl; do
+            dsl check "$file"
+          done
+
+      - name: Run tests
+        run: dsl run tests/test_suite.dsl
+
+      - name: Execute workflow
+        run: dsl run workflows/main.dsl
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Deploy workflow
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+        run: dsl run workflows/deploy.dsl
+</code></pre>
+<h3 id="gitlab-ci"><a class="header" href="#gitlab-ci">GitLab CI</a></h3>
+<pre><code class="language-yaml"># .gitlab-ci.yml
+stages:
+  - validate
+  - test
+  - deploy
+
+variables:
+  DSL_VERSION: "0.2.0"
+
+before_script:
+  - curl -sSL https://dsl-lang.org/install.sh | sh
+  - export PATH="$HOME/.dsl/bin:$PATH"
+
+validate:
+  stage: validate
+  script:
+    - dsl check workflows/*.dsl
+
+test:
+  stage: test
+  script:
+    - dsl run tests/test_suite.dsl
+
+deploy:
+  stage: deploy
+  only:
+    - main
+  script:
+    - dsl run workflows/deploy.dsl
+</code></pre>
+<h3 id="jenkins"><a class="header" href="#jenkins">Jenkins</a></h3>
+<pre><code class="language-groovy">// Jenkinsfile
+pipeline {
+    agent any
+
+    stages {
+        stage('Install DSL') {
+            steps {
+                sh 'curl -sSL https://dsl-lang.org/install.sh | sh'
+            }
+        }
+
+        stage('Validate') {
+            steps {
+                sh 'dsl check workflows/*.dsl'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'dsl run tests/test_suite.dsl'
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                branch 'main'
+            }
+            steps {
+                withCredentials([string(credentialsId: 'api-key', variable: 'API_KEY')]) {
+                    sh 'dsl run workflows/deploy.dsl'
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'Workflow failed'
+        }
+        success {
+            echo 'Workflow succeeded'
+        }
+    }
+}
+</code></pre>
+<h2 id="performance-profiling"><a class="header" href="#performance-profiling">Performance Profiling</a></h2>
+<h3 id="trace-analysis"><a class="header" href="#trace-analysis">Trace Analysis</a></h3>
+<p>Use tracing to identify bottlenecks:</p>
+<pre><code class="language-bash"># Run with trace
+dsl run workflow.dsl --trace --trace-output trace.json
+
+# Analyze trace
+cat trace.json | jq '.events | sort_by(.duration_us) | reverse | .[0:10]'
+</code></pre>
+<p><strong>Example Analysis:</strong></p>
+<pre><code class="language-json">[
+  {
+    "node_type": "FunctionCall",
+    "name": "SQL",
+    "duration_us": 15234,
+    "percentage": 85.3
+  },
+  {
+    "node_type": "Pipeline",
+    "steps": 5,
+    "duration_us": 2145,
+    "percentage": 12.0
+  }
+]
+</code></pre>
+<h3 id="filtering-slow-operations"><a class="header" href="#filtering-slow-operations">Filtering Slow Operations</a></h3>
+<pre><code class="language-bash"># Only show operations &gt; 5ms
+dsl run workflow.dsl --trace --trace-min-duration 5000
+
+# Output
+[TRACE] FunctionCall(SQL): 15234μs
+[TRACE] FunctionCall(ProcessLargeData): 8567μs
+</code></pre>
+<h3 id="node-type-filtering"><a class="header" href="#node-type-filtering">Node Type Filtering</a></h3>
+<pre><code class="language-bash"># Only trace function calls
+dsl run workflow.dsl --trace --trace-filter FunctionCall
+
+# Multiple types
+dsl run workflow.dsl --trace --trace-filter FunctionCall,Pipeline,BinaryOp
+</code></pre>
+<h2 id="examples"><a class="header" href="#examples">Examples</a></h2>
+<h3 id="example-1-data-processing-script"><a class="header" href="#example-1-data-processing-script">Example 1: Data Processing Script</a></h3>
+<pre><code class="language-dsl">
+type Sale {
+  id: Int
+  amount: Float
+  date: String
+  category: String
+}
+
+def processSales(filename) { SQL("SELECT * FROM '" + filename + "'") }
+    |&gt; filter(_, fn s =&gt; s.amount &gt; 0 end)
+    |&gt; map(_, fn s =&gt; {
+         category: s.category,
+         amount: s.amount,
+         month: Split(s.date, "-" end)[1]
+       })
+    |&gt; GroupBy(_, "category")
+    |&gt; map(_, fn group =&gt; {
+         category: group.key,
+         total: Sum(map(group.values, fn s =&gt; s.amount end)),
+         count: Length(group.values)
+       })
+
+let results = processSales("sales.csv")
+
+"Processed " + ToString(Length(results)) + " categories"
+</code></pre>
+<p><strong>Run:</strong></p>
+<pre><code class="language-bash">$ dsl run process_sales.dsl
+Running process_sales.dsl...
+Compiling to IR...
+Executing...
+Processed 5 categories
+</code></pre>
+<h3 id="example-2-automated-testing"><a class="header" href="#example-2-automated-testing">Example 2: Automated Testing</a></h3>
+<pre><code class="language-dsl">
+def assert(condition, message) { condition }
+    ? "✓ " + message
+    : Error("✗ " + message)
+
+def testStringFunctions() { [ }
+    assert(Upper("hello") == "HELLO", "Upper works"),
+    assert(Lower("WORLD") == "world", "Lower works"),
+    assert(Length("test") == 4, "Length works")
+  ]
+
+def testListFunctions() { [ }
+    assert(Length([1, 2, 3]) == 3, "List length"),
+    assert(First([1, 2, 3]) == 1, "First element"),
+    assert(Last([1, 2, 3]) == 3, "Last element")
+  ]
+
+def runTests() { [ }
+    ...testStringFunctions(),
+    ...testListFunctions()
+  ] |&gt; Join(_, "\n")
+
+runTests()
+</code></pre>
+<p><strong>Run:</strong></p>
+<pre><code class="language-bash">$ dsl run test_suite.dsl
+✓ Upper works
+✓ Lower works
+✓ Length works
+✓ List length
+✓ First element
+✓ Last element
+</code></pre>
+<h3 id="example-3-cicd-deployment"><a class="header" href="#example-3-cicd-deployment">Example 3: CI/CD Deployment</a></h3>
+<pre><code class="language-dsl">
+type DeployConfig {
+  environment: String
+  version: String
+  apiEndpoint: String
+}
+
+def deploy(config) { config }
+    |&gt; validateConfig(_) as validated
+    |&gt; buildArtifact(validated) as artifact
+    |&gt; uploadToServer(artifact, config.apiEndpoint) as result
+    |&gt; notifySlack("Deployed " + config.version + " to " + config.environment)
+    |&gt; result
+
+def validateConfig(config) { All([ }
+    Length(config.environment) &gt; 0,
+    Length(config.version) &gt; 0,
+    Contains(config.apiEndpoint, "https://")
+  ])
+  ? config
+  : Error("Invalid configuration")
+
+let config = {
+  environment: GetEnv("DEPLOY_ENV") ?? "staging",
+  version: GetEnv("VERSION") ?? "latest",
+  apiEndpoint: GetEnv("API_ENDPOINT") ?? "https://api.example.com"
+}
+
+deploy(config)
+</code></pre>
+<p><strong>Run:</strong></p>
+<pre><code class="language-bash">$ export DEPLOY_ENV="production"
+$ export VERSION="1.2.3"
+$ export API_ENDPOINT="https://api.prod.example.com"
+$ dsl run deploy.dsl
+</code></pre>
+<h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
+<h3 id="command-not-found"><a class="header" href="#command-not-found">Command Not Found</a></h3>
+<p><strong>Problem:</strong> <code>dsl: command not found</code></p>
+<p><strong>Solutions:</strong></p>
+<ul>
+<li>Ensure DSL is installed: <code>which dsl</code></li>
+<li>Add to PATH: <code>export PATH="$HOME/.dsl/bin:$PATH"</code></li>
+<li>Reinstall: <code>curl -sSL https://dsl-lang.org/install.sh | sh</code></li>
+</ul>
+<h3 id="permission-denied"><a class="header" href="#permission-denied">Permission Denied</a></h3>
+<p><strong>Problem:</strong> <code>Permission denied</code> when running scripts</p>
+<p><strong>Solutions:</strong></p>
+<ul>
+<li>Make executable: <code>chmod +x script.dsl</code></li>
+<li>Check shebang: <code>#!/usr/bin/env dsl run</code></li>
+<li>Run with dsl: <code>dsl run script.dsl</code></li>
+</ul>
+<h3 id="stdin-not-working"><a class="header" href="#stdin-not-working">Stdin Not Working</a></h3>
+<p><strong>Problem:</strong> <code>dsl -c</code> hangs or doesn’t read input</p>
+<p><strong>Solutions:</strong></p>
+<ul>
+<li>Verify piping: <code>echo "5 + 3" | dsl -c</code></li>
+<li>Check for interactive prompts (not supported in <code>-c</code> mode)</li>
+<li>Use heredoc for multi-line: <code>dsl -c &lt;&lt;EOF ... EOF</code></li>
+</ul>
+<h3 id="trace-file-too-large"><a class="header" href="#trace-file-too-large">Trace File Too Large</a></h3>
+<p><strong>Problem:</strong> Trace output is huge</p>
+<p><strong>Solutions:</strong></p>
+<ul>
+<li>Filter by type: <code>--trace-filter FunctionCall</code></li>
+<li>Set minimum duration: <code>--trace-min-duration 1000</code></li>
+<li>Disable verbose: remove <code>--trace-verbose</code></li>
+</ul>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><a href="./tui.html">Terminal UI (TUI)</a> - Interactive terminal interface</li>
+<li><a href="./egui.html">Desktop GUI (egui)</a> - Visual development environment</li>
+<li><a href="../workflows/sequential.html">Workflows</a> - Building complex workflows</li>
+<li><a href="../builtins/README.html">Builtin Functions</a> - Available functions</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../user-guide/interfaces/egui.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../integration/llm/overview.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../user-guide/interfaces/egui.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../integration/llm/overview.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_line_numbers = true;
+        </script>
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+        <script src="../../ace.js"></script>
+        <script src="../../mode-rust.js"></script>
+        <script src="../../editor.js"></script>
+        <script src="../../theme-dawn.js"></script>
+        <script src="../../theme-tomorrow_night.js"></script>
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

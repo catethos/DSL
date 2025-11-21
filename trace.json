@@ -11,14 +11,14 @@
       ],
       "output": {
         "Map": {
-          "email": {
-            "String": "regina@example.com"
-          },
           "name": {
             "String": "Regina"
           },
           "age": {
             "Int": 30
+          },
+          "email": {
+            "String": "regina@example.com"
           },
           "address": {
             "String": "Sydney"
@@ -26,7 +26,7 @@
         }
       },
       "error": null,
-      "duration_micros": 1346019,
+      "duration_micros": 2459608,
       "depth": 1,
       "variables": null,
       "llm_prompt": "extract the  information from regina is 30 yo living in Sydney, with email regina@example.com\n\nAnswer in JSON using this schema:\n{\n  name: string,\n  age: int,\n  address: string,\n  email: string,\n}",
@@ -41,7 +41,7 @@
             "String": "regina is 30 yo living in Sydney, with email regina@example.com"
           },
           "error": null,
-          "duration_micros": 234,
+          "duration_micros": 12,
           "depth": 1,
           "variables": null
         }
