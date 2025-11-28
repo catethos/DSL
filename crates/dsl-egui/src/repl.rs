@@ -930,6 +930,76 @@ impl ReplPane {
                     });
             });
     }
+
+    /// Evaluate pre-compiled IR (for file-based compilation with imports)
+    pub fn eval_compiled_ir(&mut self, ir: dsl_ir::IR) {
+        let interpreter = Arc::clone(&self.interpreter);
+        let tx = self.result_tx.clone();
+
+        std::thread::spawn(move || {
+            let result = TOKIO_RT.block_on(async {
+                let mut interp = interpreter.lock().unwrap();
+
+                // Register types from the IR
+                for class in &ir.types {
+                    interp.runtime.types.register_class(class.clone());
+                }
+
+                // Register enums from the IR
+                for enum_def in &ir.enums {
+                    interp.runtime.types.register_enum(enum_def.clone());
+                }
+
+                // Register functions from the IR (including imported ones)
+                for func in &ir.functions {
+                    interp
+                        .runtime
+                        .functions
+                        .insert(func.name.clone(), func.clone());
+                }
+
+                // Register function groups from the IR
+                for group in &ir.function_groups {
+                    interp
+                        .runtime
+                        .function_groups
+                        .insert(group.name.clone(), group.clone());
+                }
+
+                // Rebuild runtime if types/enums were added
+                if !ir.types.is_empty() || !ir.enums.is_empty() {
+                    if let Err(e) = interp.rebuild_runtime() {
+                        return Err(format!("Failed to rebuild runtime: {}", e));
+                    }
+                }
+
+                // Now evaluate the entry expression
+                match interp.eval(&ir.entry_expr).await {
+                    Ok(value) => Ok(value),
+                    Err(e) => Err(e.to_string()),
+                }
+            });
+
+            let _ = tx.send(EvalResult {
+                result,
+                needs_autocomplete_refresh: true, // Refresh since we added functions
+            });
+        });
+    }
+
+    /// Push an error message to output
+    pub fn push_error(&mut self, message: String) {
+        use crate::output_item::{ErrorDetail, ErrorDetails};
+        self.push_output(OutputItem::Error(ErrorDetail {
+            error_type: "Compilation Error".to_string(),
+            message,
+            source_span: None,
+            function_context: None,
+            details: ErrorDetails::Runtime,
+            suggestions: vec![],
+            expanded_sections: std::collections::HashSet::new(),
+        }));
+    }
 }
 
 impl Default for ReplPane {

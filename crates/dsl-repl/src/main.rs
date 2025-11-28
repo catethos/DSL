@@ -183,11 +183,9 @@ async fn main() -> std::io::Result<()> {
 
 async fn cmd_check(input: &PathBuf) -> Result<(), String> {
     println!("Checking {}...", input.display());
-    let source =
-        std::fs::read_to_string(input).map_err(|e| format!("Failed to read input file: {}", e))?;
 
-    // Try to compile to IR (handles both programs and expressions)
-    match dsl_core::compile_to_ir(&source) {
+    // Use compile_file_to_ir to support imports
+    match dsl_core::compile_file_to_ir(input) {
         Ok(_ir) => {
             println!("✓ No errors found");
             Ok(())
@@ -201,11 +199,10 @@ async fn cmd_check(input: &PathBuf) -> Result<(), String> {
 
 async fn cmd_ir(input: &PathBuf, output: &PathBuf, json: bool) -> Result<(), String> {
     println!("Parsing {}...", input.display());
-    let source =
-        std::fs::read_to_string(input).map_err(|e| format!("Failed to read input file: {}", e))?;
 
     println!("Compiling to IR...");
-    let ir = dsl_core::compile_to_ir(&source)
+    // Use compile_file_to_ir to support imports
+    let ir = dsl_core::compile_file_to_ir(input)
         .map_err(|e| format!("Failed to compile to IR: {:?}", e))?;
 
     println!("Saving IR to {}...", output.display());
@@ -235,11 +232,10 @@ async fn cmd_run(
     trace_min_duration: Option<u128>,
 ) -> Result<(), String> {
     println!("Running {}...", input.display());
-    let source =
-        std::fs::read_to_string(input).map_err(|e| format!("Failed to read input file: {}", e))?;
 
     println!("Compiling to IR...");
-    let ir = dsl_core::compile_to_ir(&source)
+    // Use compile_file_to_ir to support imports
+    let ir = dsl_core::compile_file_to_ir(input)
         .map_err(|e| format!("Failed to compile to IR: {:?}", e))?;
 
     println!("Executing...");

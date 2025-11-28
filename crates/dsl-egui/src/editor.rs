@@ -53,47 +53,62 @@ impl EditorPane {
             // Header - split into two rows to prevent overlap
             ui.horizontal(|ui| {
                 ui.heading("Editor");
-                
+
                 // Add buttons on the right
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(egui::RichText::new("▶ Run All")
-                        .color(egui::Color32::from_rgb(80, 250, 123)))
+                    if ui
+                        .button(
+                            egui::RichText::new("▶ Run All")
+                                .color(egui::Color32::from_rgb(80, 250, 123)),
+                        )
                         .clicked()
                     {
                         action = Some(EditorAction::RunAll);
                     }
-                    
-                    if ui.button(egui::RichText::new("💾 Save")
-                        .color(egui::Color32::from_rgb(255, 184, 108)))
+
+                    if ui
+                        .button(
+                            egui::RichText::new("💾 Save")
+                                .color(egui::Color32::from_rgb(255, 184, 108)),
+                        )
                         .clicked()
                     {
                         action = Some(EditorAction::SaveFile);
                     }
-                    
-                    if ui.button(egui::RichText::new("📂 Load")
-                        .color(egui::Color32::from_rgb(139, 233, 253)))
+
+                    if ui
+                        .button(
+                            egui::RichText::new("📂 Load")
+                                .color(egui::Color32::from_rgb(139, 233, 253)),
+                        )
                         .clicked()
                     {
                         action = Some(EditorAction::LoadFile);
                     }
                 });
             });
-            
+
             // File path and status row
             ui.horizontal(|ui| {
                 if let Some(path) = &self.file_path {
-                    ui.label(egui::RichText::new(path)
-                        .family(egui::FontFamily::Monospace)
-                        .size(13.0));
-                    if self.modified {
-                        ui.label(egui::RichText::new("(modified)")
+                    ui.label(
+                        egui::RichText::new(path)
                             .family(egui::FontFamily::Monospace)
-                            .size(13.0));
+                            .size(13.0),
+                    );
+                    if self.modified {
+                        ui.label(
+                            egui::RichText::new("(modified)")
+                                .family(egui::FontFamily::Monospace)
+                                .size(13.0),
+                        );
                     }
                 } else {
-                    ui.label(egui::RichText::new("(no file)")
-                        .family(egui::FontFamily::Monospace)
-                        .size(13.0));
+                    ui.label(
+                        egui::RichText::new("(no file)")
+                            .family(egui::FontFamily::Monospace)
+                            .size(13.0),
+                    );
                 }
 
                 // Show status message if present
@@ -145,6 +160,14 @@ impl EditorPane {
         &self.content
     }
 
+    pub fn has_file_path(&self) -> bool {
+        self.file_path.is_some()
+    }
+
+    pub fn get_file_path(&self) -> Option<&str> {
+        self.file_path.as_deref()
+    }
+
     pub fn save(&mut self) -> Result<(), String> {
         if let Some(path) = &self.file_path {
             std::fs::write(path, &self.content)
@@ -174,10 +197,6 @@ impl EditorPane {
         self.file_path = Some(path.to_string());
         self.modified = false;
         Ok(())
-    }
-
-    pub fn get_file_path(&self) -> Option<&str> {
-        self.file_path.as_deref()
     }
 
     pub fn set_file_path(&mut self, path: Option<String>) {

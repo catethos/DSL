@@ -40,6 +40,7 @@ pub fn parse_program(input: &str) -> Result<Program, String> {
     let pairs =
         DslParser::parse(Rule::program, input).map_err(|e| format_parse_error(&e, input))?;
 
+    let mut imports = Vec::new();
     let mut types = Vec::new();
     let mut enums = Vec::new();
     let mut functions: Vec<FunctionDef> = Vec::new();
@@ -49,9 +50,37 @@ pub fn parse_program(input: &str) -> Result<Program, String> {
     for item_pair in pairs {
         match item_pair.as_rule() {
             Rule::item => {
-                // An item can be a declaration or a statement
+                // An item can be an import, declaration, or a statement
                 let inner = item_pair.into_inner().next().ok_or("Empty item")?;
                 match inner.as_rule() {
+                    Rule::import_stmt => {
+                        let mut import_inner = inner.into_inner();
+                        let path_pair = import_inner.next().ok_or("Missing import path")?;
+
+                        // Extract string literal value
+                        let path = path_pair
+                            .as_str()
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .to_string();
+
+                        // Check for optional alias
+                        let alias = if let Some(alias_pair) = import_inner.next() {
+                            if alias_pair.as_rule() == Rule::import_alias {
+                                let alias_id = alias_pair
+                                    .into_inner()
+                                    .next()
+                                    .ok_or("Missing alias identifier")?;
+                                Some(alias_id.as_str().to_string())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        imports.push(Import { path, alias });
+                    }
                     Rule::declaration => {
                         let decl = inner.into_inner().next().ok_or("Empty declaration")?;
                         match decl.as_rule() {
@@ -217,6 +246,7 @@ pub fn parse_program(input: &str) -> Result<Program, String> {
     };
 
     Ok(Program {
+        imports,
         types,
         enums,
         functions,

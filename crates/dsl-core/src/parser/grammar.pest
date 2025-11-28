@@ -8,8 +8,17 @@
 program = _{ SOI ~ item* ~ EOI }
 
 item = {
-    declaration
+    import_stmt
+    | declaration
     | statement
+}
+
+import_stmt = {
+    "import" ~ string_literal ~ import_alias?
+}
+
+import_alias = {
+    "as" ~ identifier
 }
 
 statement = {
@@ -462,7 +471,7 @@ KEYWORD = _{
     "def" | "function" | "type" | "enum" | "let" | "match"
     | "if" | "then" | "else" | "true" | "false"
     | "prompt" | "sql" | "http" | "as" | "return" | "workflow"
-    | "fn" | "end"
+    | "fn" | "end" | "import"
 }
 
 identifier = @{

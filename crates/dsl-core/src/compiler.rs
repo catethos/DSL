@@ -16,6 +16,15 @@ use crate::resolver::{resolve_program, Clause, FunctionBody, FunctionGroup, Symb
 pub fn compile_to_ir(source: &str) -> Result<IR> {
     // Try parsing as a program first (handles types, enums, and functions)
     if let Ok(program) = parse_program(source) {
+        // Reject programs with imports
+        if !program.imports.is_empty() {
+            return Err(anyhow::anyhow!(
+                "This program contains import statements, which require file-based compilation.\n\
+                Please save your code to a file and use compile_file_to_ir() instead, \n\
+                or use the :run command in the REPL with a file path."
+            ));
+        }
+
         // Check if the program has any meaningful content (declarations or entry expression)
         let has_content = !program.types.is_empty()
             || !program.enums.is_empty()
@@ -253,12 +262,10 @@ pub fn compile_expr(expr: &Expr) -> Result<IRNode> {
             })
         }
 
-        Expr::Lambda { params, body } => {
-            Ok(IRNode::Lambda(LambdaIR {
-                params: params.clone(),
-                body: Box::new(compile_expr(body)?),
-            }))
-        }
+        Expr::Lambda { params, body } => Ok(IRNode::Lambda(LambdaIR {
+            params: params.clone(),
+            body: Box::new(compile_expr(body)?),
+        })),
     }
 }
 
@@ -405,10 +412,8 @@ fn compile_prompt_template(prompt: &str) -> Result<IRNode> {
     }
 
     // Compile each segment
-    let ir_segments: Result<Vec<IRTemplateSegment>> = segments
-        .iter()
-        .map(compile_template_segment)
-        .collect();
+    let ir_segments: Result<Vec<IRTemplateSegment>> =
+        segments.iter().map(compile_template_segment).collect();
 
     Ok(IRNode::TemplateString(ir_segments?))
 }
@@ -483,7 +488,6 @@ pub fn compile_function(func: &FunctionDef) -> Result<IRFunction> {
         FunctionExecution::SQL { query } => IRExecution::SQL {
             query: query.clone(),
         },
-
     };
 
     // Convert properties
@@ -513,8 +517,9 @@ fn compile_property(prop: &PropertyValue) -> Result<IRProperty> {
                 .map(|seg| match seg {
                     TemplateSegment::Text(t) => Ok(IRTemplateSegment::Text(t.clone())),
                     TemplateSegment::Interpolation(expr_str) => {
-                        let expr = parse_expr(expr_str)
-                            .map_err(|e| anyhow::anyhow!("Failed to parse template interpolation: {}", e))?;
+                        let expr = parse_expr(expr_str).map_err(|e| {
+                            anyhow::anyhow!("Failed to parse template interpolation: {}", e)
+                        })?;
                         let ir_node = compile_expr(&expr)?;
                         Ok(IRTemplateSegment::Interpolation(Box::new(ir_node)))
                     }
@@ -646,6 +651,83 @@ fn compile_clause(clause: &Clause) -> Result<IRFunctionClause> {
             .map(Box::new),
         body: Box::new(compile_expr(body_expr)?),
     })
+}
+
+/// Compile a DSL file with imports to IR
+///
+/// This function handles multi-file compilation by:
+/// 1. Loading the main file and all its dependencies via ModuleLoader
+/// 2. Merging all types, enums, and functions from all modules
+/// 3. Compiling to IR
+///
+/// # Arguments
+/// * `file_path` - Path to the main .dsl file to compile
+///
+/// # Returns
+/// Compiled IR with all modules merged
+///
+/// # Errors
+/// Returns error if:
+/// - File cannot be read
+/// - Circular dependencies are detected
+/// - Parse errors occur
+/// - Compilation fails
+pub fn compile_file_to_ir(file_path: &std::path::Path) -> Result<IR> {
+    use crate::module_loader::ModuleLoader;
+
+    // Create module loader
+    let mut loader = ModuleLoader::new();
+
+    // Get the file path as absolute
+    let absolute_path = file_path.canonicalize().map_err(|e| {
+        anyhow::anyhow!("Failed to resolve file path {}: {}", file_path.display(), e)
+    })?;
+
+    // Load the main module (this will recursively load all imports)
+    let main_module = loader.load_module(
+        &format!(
+            "./{}",
+            absolute_path
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("Invalid file path"))?
+                .to_string_lossy()
+        ),
+        &absolute_path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Invalid file path"))?,
+    )?;
+
+    // Get all loaded modules
+    let all_modules = loader.get_all_modules();
+
+    // Merge all types and enums from all modules
+    let mut all_types = Vec::new();
+    let mut all_enums = Vec::new();
+    let mut all_functions = Vec::new();
+    let mut all_pattern_functions = Vec::new();
+
+    for module in &all_modules {
+        all_types.extend(module.program.types.clone());
+        all_enums.extend(module.program.enums.clone());
+        all_functions.extend(module.program.functions.clone());
+        all_pattern_functions.extend(module.program.pattern_functions.clone());
+    }
+
+    // Use the main module's entry expression
+    let entry_expr = main_module.program.entry_expr.clone();
+
+    // Create a merged program
+    let merged_program = Program {
+        imports: vec![], // Imports already resolved
+        types: all_types,
+        enums: all_enums,
+        functions: all_functions,
+        pattern_functions: all_pattern_functions,
+        entry_expr,
+    };
+
+    // Compile the merged program
+    compile_program_to_ir(&merged_program)
 }
 
 #[cfg(test)]

@@ -21,3 +21,6 @@ serde_json = { workspace = true }
 # Collections and utilities
 indexmap = { workspace = true }
 anyhow = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

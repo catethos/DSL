@@ -41,12 +41,11 @@ impl SQLExecutor {
 
         for var_name in var_names {
             // Look up variable in scope
-            let value = scope_lookup(&var_name).ok_or_else(|| {
-                format!("Variable '{}' not found in scope", var_name)
-            })?;
+            let value = scope_lookup(&var_name)
+                .ok_or_else(|| format!("Variable '{}' not found in scope", var_name))?;
 
             let placeholder = format!("${}", var_name);
-            
+
             // Check if it's a List<Map> that should be registered as table
             if Self::is_table_data(&value) {
                 // Only register if not already registered (optimization)
@@ -65,7 +64,7 @@ impl SQLExecutor {
 
         Ok(query)
     }
-    
+
     /// Check if a value should be registered as a table (List of Maps)
     fn is_table_data(value: &Value) -> bool {
         match value {
@@ -75,7 +74,7 @@ impl SQLExecutor {
             _ => false,
         }
     }
-    
+
     /// Convert a Value to DuckDB literal syntax
     fn value_to_duckdb_literal(&self, value: &Value) -> String {
         match value {
@@ -85,7 +84,7 @@ impl SQLExecutor {
             Value::Float(f) => f.to_string(),
             Value::Bool(b) => b.to_string(),
             Value::Null => "NULL".to_string(),
-            
+
             // List → DuckDB array literal
             Value::List(items) => {
                 let elements: Vec<String> = items
@@ -94,18 +93,16 @@ impl SQLExecutor {
                     .collect();
                 format!("[{}]", elements.join(", "))
             }
-            
+
             // Map → DuckDB struct literal
             Value::Map(map) => {
                 let fields: Vec<String> = map
                     .iter()
-                    .map(|(k, v)| {
-                        format!("'{}': {}", k, self.value_to_duckdb_literal(v))
-                    })
+                    .map(|(k, v)| format!("'{}': {}", k, self.value_to_duckdb_literal(v)))
                     .collect();
                 format!("{{{}}}", fields.join(", "))
             }
-            
+
             // Special types - treat as strings
             Value::Markdown(s) | Value::Image(s) => {
                 format!("'{}'", s.replace("'", "''"))
@@ -115,7 +112,7 @@ impl SQLExecutor {
 
     pub fn execute(&mut self, sql: &str, params: &HashMap<String, Value>) -> Result<Value, String> {
         let mut query = sql.to_string();
-        
+
         // Simple template replacement for {{variable}} syntax
         for (key, value) in params {
             let placeholder = format!("{{{{{}}}}}", key);
@@ -155,16 +152,19 @@ impl SQLExecutor {
         while let Some(row) = rows.next().map_err(|e| format!("Row fetch error: {}", e))? {
             let mut map = IndexMap::new();
             for (i, col_name) in column_names.iter().enumerate() {
-                // Try different types
-                if let Ok(v) = row.get::<_, i64>(i) {
-                    map.insert(col_name.clone(), Value::Int(v));
+                // Try different types, insert Null if none match
+                let value = if let Ok(v) = row.get::<_, i64>(i) {
+                    Value::Int(v)
                 } else if let Ok(v) = row.get::<_, f64>(i) {
-                    map.insert(col_name.clone(), Value::Float(v));
+                    Value::Float(v)
                 } else if let Ok(v) = row.get::<_, String>(i) {
-                    map.insert(col_name.clone(), Value::String(v));
+                    Value::String(v)
                 } else if let Ok(v) = row.get::<_, bool>(i) {
-                    map.insert(col_name.clone(), Value::Bool(v));
-                }
+                    Value::Bool(v)
+                } else {
+                    Value::Null
+                };
+                map.insert(col_name.clone(), value);
             }
             result_rows.push(map);
         }
@@ -200,20 +200,21 @@ impl SQLExecutor {
             _ => unreachable!(), // Already validated above
         };
 
-        // 4. Validate schema consistency (all maps have same keys)
-        let expected_keys: HashSet<_> = fields.keys().collect();
+        // 4. Validate schema consistency (all maps have same keys, order doesn't matter)
+        let expected_keys: HashSet<_> = fields.keys().map(|k| k.as_str()).collect();
         for (idx, item) in items.iter().enumerate().skip(1) {
             let map = match item {
                 Value::Map(m) => m,
                 _ => unreachable!(), // Already validated
             };
-            let keys: HashSet<_> = map.keys().collect();
+            let keys: HashSet<_> = map.keys().map(|k| k.as_str()).collect();
             if keys != expected_keys {
+                // Find missing and extra keys for better error message
+                let missing: Vec<_> = expected_keys.difference(&keys).collect();
+                let extra: Vec<_> = keys.difference(&expected_keys).collect();
                 return Err(format!(
-                    "Inconsistent schema at row {}: all maps must have same keys. Expected {:?}, got {:?}",
-                    idx,
-                    expected_keys.iter().collect::<Vec<_>>(),
-                    keys.iter().collect::<Vec<_>>()
+                    "Inconsistent schema at row {}: all maps must have same keys.\nMissing keys: {:?}\nExtra keys: {:?}",
+                    idx, missing, extra
                 ));
             }
         }

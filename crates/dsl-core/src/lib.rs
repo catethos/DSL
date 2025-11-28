@@ -11,6 +11,7 @@ pub mod compiler;
 pub mod eval; // Keep for backward compatibility (re-exports only)
 pub mod eval_helpers; // Shared REPL evaluation helpers
 pub mod keywords;
+pub mod module_loader;
 pub mod parser;
 pub mod resolver;
 pub mod types;
@@ -21,6 +22,7 @@ mod parser_debug_test;
 // Re-export commonly used items
 pub use compiler::{
     compile_expr,
+    compile_file_to_ir, // Multi-file compilation with imports
     compile_function,
     compile_function_group, // New resolver-based compilation
     compile_program,

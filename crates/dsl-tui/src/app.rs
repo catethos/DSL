@@ -752,7 +752,62 @@ impl App {
             return;
         }
 
-        // Split content into logical blocks (type definitions, function definitions, expressions)
+        // If the editor content has been saved to a file and contains imports,
+        // use file-based compilation
+        if let Some(file_path) = &self.editor_file_path {
+            if content.contains("import ") {
+                // Save current content to file first
+                if let Err(e) = self.editor_save_file() {
+                    self.output
+                        .push(crate::output_item::OutputItem::error(format!(
+                            "Failed to save file before running: {}",
+                            e
+                        )));
+                    return;
+                }
+
+                // Use file-based compilation
+                use std::path::PathBuf;
+                let path = PathBuf::from(file_path);
+
+                match dsl_core::compile_file_to_ir(&path) {
+                    Ok(ir) => {
+                        // Create interpreter and run
+                        match dsl_interpreter::Interpreter::from_ir(&ir) {
+                            Ok(mut interpreter) => match interpreter.eval(&ir.entry_expr).await {
+                                Ok(result) => {
+                                    self.output.push(crate::output_item::OutputItem::text(
+                                        format!("{}", result.display()),
+                                    ));
+                                }
+                                Err(e) => {
+                                    self.output.push(crate::output_item::OutputItem::error(
+                                        format!("Runtime error: {}", e),
+                                    ));
+                                }
+                            },
+                            Err(e) => {
+                                self.output
+                                    .push(crate::output_item::OutputItem::error(format!(
+                                        "Failed to create interpreter: {}",
+                                        e
+                                    )));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        self.output
+                            .push(crate::output_item::OutputItem::error(format!(
+                                "Compilation error: {}",
+                                e
+                            )));
+                    }
+                }
+                return;
+            }
+        }
+
+        // Fall back to block-by-block execution for non-import code
         let blocks = self.split_into_blocks(&content);
 
         for block in blocks {

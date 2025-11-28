@@ -189,6 +189,13 @@ pub struct PatternFunctionDef {
     pub return_type: Option<FieldType>,
 }
 
+/// Import statement
+#[derive(Debug, Clone, PartialEq)]
+pub struct Import {
+    pub path: String,
+    pub alias: Option<String>,
+}
+
 /// A declaration in the program
 #[derive(Debug, Clone)]
 pub enum Declaration {
@@ -201,6 +208,7 @@ pub enum Declaration {
 /// Complete program with all declarations
 #[derive(Debug, Clone)]
 pub struct Program {
+    pub imports: Vec<Import>,
     pub types: Vec<Class>,
     pub enums: Vec<Enum>,
     pub functions: Vec<FunctionDef>,
