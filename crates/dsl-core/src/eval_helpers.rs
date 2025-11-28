@@ -4,8 +4,8 @@
 //! in REPL contexts, handling the distinction between statements (like `let`)
 //! and expressions.
 
-use crate::parser::{parse_expr, parse_program};
 use crate::compiler::compile_expr;
+use crate::parser::{parse_expr, parse_program, parse_repl_line};
 use dsl_ir::{IRBinding, IRNode};
 
 /// Result of parsing input, containing the IR node and optional binding information
@@ -62,13 +62,32 @@ fn parse_as_program(input: &str) -> Result<ParsedInput, String> {
 
 /// Parse input as an expression
 fn parse_as_expression(input: &str) -> Result<ParsedInput, String> {
-    let ast = parse_expr(input).map_err(|e| format!("Parse error: {}", e))?;
-    let ir_node = compile_expr(&ast).map_err(|e| format!("Compile error: {}", e))?;
+    // Use parse_repl_line to handle comments and empty lines
+    let ast_opt = parse_repl_line(input).map_err(|e| format!("Parse error: {}", e))?;
 
-    // Extract binding info (for expressions with 'as' binding)
-    let binding = extract_binding(&ir_node);
+    match ast_opt {
+        Some(ast) => {
+            let ir_node = compile_expr(&ast).map_err(|e| format!("Compile error: {}", e))?;
 
-    Ok(ParsedInput { ir_node, binding })
+            // Extract binding info (for expressions with 'as' binding)
+            let binding = extract_binding(&ir_node);
+
+            Ok(ParsedInput { ir_node, binding })
+        }
+        None => {
+            // Empty or comment-only input - create a FunctionCall to return Null
+            // We use a special marker that will evaluate to Null in the runtime
+            Ok(ParsedInput {
+                ir_node: IRNode::FunctionCall {
+                    name: "__null__".to_string(),
+                    args: vec![],
+                    effect_kind: None,
+                    source_span: None,
+                },
+                binding: None,
+            })
+        }
+    }
 }
 
 /// Extract binding information from an IR node

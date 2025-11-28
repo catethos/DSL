@@ -1,6 +1,20 @@
+use crate::error::InterpreterError;
 use dsl_ir::{IRFunction, IRFunctionGroup, TypeRegistry, Value};
 use std::collections::HashMap;
-use crate::error::InterpreterError;
+
+/// Immutable snapshot of all visible variables at a point in time
+/// Used for safe variable access in parallel execution contexts
+#[derive(Clone, Debug)]
+pub struct ScopeSnapshot {
+    variables: HashMap<String, Value>,
+}
+
+impl ScopeSnapshot {
+    /// Get a variable from the snapshot
+    pub fn get_var(&self, name: &str) -> Option<Value> {
+        self.variables.get(name).cloned()
+    }
+}
 
 pub struct Runtime {
     pub scopes: Vec<HashMap<String, Value>>,
@@ -78,6 +92,14 @@ impl Runtime {
             result.extend(scope.clone());
         }
         result
+    }
+
+    /// Create an immutable snapshot of all visible variables
+    /// Used for parallel execution contexts where variables need read-only access
+    pub fn snapshot_all_scopes(&self) -> ScopeSnapshot {
+        ScopeSnapshot {
+            variables: self.all_visible_vars(),
+        }
     }
 }
 

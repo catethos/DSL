@@ -301,7 +301,10 @@ impl App {
                     self.symbol_table = SymbolTable::new();
                 }
                 Err(e) => {
-                    self.output.push(OutputItem::error(format!("Failed to create new session: {}", e)));
+                    self.output.push(OutputItem::error(format!(
+                        "Failed to create new session: {}",
+                        e
+                    )));
                 }
             }
             return;
@@ -322,21 +325,24 @@ impl App {
         // New IR pipeline: parse -> compile -> interpret
         match self.eval_with_ir(&input_text).await {
             Ok((value, var_name)) => {
-                let type_str = value.type_name();
+                // Don't print output for Null (empty/comment-only input)
+                if !matches!(value, Value::Null) {
+                    let type_str = value.type_name();
 
-                // Add a header line indicating the result
-                if let Some(name) = var_name {
-                    self.output.push(OutputItem::text(format!(
-                        "✓ Bound '{}' : {}",
-                        name, type_str
-                    )));
-                } else {
-                    self.output
-                        .push(OutputItem::text(format!("✓ {}", type_str)));
+                    // Add a header line indicating the result
+                    if let Some(name) = var_name {
+                        self.output.push(OutputItem::text(format!(
+                            "✓ Bound '{}' : {}",
+                            name, type_str
+                        )));
+                    } else {
+                        self.output
+                            .push(OutputItem::text(format!("✓ {}", type_str)));
+                    }
+
+                    // Use the OutputItem system to display the value
+                    self.output.push(OutputItem::from_value(&value));
                 }
-
-                // Use the OutputItem system to display the value
-                self.output.push(OutputItem::from_value(&value));
 
                 // Refresh autocomplete to pick up new functions/variables/types
                 self.refresh_autocomplete();
@@ -914,7 +920,7 @@ impl App {
 
     /// Evaluate input using the IR pipeline (parse -> compile -> interpret)
     async fn eval_with_ir(&mut self, input: &str) -> Result<(Value, Option<String>), String> {
-        use dsl_core::{compile_expr, parse_expr};
+        use dsl_core::parse_repl_input;
         use dsl_ir::{IRBinding, IRNode};
 
         let input = input.trim();
@@ -958,11 +964,9 @@ impl App {
             return self.handle_declaration(input).await;
         }
 
-        // Parse the input to AST
-        let ast = parse_expr(input).map_err(|e| format!("Parse error: {}", e))?;
-
-        // Compile AST to IR
-        let ir_node = compile_expr(&ast).map_err(|e| format!("Compile error: {}", e))?;
+        // Parse and compile the input (handles comments and empty lines)
+        let parsed = parse_repl_input(input)?;
+        let ir_node = parsed.ir_node;
 
         // Check if this is a top-level binding (Sequential with binding)
         let binding_info = if let IRNode::Sequential {
@@ -976,7 +980,11 @@ impl App {
         };
 
         // Evaluate IR
-        let value = self.interpreter.eval(&ir_node).await.map_err(|e| e.to_string())?;
+        let value = self
+            .interpreter
+            .eval(&ir_node)
+            .await
+            .map_err(|e| e.to_string())?;
 
         // For top-level REPL bindings, ensure they're stored in the global scope
         if let Some(binding) = binding_info {
@@ -1138,7 +1146,11 @@ impl App {
             };
 
             // Evaluate the expression
-            let value = self.interpreter.eval(&ir_node).await.map_err(|e| e.to_string())?;
+            let value = self
+                .interpreter
+                .eval(&ir_node)
+                .await
+                .map_err(|e| e.to_string())?;
 
             // For let statements, ensure the binding is in global scope
             if let Some(binding) = binding_info {

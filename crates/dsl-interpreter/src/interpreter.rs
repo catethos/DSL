@@ -2,11 +2,11 @@ use crate::builtins::BuiltinFunctions;
 use crate::error::InterpreterError;
 use crate::pattern::PatternMatcher;
 use crate::runtime::Runtime;
-use dsl_ir::{IRNode, IRTemplateSegment, IRBinding, IRExecution, IRFunction, LambdaIR, Value, IR};
+use anyhow::Result;
 use dsl_ir::lowering::Lowering;
+use dsl_ir::{IRBinding, IRExecution, IRFunction, IRNode, IRTemplateSegment, LambdaIR, Value, IR};
 use indexmap::IndexMap;
 use std::collections::HashMap;
-use anyhow::Result;
 
 pub struct Interpreter {
     pub runtime: Runtime,
@@ -36,16 +36,24 @@ impl Interpreter {
 
         // Register all functions
         for func in &ir.functions {
-            interpreter.runtime.functions.insert(func.name.clone(), func.clone());
+            interpreter
+                .runtime
+                .functions
+                .insert(func.name.clone(), func.clone());
         }
 
         // Register all function groups (overloaded functions)
         for func_group in &ir.function_groups {
-            interpreter.runtime.function_groups.insert(func_group.name.clone(), func_group.clone());
+            interpreter
+                .runtime
+                .function_groups
+                .insert(func_group.name.clone(), func_group.clone());
         }
 
         // Rebuild BAML runtime with new types
-        interpreter.builtins.rebuild_runtime(&interpreter.runtime.types)?;
+        interpreter
+            .builtins
+            .rebuild_runtime(&interpreter.runtime.types)?;
 
         Ok(interpreter)
     }
@@ -157,23 +165,60 @@ impl Interpreter {
 
             // ===== Parallel Composition =====
             IRNode::Parallel { exprs, binding } => {
-                // Execute all expressions and collect into a list
-                //
-                // NOTE: Despite the || operator suggesting parallelism, we currently evaluate
-                // sequentially due to fundamental architecture limitations:
-                // - BuiltinFunctions contains RefCell<duckdb::Connection> which is !Sync
-                // - This prevents sharing across threads even with Arc<Mutex<>>
-                // - True parallelism would require refactoring all internal state to be thread-safe
-                //
-                // For I/O-bound workloads (LLM/HTTP calls), async concurrency within a single
-                // task already provides good performance. True parallelism would mainly benefit
-                // CPU-bound operations, which are rare in this DSL's use case.
+                // Check if ALL expressions are simple Ask() calls - if so, we can parallelize them
+                let all_ask_calls = exprs.iter().all(|expr| {
+                    matches!(expr, IRNode::FunctionCall { name, .. } if name == "Ask")
+                });
 
-                let mut results = Vec::new();
-                for expr in exprs {
-                    let result = Box::pin(self.eval(expr)).await?;
-                    results.push(result);
-                }
+                let results = if all_ask_calls && exprs.len() > 1 {
+                    // Parallel execution for Ask() calls using tokio::spawn
+                    // This provides true concurrent LLM API calls
+                    let llm_client = self.builtins.get_llm_client_for_parallel()
+                        .ok_or_else(|| InterpreterError::RuntimeError {
+                            message: "OPENAI_API_KEY not set".to_string(),
+                            source_span: None,
+                        })?;
+
+                    let mut handles = Vec::new();
+                    for expr in exprs {
+                        if let IRNode::FunctionCall { args, .. } = expr {
+                            // Evaluate the argument (should be a string)
+                            let arg_result = Box::pin(self.eval(&args[0])).await?;
+                            if let Value::String(prompt) = arg_result {
+                                let client = llm_client.clone();
+                                let handle = tokio::spawn(async move {
+                                    use crate::builtins::BuiltinFunctions;
+                                    BuiltinFunctions::call_llm_static(client, prompt).await
+                                });
+                                handles.push(handle);
+                            }
+                        }
+                    }
+
+                    // Collect results in order
+                    let mut results = Vec::new();
+                    for handle in handles {
+                        let result = handle.await
+                            .map_err(|e| InterpreterError::RuntimeError {
+                                message: format!("Parallel task failed: {}", e),
+                                source_span: None,
+                            })?
+                            .map_err(|e| InterpreterError::RuntimeError {
+                                message: e.to_string(),
+                                source_span: None,
+                            })?;
+                        results.push(result);
+                    }
+                    results
+                } else {
+                    // Sequential execution for everything else
+                    let mut results = Vec::new();
+                    for expr in exprs {
+                        let result = Box::pin(self.eval(expr)).await?;
+                        results.push(result);
+                    }
+                    results
+                };
 
                 // Return single value if only one expression, otherwise return list
                 let result_value = if results.len() == 1 {
@@ -198,6 +243,55 @@ impl Interpreter {
                 // Check for higher-order functions that accept lambdas
                 if name == "map" || name == "filter" || name == "reduce" || name == "sortby" || name == "groupby" {
                     return self.eval_higher_order_function(name, args).await;
+                }
+
+                // Special handling for par() function - enable parallel execution for Ask() calls
+                if name == "par" && args.len() > 1 {
+                    let all_ask_calls = args.iter().all(|arg| {
+                        matches!(arg, IRNode::FunctionCall { name, .. } if name == "Ask")
+                    });
+
+                    if all_ask_calls {
+                        // Parallel execution for Ask() calls
+                        let llm_client = self.builtins.get_llm_client_for_parallel()
+                            .ok_or_else(|| InterpreterError::RuntimeError {
+                                message: "OPENAI_API_KEY not set".to_string(),
+                                source_span: source_span.clone(),
+                            })?;
+
+                        let mut handles = Vec::new();
+                        for arg in args {
+                            if let IRNode::FunctionCall { args: ask_args, .. } = arg {
+                                // Evaluate the argument (should be a string)
+                                let arg_result = Box::pin(self.eval(&ask_args[0])).await?;
+                                if let Value::String(prompt) = arg_result {
+                                    let client = llm_client.clone();
+                                    let handle = tokio::spawn(async move {
+                                        use crate::builtins::BuiltinFunctions;
+                                        BuiltinFunctions::call_llm_static(client, prompt).await
+                                    });
+                                    handles.push(handle);
+                                }
+                            }
+                        }
+
+                        // Collect results in order
+                        let mut results = Vec::new();
+                        for handle in handles {
+                            let result = handle.await
+                                .map_err(|e| InterpreterError::RuntimeError {
+                                    message: format!("Parallel task failed: {}", e),
+                                    source_span: source_span.clone(),
+                                })?
+                                .map_err(|e| InterpreterError::RuntimeError {
+                                    message: e.to_string(),
+                                    source_span: source_span.clone(),
+                                })?;
+                            results.push(result);
+                        }
+                        return Ok(Value::List(results));
+                    }
+                    // Fall through to regular par() handling if not all Ask calls
                 }
 
                 // Check for intrinsic builtin calls first
@@ -342,7 +436,11 @@ impl Interpreter {
     // ===== Helper Methods =====
 
     /// Apply a binding to a value (store in variables)
-    pub fn apply_binding(&mut self, binding: &IRBinding, value: &Value) -> Result<(), InterpreterError> {
+    pub fn apply_binding(
+        &mut self,
+        binding: &IRBinding,
+        value: &Value,
+    ) -> Result<(), InterpreterError> {
         match binding {
             IRBinding::Single(name) => {
                 self.runtime.set_var(name.clone(), value.clone());
@@ -440,13 +538,14 @@ impl Interpreter {
                         source_span: None,
                     })
             }
-            (Value::Map(map), Value::String(key)) => map
-                .get(key)
-                .cloned()
-                .ok_or_else(|| InterpreterError::RuntimeError {
-                    message: format!("Key '{}' not found", key),
-                    source_span: None,
-                }),
+            (Value::Map(map), Value::String(key)) => {
+                map.get(key)
+                    .cloned()
+                    .ok_or_else(|| InterpreterError::RuntimeError {
+                        message: format!("Key '{}' not found", key),
+                        source_span: None,
+                    })
+            }
             _ => Err(InterpreterError::TypeError {
                 message: format!(
                     "Invalid index operation: {} indexed by {}",
@@ -461,7 +560,12 @@ impl Interpreter {
     }
 
     /// Apply a binary operation to two values
-    pub fn apply_binary_op(&self, op: &str, left: Value, right: Value) -> Result<Value, InterpreterError> {
+    pub fn apply_binary_op(
+        &self,
+        op: &str,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, InterpreterError> {
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => {
                 match op {
@@ -571,18 +675,16 @@ impl Interpreter {
                 }
             }
             // Boolean operations
-            (Value::Bool(a), Value::Bool(b)) => {
-                match op {
-                    "==" => Ok(Value::Bool(a == b)),
-                    "!=" => Ok(Value::Bool(a != b)),
-                    "&&" | "and" => Ok(Value::Bool(a && b)),
-                    "||" | "or" => Ok(Value::Bool(a || b)),
-                    _ => Err(InterpreterError::RuntimeError {
-                        message: format!("Operator '{}' not supported for booleans", op),
-                        source_span: None,
-                    }),
-                }
-            }
+            (Value::Bool(a), Value::Bool(b)) => match op {
+                "==" => Ok(Value::Bool(a == b)),
+                "!=" => Ok(Value::Bool(a != b)),
+                "&&" | "and" => Ok(Value::Bool(a && b)),
+                "||" | "or" => Ok(Value::Bool(a || b)),
+                _ => Err(InterpreterError::RuntimeError {
+                    message: format!("Operator '{}' not supported for booleans", op),
+                    source_span: None,
+                }),
+            },
             (left_val, right_val) => Err(InterpreterError::TypeError {
                 message: format!(
                     "Type mismatch in operation: {} {} {}",
@@ -640,7 +742,9 @@ impl Interpreter {
                     IRNode::String(func_name) => {
                         // String reference to a function
                         for item in items {
-                            let result = self.call_function_by_name(func_name, vec![item.clone()]).await?;
+                            let result = self
+                                .call_function_by_name(func_name, vec![item.clone()])
+                                .await?;
                             results.push(result);
                         }
                     }
@@ -704,7 +808,9 @@ impl Interpreter {
                     IRNode::String(func_name) => {
                         // String reference to a function
                         for (idx, item) in items.iter().enumerate() {
-                            let result = self.call_function_by_name(func_name, vec![item.clone()]).await?;
+                            let result = self
+                                .call_function_by_name(func_name, vec![item.clone()])
+                                .await?;
                             let keep = match result {
                                 Value::Bool(b) => b,
                                 _ => {
@@ -771,7 +877,9 @@ impl Interpreter {
 
                         // Reduce: fold over items
                         for (idx, item) in items.iter().enumerate() {
-                            accumulator = self.eval_lambda(lambda, &[accumulator, item.clone()]).await
+                            accumulator = self
+                                .eval_lambda(lambda, &[accumulator, item.clone()])
+                                .await
                                 .map_err(|e| InterpreterError::RuntimeError {
                                     message: format!("reduce() at index {}: {}", idx, e),
                                     source_span: None,
@@ -781,9 +889,14 @@ impl Interpreter {
                     IRNode::String(func_name) => {
                         // String reference to a 2-arg function
                         for (idx, item) in items.iter().enumerate() {
-                            accumulator = self.call_function_by_name(func_name, vec![accumulator, item.clone()]).await
+                            accumulator = self
+                                .call_function_by_name(func_name, vec![accumulator, item.clone()])
+                                .await
                                 .map_err(|e| InterpreterError::RuntimeError {
-                                    message: format!("reduce() with '{}' at index {}: {}", func_name, idx, e),
+                                    message: format!(
+                                        "reduce() with '{}' at index {}: {}",
+                                        func_name, idx, e
+                                    ),
                                     source_span: None,
                                 })?;
                         }
@@ -828,20 +941,30 @@ impl Interpreter {
                 match &args[1] {
                     IRNode::Lambda(lambda) => {
                         for (idx, item) in items.iter().enumerate() {
-                            let key = self.eval_lambda(lambda, &[item.clone()]).await
-                                .map_err(|e| InterpreterError::RuntimeError {
-                                    message: format!("sortby() key computation at index {}: {}", idx, e),
-                                    source_span: None,
-                                })?;
+                            let key =
+                                self.eval_lambda(lambda, &[item.clone()])
+                                    .await
+                                    .map_err(|e| InterpreterError::RuntimeError {
+                                        message: format!(
+                                            "sortby() key computation at index {}: {}",
+                                            idx, e
+                                        ),
+                                        source_span: None,
+                                    })?;
                             self.validate_sortable_key(&key)?;
                             keyed_items.push((key, item.clone()));
                         }
                     }
                     IRNode::String(func_name) => {
                         for (idx, item) in items.iter().enumerate() {
-                            let key = self.call_function_by_name(func_name, vec![item.clone()]).await
+                            let key = self
+                                .call_function_by_name(func_name, vec![item.clone()])
+                                .await
                                 .map_err(|e| InterpreterError::RuntimeError {
-                                    message: format!("sortby() key '{}' at index {}: {}", func_name, idx, e),
+                                    message: format!(
+                                        "sortby() key '{}' at index {}: {}",
+                                        func_name, idx, e
+                                    ),
                                     source_span: None,
                                 })?;
                             self.validate_sortable_key(&key)?;
@@ -858,13 +981,12 @@ impl Interpreter {
 
                 // Phase 2: Stable sort by precomputed keys
                 keyed_items.sort_by(|(k1, _), (k2, _)| {
-                    self.compare_values(k1, k2).unwrap_or(std::cmp::Ordering::Equal)
+                    self.compare_values(k1, k2)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
                 // Phase 3: Extract sorted items
-                let sorted: Vec<Value> = keyed_items.into_iter()
-                    .map(|(_, item)| item)
-                    .collect();
+                let sorted: Vec<Value> = keyed_items.into_iter().map(|(_, item)| item).collect();
 
                 Ok(Value::List(sorted))
             }
@@ -898,32 +1020,44 @@ impl Interpreter {
                 match &args[1] {
                     IRNode::Lambda(lambda) => {
                         for (idx, item) in items.iter().enumerate() {
-                            let key = self.eval_lambda(lambda, &[item.clone()]).await
-                                .map_err(|e| InterpreterError::RuntimeError {
-                                    message: format!("groupby() key computation at index {}: {}", idx, e),
-                                    source_span: None,
-                                })?;
-                            
+                            let key =
+                                self.eval_lambda(lambda, &[item.clone()])
+                                    .await
+                                    .map_err(|e| InterpreterError::RuntimeError {
+                                        message: format!(
+                                            "groupby() key computation at index {}: {}",
+                                            idx, e
+                                        ),
+                                        source_span: None,
+                                    })?;
+
                             // Convert key to string for map key
                             let key_str = self.value_to_map_key(&key)?;
-                            
-                            groups.entry(key_str)
+
+                            groups
+                                .entry(key_str)
                                 .or_insert_with(Vec::new)
                                 .push(item.clone());
                         }
                     }
                     IRNode::String(func_name) => {
                         for (idx, item) in items.iter().enumerate() {
-                            let key = self.call_function_by_name(func_name, vec![item.clone()]).await
+                            let key = self
+                                .call_function_by_name(func_name, vec![item.clone()])
+                                .await
                                 .map_err(|e| InterpreterError::RuntimeError {
-                                    message: format!("groupby() key '{}' at index {}: {}", func_name, idx, e),
+                                    message: format!(
+                                        "groupby() key '{}' at index {}: {}",
+                                        func_name, idx, e
+                                    ),
                                     source_span: None,
                                 })?;
-                            
+
                             // Convert key to string for map key
                             let key_str = self.value_to_map_key(&key)?;
-                            
-                            groups.entry(key_str)
+
+                            groups
+                                .entry(key_str)
                                 .or_insert_with(Vec::new)
                                 .push(item.clone());
                         }
@@ -937,7 +1071,8 @@ impl Interpreter {
                 }
 
                 // Convert to Map of Lists
-                let result: IndexMap<String, Value> = groups.into_iter()
+                let result: IndexMap<String, Value> = groups
+                    .into_iter()
                     .map(|(k, v)| (k, Value::List(v)))
                     .collect();
 
@@ -994,7 +1129,7 @@ impl Interpreter {
     ) -> Result<Value, InterpreterError> {
         // For now, only support regular functions (not pattern-matched overloaded functions)
         // TODO: Add support for pattern-matched functions via call_overloaded_function
-        
+
         if let Some(func) = self.runtime.functions.get(name).cloned() {
             if func.params.len() != args.len() {
                 return Err(InterpreterError::InvalidArguments {
@@ -1033,13 +1168,12 @@ impl Interpreter {
         // Lower the execution to LIR before executing
         let mut lowering = Lowering::new();
         let return_type_str = func.return_type.as_ref().map(|ft| ft.to_string());
-        let lowered_execution = lowering.lower_execution_direct(&func.execution, &func.name, &return_type_str);
+        let lowered_execution =
+            lowering.lower_execution_direct(&func.execution, &func.name, &return_type_str);
 
         // Execute the lowered IR (should always be Expression after lowering)
         let result = match lowered_execution {
-            IRExecution::Expression { body } => {
-                Box::pin(self.eval(&body)).await?
-            }
+            IRExecution::Expression { body } => Box::pin(self.eval(&body)).await?,
             _ => {
                 return Err(InterpreterError::RuntimeError {
                     message: "Internal error: lowering should produce Expression".to_string(),
@@ -1090,13 +1224,12 @@ impl Interpreter {
         // Lower the execution to LIR before executing
         let mut lowering = Lowering::new();
         let return_type_str = func.return_type.as_ref().map(|ft| ft.to_string());
-        let lowered_execution = lowering.lower_execution_direct(&func.execution, &func.name, &return_type_str);
+        let lowered_execution =
+            lowering.lower_execution_direct(&func.execution, &func.name, &return_type_str);
 
         // Execute the lowered IR (should always be Expression after lowering)
         let result = match lowered_execution {
-            IRExecution::Expression { body } => {
-                Box::pin(self.eval(&body)).await?
-            }
+            IRExecution::Expression { body } => Box::pin(self.eval(&body)).await?,
             _ => {
                 return Err(InterpreterError::RuntimeError {
                     message: "Internal error: lowering should produce Expression".to_string(),
@@ -1131,7 +1264,9 @@ impl Interpreter {
         }
 
         // Get return type as string
-        let type_identifier = func.return_type.as_ref()
+        let type_identifier = func
+            .return_type
+            .as_ref()
             .map(|t| t.to_string())
             .unwrap_or_else(|| "String".to_string());
 
@@ -1142,7 +1277,7 @@ impl Interpreter {
                 type_identifier,
                 model,
                 base_url,
-                api_key_env
+                api_key_env,
             )
             .await
             .map_err(Into::into)
@@ -1173,10 +1308,15 @@ impl Interpreter {
         params.insert("input_data".to_string(), input_data.clone());
 
         // Create modified prompt template that includes input data
-        let enhanced_template = format!("{}\n\nData to analyze:\n{{{{ input_data }}}}", prompt_template);
+        let enhanced_template = format!(
+            "{}\n\nData to analyze:\n{{{{ input_data }}}}",
+            prompt_template
+        );
 
         // Get return type as string
-        let type_identifier = func.return_type.as_ref()
+        let type_identifier = func
+            .return_type
+            .as_ref()
             .map(|t| t.to_string())
             .unwrap_or_else(|| "String".to_string());
 
@@ -1187,7 +1327,7 @@ impl Interpreter {
                 type_identifier,
                 model,
                 base_url,
-                api_key_env
+                api_key_env,
             )
             .await
             .map_err(Into::into)
@@ -1227,10 +1367,12 @@ impl Interpreter {
             "DELETE" => client.delete(&url),
             "PATCH" => client.patch(&url),
             "HEAD" => client.head(&url),
-            _ => return Err(InterpreterError::RuntimeError {
-                message: format!("Unsupported HTTP method: {}", method),
-                source_span: None,
-            }),
+            _ => {
+                return Err(InterpreterError::RuntimeError {
+                    message: format!("Unsupported HTTP method: {}", method),
+                    source_span: None,
+                })
+            }
         };
 
         // Add query parameters if provided
@@ -1370,10 +1512,12 @@ impl Interpreter {
                 }
 
                 // Extract bindings from this pattern
-                let pattern_bindings = PatternMatcher::extract_bindings(pattern, value)
-                    .map_err(|e| InterpreterError::RuntimeError {
-                        message: format!("Pattern binding error: {}", e),
-                        source_span: None,
+                let pattern_bindings =
+                    PatternMatcher::extract_bindings(pattern, value).map_err(|e| {
+                        InterpreterError::RuntimeError {
+                            message: format!("Pattern binding error: {}", e),
+                            source_span: None,
+                        }
                     })?;
                 bindings.extend(pattern_bindings);
             }
@@ -1475,7 +1619,10 @@ impl Interpreter {
                 Ok(f.to_string())
             }
             _ => Err(InterpreterError::RuntimeError {
-                message: format!("Cannot use {} as groupby key (use String, Int, or Bool)", value.type_name()),
+                message: format!(
+                    "Cannot use {} as groupby key (use String, Int, or Bool)",
+                    value.type_name()
+                ),
                 source_span: None,
             }),
         }
@@ -1652,11 +1799,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_creation() {
         let mut interp = create_test_interpreter();
-        let node = IRNode::List(vec![
-            IRNode::Int(1),
-            IRNode::Int(2),
-            IRNode::Int(3),
-        ]);
+        let node = IRNode::List(vec![IRNode::Int(1), IRNode::Int(2), IRNode::Int(3)]);
         let result = interp.eval(&node).await.unwrap();
         assert_eq!(
             result,
@@ -1684,9 +1827,10 @@ mod tests {
     async fn test_field_access() {
         let mut interp = create_test_interpreter();
         let node = IRNode::FieldAccess {
-            base: Box::new(IRNode::Map(vec![
-                ("name".to_string(), IRNode::String("Bob".to_string())),
-            ])),
+            base: Box::new(IRNode::Map(vec![(
+                "name".to_string(),
+                IRNode::String("Bob".to_string()),
+            )])),
             field: "name".to_string(),
         };
         let result = interp.eval(&node).await.unwrap();
@@ -1922,7 +2066,10 @@ mod tests {
         };
 
         // Register the function group
-        interp.runtime.function_groups.insert("factorial".to_string(), func_group);
+        interp
+            .runtime
+            .function_groups
+            .insert("factorial".to_string(), func_group);
 
         // Test factorial(0) = 1
         let call_0 = IRNode::FunctionCall {
@@ -1989,7 +2136,10 @@ mod tests {
         };
 
         // Register the function group
-        interp.runtime.function_groups.insert("length".to_string(), func_group);
+        interp
+            .runtime
+            .function_groups
+            .insert("length".to_string(), func_group);
 
         // Test length([]) = 0
         let call_empty = IRNode::FunctionCall {
@@ -2060,7 +2210,10 @@ mod tests {
         };
 
         // Register the function group
-        interp.runtime.function_groups.insert("classify".to_string(), func_group);
+        interp
+            .runtime
+            .function_groups
+            .insert("classify".to_string(), func_group);
 
         // Test classify(-5) = "negative"
         let call_neg = IRNode::FunctionCall {

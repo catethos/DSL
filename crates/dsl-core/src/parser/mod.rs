@@ -19,7 +19,9 @@ pub use ast::*;
 // Re-export parsing functions
 pub use error::format_parse_error;
 pub use functions::parse_function_definition;
-pub use parsing::{is_command, parse_command, parse_expr, parse_expr_with_binding, parse_program};
+pub use parsing::{
+    is_command, parse_command, parse_expr, parse_expr_with_binding, parse_program, parse_repl_line,
+};
 pub use types::{parse_enum_definition, parse_type_definition};
 pub use validation::{validate_balanced_delimiters, ValidationError};
 
@@ -821,5 +823,59 @@ mod tests {
 
         assert_eq!(program.functions[0].name, "traditional_func");
         assert_eq!(program.pattern_functions[0].name, "factorial");
+    }
+
+    #[test]
+    fn test_parse_comment_only_line() {
+        let result = parse_repl_line("# this is a comment\n");
+        if let Err(e) = &result {
+            eprintln!("Parse error: {}", e);
+        }
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_parse_comment_without_newline() {
+        let result = parse_repl_line("# this is a comment");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_parse_expr_with_trailing_comment() {
+        let result = parse_repl_line("42 # comment\n");
+        assert!(result.is_ok());
+        let expr = result.unwrap().unwrap();
+        assert!(matches!(expr, Expr::Int(42)));
+    }
+
+    #[test]
+    fn test_parse_empty_line() {
+        let result = parse_repl_line("");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_parse_whitespace_only() {
+        let result = parse_repl_line("   \n  \t  ");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_parse_multiline_comment() {
+        let result = parse_repl_line("/* multi\nline\ncomment */");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_parse_expr_with_multiline_comment() {
+        let result = parse_repl_line("/* comment */ 42");
+        assert!(result.is_ok());
+        let expr = result.unwrap().unwrap();
+        assert!(matches!(expr, Expr::Int(42)));
     }
 }

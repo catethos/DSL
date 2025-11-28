@@ -232,10 +232,11 @@ pub fn parse_expr(input: &str) -> Result<Expr, String> {
         return Err(validation_error.format(input));
     }
 
-    let mut pairs = DslParser::parse(Rule::expr_with_eoi, input)
-        .map_err(|e| format_parse_error(&e, input))?;
+    let mut pairs =
+        DslParser::parse(Rule::expr_with_eoi, input).map_err(|e| format_parse_error(&e, input))?;
 
-    let pair = pairs.next()
+    let pair = pairs
+        .next()
         .ok_or_else(|| "No expression found".to_string())?;
 
     build_expr(pair)
@@ -254,6 +255,38 @@ pub fn parse_expr_with_binding(input: &str) -> Result<(Expr, Option<Binding>), S
     };
 
     Ok((expr, binding))
+}
+
+/// Parse REPL line (allows empty lines and comment-only lines)
+pub fn parse_repl_line(input: &str) -> Result<Option<Expr>, String> {
+    // First validate balanced delimiters for better error messages
+    if let Err(validation_error) = validate_balanced_delimiters(input) {
+        return Err(validation_error.format(input));
+    }
+
+    let mut pairs =
+        DslParser::parse(Rule::repl_input, input).map_err(|e| format_parse_error(&e, input))?;
+
+    // repl_input produces expr? (optional expr)
+    // Because repl_input is silent, we get the inner expr directly (if present)
+    let first_pair = pairs.next();
+
+    if let Some(pair) = first_pair {
+        // Check if this is an actual expr or just EOI/whitespace
+        match pair.as_rule() {
+            Rule::expr => {
+                // It's an expression - build it
+                Ok(Some(build_expr(pair)?))
+            }
+            _ => {
+                // It's something else (like EOI) - treat as empty
+                Ok(None)
+            }
+        }
+    } else {
+        // No expression found (empty or comment-only)
+        Ok(None)
+    }
 }
 
 /// Check if input is a command (starts with :)

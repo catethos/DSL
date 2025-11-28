@@ -105,7 +105,7 @@ block = {
 }
 
 // Block items: let statements or expressions
-// Note: All items are treated uniformly during parsing; 
+// Note: All items are treated uniformly during parsing;
 // post-validation ensures proper structure (statements before final expr)
 block_item = {
     let_statement
@@ -243,6 +243,9 @@ expr = { conditional }
 
 // Expression with End-of-Input validation (for standalone expression parsing)
 expr_with_eoi = _{ SOI ~ expr ~ EOI }
+
+// REPL input that allows empty/comment-only lines
+repl_input = _{ SOI ~ expr? ~ EOI }
 
 conditional = {
     sequential ~ ("?" ~ sequential ~ ":" ~ sequential)?
@@ -485,6 +488,6 @@ command_name = @{
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 COMMENT = _{
-    "#" ~ (!"\n" ~ ANY)* ~ "\n"
+    "#" ~ (!"\n" ~ ANY)* ~ ("\n" | &EOI)
     | "/*" ~ (!"*/" ~ ANY)* ~ "*/"
 }

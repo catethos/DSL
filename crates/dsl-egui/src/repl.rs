@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 
 use crate::animations::AnimationType;
 use crate::autocomplete::AutocompleteState;
-use crate::output_item::{OutputItem, ErrorDetail};
+use crate::output_item::{ErrorDetail, OutputItem};
 use crate::renderers;
 use crate::syntax::{highlight_code, ColorScheme};
 use crate::theme::Theme;
@@ -76,7 +76,7 @@ pub struct ReplPane {
 
     /// Cache for markdown rendering
     markdown_cache: egui_commonmark::CommonMarkCache,
-    
+
     /// UI theme for colors
     theme: Theme,
 }
@@ -274,8 +274,7 @@ impl ReplPane {
             let text_edit_id = egui::Id::new("repl_text_input");
 
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("flow>")
-                    .family(egui::FontFamily::Monospace));
+                ui.label(egui::RichText::new("flow>").family(egui::FontFamily::Monospace));
 
                 // Use the tab_consumed_for_autocomplete flag from above
                 let tab_pressed = tab_consumed_for_autocomplete;
@@ -420,16 +419,16 @@ impl ReplPane {
                 if let Some(code) = text.strip_prefix("flow> ") {
                     // Render with syntax highlighting - use horizontal_wrapped for text wrapping
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(egui::RichText::new("flow>")
-                            .family(egui::FontFamily::Monospace));
+                        ui.label(egui::RichText::new("flow>").family(egui::FontFamily::Monospace));
                         let font_id = egui::FontId::new(16.0, egui::FontFamily::Monospace);
                         let job = highlight_code(code, font_id, &self.color_scheme);
                         ui.label(job);
                     });
                 } else {
                     // Use Label instead of monospace to enable wrapping
-                    ui.label(egui::RichText::new(text.as_str())
-                        .family(egui::FontFamily::Monospace));
+                    ui.label(
+                        egui::RichText::new(text.as_str()).family(egui::FontFamily::Monospace),
+                    );
                 }
             }
             OutputItem::Error(err) => {
@@ -731,24 +730,18 @@ impl ReplPane {
                             Err(e) => Err(format!("Parse error: {}", e)),
                         }
                     } else {
-                        // Handle expressions
-                        match dsl_core::parse_expr(&input_clone) {
-                            Ok(ast) => {
-                                // Compile to IR
-                                match dsl_core::compile_expr(&ast) {
-                                    Ok(ir_node) => {
-                                        // Evaluate
-                                        let mut interp = interpreter.lock().unwrap();
-                                        let result = interp.eval(&ir_node).await;
-                                        match result {
-                                            Ok(value) => Ok(value),
-                                            Err(e) => Err(format!("Runtime error: {}", e)),
-                                        }
-                                    }
-                                    Err(e) => Err(format!("Compile error: {}", e)),
+                        // Handle expressions (parse_repl_input handles comments and empty lines)
+                        match dsl_core::parse_repl_input(&input_clone) {
+                            Ok(parsed) => {
+                                // Evaluate the compiled IR
+                                let mut interp = interpreter.lock().unwrap();
+                                let result = interp.eval(&parsed.ir_node).await;
+                                match result {
+                                    Ok(value) => Ok(value),
+                                    Err(e) => Err(format!("Runtime error: {}", e)),
                                 }
                             }
-                            Err(e) => Err(format!("Parse error: {}", e)),
+                            Err(e) => Err(e),
                         }
                     }
                 });
@@ -766,8 +759,11 @@ impl ReplPane {
     fn handle_eval_result(&mut self, result: EvalResult) {
         match result.result {
             Ok(value) => {
-                // Add value to output
-                self.push_output(OutputItem::from_value(&value));
+                // Don't print output for Null (empty/comment-only input)
+                if !matches!(value, dsl_ir::Value::Null) {
+                    // Add value to output
+                    self.push_output(OutputItem::from_value(&value));
+                }
             }
             Err(err) => {
                 // Convert string errors to ErrorDetail
@@ -808,9 +804,10 @@ impl ReplPane {
                         self.needs_autocomplete_refresh = false; // Already refreshed via new()
                     }
                     Err(e) => {
-                        self.push_output(OutputItem::Error(
-                            ErrorDetail::from_string(format!("Failed to create new session: {}", e))
-                        ));
+                        self.push_output(OutputItem::Error(ErrorDetail::from_string(format!(
+                            "Failed to create new session: {}",
+                            e
+                        ))));
                     }
                 }
             }
@@ -821,9 +818,10 @@ impl ReplPane {
                 ));
             }
             _ => {
-                self.push_output(OutputItem::Error(
-                    ErrorDetail::from_string(format!("Unknown command: {}", cmd))
-                ));
+                self.push_output(OutputItem::Error(ErrorDetail::from_string(format!(
+                    "Unknown command: {}",
+                    cmd
+                ))));
             }
         }
     }

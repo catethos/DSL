@@ -1,7 +1,7 @@
-use anyhow::Result;
 use crate::error::InterpreterError;
 use crate::sql::SQLExecutor;
-use dsl_ir::{TypeRegistry, Value, EffectKind, Span};
+use anyhow::Result;
+use dsl_ir::{EffectKind, Span, TypeRegistry, Value};
 use simplify_baml::*;
 use std::collections::HashMap;
 use std::env;
@@ -119,6 +119,8 @@ impl BuiltinFunctions {
 
     pub async fn call(&mut self, name: &str, args: Vec<Value>) -> Result<Value> {
         match name.to_lowercase().as_str() {
+            // Internal functions
+            "__null__" => Ok(Value::Null),
             // String functions
             "upper" => self.upper(args),
             "lower" => self.lower(args),
@@ -207,8 +209,7 @@ impl BuiltinFunctions {
                         source_span: span,
                     });
                 }
-                self.intrinsic_llm_execute(&args[0], &args[1], span)
-                    .await
+                self.intrinsic_llm_execute(&args[0], &args[1], span).await
             }
             "__http" => {
                 if args.len() != 5 {
@@ -374,6 +375,25 @@ impl BuiltinFunctions {
         };
 
         Ok(client)
+    }
+
+    /// Get a cloneable LLM client for parallel execution
+    pub fn get_llm_client_for_parallel(&self) -> Option<LLMClient> {
+        self.llm_client.clone()
+    }
+
+    /// Static helper for parallel LLM calls - doesn't need &mut self
+    pub async fn call_llm_static(client: LLMClient, prompt: String) -> Result<Value> {
+        let response = client.call(&prompt).await.map_err(|e| {
+            let mut error_msg = format!("Failed to call LLM: {}", e);
+            let mut source = e.source();
+            while let Some(err) = source {
+                error_msg.push_str(&format!("\n  Caused by: {}", err));
+                source = err.source();
+            }
+            anyhow::anyhow!(error_msg)
+        })?;
+        Ok(Value::String(response))
     }
 
     async fn ask(&mut self, args: Vec<Value>) -> Result<Value> {
@@ -1200,12 +1220,10 @@ impl BuiltinFunctions {
         };
 
         // Optional: limit number of items (default: all items)
-        let limit = args
-            .get(1)
-            .and_then(|v| match v {
-                Value::Int(n) => Some(*n as usize),
-                _ => None,
-            });
+        let limit = args.get(1).and_then(|v| match v {
+            Value::Int(n) => Some(*n as usize),
+            _ => None,
+        });
 
         // Fetch the RSS feed
         let response = reqwest::get(&url)
@@ -1241,7 +1259,10 @@ impl BuiltinFunctions {
 
                 // Description
                 if let Some(description) = item.description() {
-                    map.insert("description".to_string(), Value::String(description.to_string()));
+                    map.insert(
+                        "description".to_string(),
+                        Value::String(description.to_string()),
+                    );
                 }
 
                 // Publication date
@@ -1282,13 +1303,22 @@ impl BuiltinFunctions {
         let mut result = indexmap::IndexMap::new();
 
         // Channel title
-        result.insert("title".to_string(), Value::String(channel.title().to_string()));
+        result.insert(
+            "title".to_string(),
+            Value::String(channel.title().to_string()),
+        );
 
         // Channel link
-        result.insert("link".to_string(), Value::String(channel.link().to_string()));
+        result.insert(
+            "link".to_string(),
+            Value::String(channel.link().to_string()),
+        );
 
         // Channel description
-        result.insert("description".to_string(), Value::String(channel.description().to_string()));
+        result.insert(
+            "description".to_string(),
+            Value::String(channel.description().to_string()),
+        );
 
         // Items
         result.insert("items".to_string(), Value::List(items));
@@ -1863,7 +1893,10 @@ impl BuiltinFunctions {
                         _ => continue,
                     };
 
-                    groups.entry(key).or_insert_with(Vec::new).push(item.clone());
+                    groups
+                        .entry(key)
+                        .or_insert_with(Vec::new)
+                        .push(item.clone());
                 }
             }
         }
@@ -2378,35 +2411,29 @@ impl BuiltinFunctions {
             }
         };
 
-        let model = config_map
-            .get("model")
-            .and_then(|v| {
-                if let Value::String(s) = v {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            });
+        let model = config_map.get("model").and_then(|v| {
+            if let Value::String(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
 
-        let base_url = config_map
-            .get("base_url")
-            .and_then(|v| {
-                if let Value::String(s) = v {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            });
+        let base_url = config_map.get("base_url").and_then(|v| {
+            if let Value::String(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
 
-        let api_key_env = config_map
-            .get("api_key_env")
-            .and_then(|v| {
-                if let Value::String(s) = v {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            });
+        let api_key_env = config_map.get("api_key_env").and_then(|v| {
+            if let Value::String(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
 
         // Extract return type from config (defaults to String if not specified)
         let return_type = config_map
@@ -2422,22 +2449,23 @@ impl BuiltinFunctions {
 
         // Call existing execute_with_prompt_template method
         // Note: We use an empty params map since template interpolation is already done
-        let result = self.execute_with_prompt_template(
-            &prompt,
-            std::collections::HashMap::new(),
-            return_type,
-            model,
-            base_url,
-            api_key_env,
-        )
-        .await
-        .map_err(|e| InterpreterError::LLMError {
-            message: e.to_string(),
-            function_name: self.current_function_name.clone(),
-            source_span: span,
-            prompt: Some(prompt),
-            response: self.last_response.clone(),
-        })?;
+        let result = self
+            .execute_with_prompt_template(
+                &prompt,
+                std::collections::HashMap::new(),
+                return_type,
+                model,
+                base_url,
+                api_key_env,
+            )
+            .await
+            .map_err(|e| InterpreterError::LLMError {
+                message: e.to_string(),
+                function_name: self.current_function_name.clone(),
+                source_span: span,
+                prompt: Some(prompt),
+                response: self.last_response.clone(),
+            })?;
 
         Ok(result)
     }
@@ -2553,13 +2581,16 @@ impl BuiltinFunctions {
         }
 
         // Send request
-        let response = request.send().await.map_err(|e| InterpreterError::HTTPError {
-            message: format!("Request failed: {}", e),
-            function_name: self.current_function_name.clone(),
-            source_span: span.clone(),
-            method: Some(method.clone()),
-            url: Some(url.clone()),
-        })?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| InterpreterError::HTTPError {
+                message: format!("Request failed: {}", e),
+                function_name: self.current_function_name.clone(),
+                source_span: span.clone(),
+                method: Some(method.clone()),
+                url: Some(url.clone()),
+            })?;
 
         // Get response text
         let response_text = response
@@ -2605,12 +2636,13 @@ impl BuiltinFunctions {
         };
 
         // Get SQL executor
-        let executor = self.sql_executor.as_mut().ok_or_else(|| {
-            InterpreterError::RuntimeError {
-                message: "SQL executor not initialized".to_string(),
-                source_span: span.clone(),
-            }
-        })?;
+        let executor =
+            self.sql_executor
+                .as_mut()
+                .ok_or_else(|| InterpreterError::RuntimeError {
+                    message: "SQL executor not initialized".to_string(),
+                    source_span: span.clone(),
+                })?;
 
         // Prepare query with auto-registration of $variables
         let prepared_query = executor
@@ -2624,14 +2656,14 @@ impl BuiltinFunctions {
 
         // Execute the prepared query
         let params = std::collections::HashMap::new();
-        executor.execute(&prepared_query, &params).map_err(|e| {
-            InterpreterError::SQLError {
+        executor
+            .execute(&prepared_query, &params)
+            .map_err(|e| InterpreterError::SQLError {
                 message: format!("Query failed: {}", e),
                 function_name: self.current_function_name.clone(),
                 source_span: span,
                 query: Some(prepared_query),
-            }
-        })
+            })
     }
 
     /// Helper: Convert serde_json::Value to dsl_ir::Value
