@@ -1,0 +1,261 @@
+// =============================================================================
+// Lattice SQL and Parallel Execution
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// SQL Expressions
+// -----------------------------------------------------------------------------
+//
+// Lattice integrates with DuckDB for SQL queries. SQL expressions allow
+// you to query data using familiar SQL syntax and get typed results.
+
+print("=== SQL Queries ===")
+
+// Basic SQL query (returns dynamic results)
+let numbers_query = SQL("SELECT 1 as num, 'hello' as greeting")
+print("Basic SQL result: " + str(numbers_query))
+
+// SQL with type annotation for structured output
+type UserRecord {
+    id: Int,
+    name: String,
+    active: Bool
+}
+
+// Query with typed output
+let users = SQL<[UserRecord]>("
+    SELECT 1 as id, 'Alice' as name, true as active
+    UNION ALL
+    SELECT 2 as id, 'Bob' as name, false as active
+")
+
+print("\nUsers from SQL:")
+for user in users {
+    print("  " + user.name + " (active: " + str(user.active) + ")")
+}
+
+// -----------------------------------------------------------------------------
+// SQL with F-Strings (Interpolated Strings)
+// -----------------------------------------------------------------------------
+//
+// F-strings make dynamic SQL queries much cleaner! Use f"..." with {expr} syntax.
+
+print("\n=== Dynamic SQL with F-Strings ===")
+
+let min_id = 2
+let query = f"SELECT * FROM (
+    SELECT 1 as id, 'Alice' as name
+    UNION ALL SELECT 2 as id, 'Bob' as name
+    UNION ALL SELECT 3 as id, 'Carol' as name
+) WHERE id >= {min_id}"
+
+let filtered = SQL(query)
+print(f"Filtered results (id >= {min_id}): {filtered}")
+
+// More f-string examples with SQL
+let table_name = "employees"
+let column = "salary"
+let threshold = 50000
+
+// Build complex queries dynamically
+print(f"\nBuilding query for {table_name}.{column} > {threshold}")
+
+// F-strings work great for parameterized queries
+def query_by_name(name: String) -> String {
+    f"SELECT * FROM users WHERE name = '{name}'"
+}
+print(f"Generated query: {query_by_name("Alice")}")
+
+// -----------------------------------------------------------------------------
+// SQL Aggregations
+// -----------------------------------------------------------------------------
+
+print("\n=== SQL Aggregations ===")
+
+type Stats {
+    count: Int,
+    sum: Float,
+    avg: Float
+}
+
+let stats = SQL<Stats>("
+    SELECT
+        COUNT(*) as count,
+        SUM(value) as sum,
+        AVG(value) as avg
+    FROM (
+        SELECT 10 as value
+        UNION ALL SELECT 20
+        UNION ALL SELECT 30
+        UNION ALL SELECT 40
+        UNION ALL SELECT 50
+    )
+")
+
+print("Statistics:")
+print("  Count: " + str(stats.count))
+print("  Sum: " + str(stats.sum))
+print("  Average: " + str(stats.avg))
+
+// -----------------------------------------------------------------------------
+// Parallel Blocks
+// -----------------------------------------------------------------------------
+//
+// Parallel blocks execute multiple expressions concurrently and return
+// their results as a list.
+
+print("\n=== Parallel Execution ===")
+
+// Simulate some work functions
+def work_a() -> String {
+    // In real use, this could be an LLM call, API request, etc.
+    "Result A"
+}
+
+def work_b() -> String {
+    "Result B"
+}
+
+def work_c() -> String {
+    "Result C"
+}
+
+// Execute all three concurrently
+let results = parallel {
+    work_a(),
+    work_b(),
+    work_c()
+}
+
+print("Parallel results: " + str(results))
+
+// -----------------------------------------------------------------------------
+// Parallel with Different Types
+// -----------------------------------------------------------------------------
+
+print("\n=== Parallel with Mixed Operations ===")
+
+// Different operations running concurrently
+let mixed_results = parallel {
+    1 + 2,
+    "hello" + " " + "world",
+    len([1, 2, 3, 4, 5])
+}
+
+print("Mixed parallel results: " + str(mixed_results))
+
+// -----------------------------------------------------------------------------
+// Parallel Map
+// -----------------------------------------------------------------------------
+//
+// parallel_map applies a function to each element of a collection concurrently.
+
+print("\n=== Parallel Map ===")
+
+let items = [1, 2, 3, 4, 5]
+
+// Process each item in parallel
+let squared = parallel_map(items, |x| x * x)
+print("Squared in parallel: " + str(squared))
+
+// More complex processing
+let processed = parallel_map(items, |x| {
+    let doubled = x * 2
+    let label = "item_" + str(x)
+    {
+        "original": x,
+        "doubled": doubled,
+        "label": label
+    }
+})
+
+print("\nProcessed items:")
+for item in processed {
+    print("  " + item.label + ": " + str(item.original) + " -> " + str(item.doubled))
+}
+
+// -----------------------------------------------------------------------------
+// Practical Use Case: Parallel API Calls
+// -----------------------------------------------------------------------------
+
+print("\n=== Practical Example: Batch Processing ===")
+
+// Type for external data
+type WeatherData {
+    city: String,
+    temperature: Float,
+    conditions: String
+}
+
+// Simulated weather data fetch (in real use, would call an API)
+def get_weather(city: String) -> WeatherData {
+    // Simulated response
+    WeatherData {
+        city: city,
+        temperature: 72.5,
+        conditions: "Sunny"
+    }
+}
+
+// Cities to check
+let cities = ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix"]
+
+// Fetch weather for all cities in parallel
+let weather_data = parallel_map(cities, |city| get_weather(city))
+
+print("Weather report:")
+for w in weather_data {
+    print("  " + w.city + ": " + str(w.temperature) + "°F, " + w.conditions)
+}
+
+// -----------------------------------------------------------------------------
+// Combining SQL and Parallel
+// -----------------------------------------------------------------------------
+
+print("\n=== Combined SQL and Parallel ===")
+
+// Run multiple SQL queries in parallel
+let query_results = parallel {
+    SQL("SELECT COUNT(*) as cnt FROM (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3)"),
+    SQL("SELECT SUM(x) as total FROM (SELECT 10 as x UNION ALL SELECT 20 UNION ALL SELECT 30)"),
+    SQL("SELECT MAX(y) as max_val FROM (SELECT 1 as y UNION ALL SELECT 5 UNION ALL SELECT 3)")
+}
+
+print("Parallel SQL results:")
+print("  Count: " + str(query_results[0]))
+print("  Sum: " + str(query_results[1]))
+print("  Max: " + str(query_results[2]))
+
+// -----------------------------------------------------------------------------
+// Error Handling with Results
+// -----------------------------------------------------------------------------
+
+print("\n=== Result Pattern ===")
+
+type QueryResult {
+    success: Bool,
+    data: String?,
+    error: String?
+}
+
+def safe_query(query_str: String) -> QueryResult {
+    // In a real implementation, this would catch SQL errors
+    QueryResult {
+        success: true,
+        data: "Query executed successfully",
+        error: null
+    }
+}
+
+let result = safe_query("SELECT 1")
+if result.success {
+    print("Query succeeded: " + result.data)
+} else {
+    print("Query failed: " + result.error)
+}
+
+// -----------------------------------------------------------------------------
+// Result
+// -----------------------------------------------------------------------------
+
+"SQL and Parallel demo complete!"

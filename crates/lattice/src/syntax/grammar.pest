@@ -1,0 +1,399 @@
+// Lattice Language Grammar
+// ========================
+// A statically-typed language for structured LLM interactions
+
+// ============================================================================
+// Top-level Rules
+// ============================================================================
+
+/// A program is a sequence of items (definitions and statements)
+program = { SOI ~ item* ~ EOI }
+
+/// An item is either a definition or a statement
+item = { type_def | enum_def | function_def | statement }
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+/// Type definition: type Name { field1: Type, field2: Type }
+type_def = {
+    "type" ~ identifier ~ "{" ~ field_list? ~ "}"
+}
+
+field_list = { field ~ ("," ~ field)* ~ ","? }
+
+field = { identifier ~ ":" ~ type_annotation ~ field_description? }
+
+field_description = { "@" ~ string_literal }
+
+/// Enum definition: enum Name { Variant1, Variant2 }
+enum_def = {
+    "enum" ~ identifier ~ "{" ~ variant_list? ~ "}"
+}
+
+variant_list = { identifier ~ ("," ~ identifier)* ~ ","? }
+
+// ============================================================================
+// Type Annotations
+// ============================================================================
+
+/// Type annotation with optional modifier
+type_annotation = { type_expr ~ "?"? }
+
+/// Type expression
+type_expr = {
+    list_type
+    | map_type
+    | result_type
+    | primitive_type
+    | named_type
+}
+
+primitive_type = { "String" | "Int" | "Float" | "Bool" | "Null" | "Path" }
+
+named_type = { identifier }
+
+list_type = { "[" ~ type_annotation ~ "]" }
+
+map_type = { "Map" ~ "<" ~ type_annotation ~ "," ~ type_annotation ~ ">" }
+
+result_type = { "Result" ~ "<" ~ type_annotation ~ "," ~ type_annotation ~ ">" }
+
+// ============================================================================
+// Function Definitions
+// ============================================================================
+
+/// Function definition (regular or LLM)
+function_def = {
+    "def" ~ identifier ~ "(" ~ param_list? ~ ")" ~ ("->" ~ type_annotation)? ~ function_body
+}
+
+param_list = { param ~ ("," ~ param)* ~ ","? }
+
+param = { identifier ~ ":" ~ type_annotation }
+
+/// Function body can be:
+/// - A block of statements/expressions: { ... }
+/// - An LLM config body: { key: value, ..., prompt: "..." }
+function_body = { "{" ~ (llm_config | block_contents) ~ "}" }
+
+/// LLM configuration (detected by key-value pairs with prompt:)
+llm_config = {
+    config_field+ ~ prompt_field
+}
+
+config_field = {
+    config_key ~ ":" ~ expression ~ NEWLINE?
+}
+
+config_key = { "base_url" | "model" | "api_key_env" | "temperature" | "max_tokens" }
+
+prompt_field = {
+    "prompt" ~ ":" ~ (raw_string_literal | fstring_literal | string_literal)
+}
+
+/// Block contents (statements and expressions)
+block_contents = { statement* ~ expression? }
+
+// ============================================================================
+// Statements
+// ============================================================================
+
+statement = {
+    let_statement
+    | assign_statement
+    | if_statement
+    | while_statement
+    | for_statement
+    | return_statement
+    | expression_statement
+}
+
+/// Let binding: let x = expr or let x: Type = expr
+let_statement = {
+    "let" ~ identifier ~ (":" ~ type_annotation)? ~ "=" ~ expression
+}
+
+/// Assignment: x = expr or x.field = expr or x[i] = expr
+assign_statement = {
+    assign_target ~ "=" ~ expression
+}
+
+assign_target = {
+    identifier ~ (field_access | index_access)*
+}
+
+/// If statement: if cond { } else if cond { } else { }
+if_statement = {
+    "if" ~ expression ~ block ~ else_clause?
+}
+
+else_clause = {
+    "else" ~ (if_statement | block)
+}
+
+/// While loop: while cond { }
+while_statement = {
+    "while" ~ expression ~ block
+}
+
+/// For loop: for x in expr { }
+for_statement = {
+    "for" ~ identifier ~ "in" ~ expression ~ block
+}
+
+/// Return statement
+return_statement = {
+    "return" ~ expression?
+}
+
+/// Expression as statement
+expression_statement = {
+    expression
+}
+
+// ============================================================================
+// Expressions
+// ============================================================================
+
+/// Expression with proper precedence (lowest to highest)
+expression = { or_expr }
+
+/// Logical OR
+or_expr = { and_expr ~ ("||" ~ and_expr)* }
+
+/// Logical AND
+and_expr = { equality_expr ~ ("&&" ~ equality_expr)* }
+
+/// Equality: == !=
+equality_expr = { comparison_expr ~ (equality_op ~ comparison_expr)* }
+equality_op = { "==" | "!=" }
+
+/// Comparison: < <= > >=
+comparison_expr = { additive_expr ~ (comparison_op ~ additive_expr)* }
+comparison_op = { "<=" | ">=" | "<" | ">" }
+
+/// Additive: + -
+additive_expr = { multiplicative_expr ~ (additive_op ~ multiplicative_expr)* }
+additive_op = { "+" | "-" }
+
+/// Multiplicative: * / %
+multiplicative_expr = { unary_expr ~ (multiplicative_op ~ unary_expr)* }
+multiplicative_op = { "*" | "/" | "%" }
+
+/// Unary: - !
+unary_expr = {
+    unary_op ~ unary_expr
+    | postfix_expr
+}
+unary_op = { "-" | "!" }
+
+/// Postfix: field access, index, call
+postfix_expr = {
+    primary_expr ~ (field_access | index_access | call_args)*
+}
+
+field_access = { "." ~ identifier }
+
+index_access = { "[" ~ expression ~ "]" }
+
+call_args = { "(" ~ arg_list? ~ ")" }
+
+arg_list = { expression ~ ("," ~ expression)* ~ ","? }
+
+// ============================================================================
+// Primary Expressions
+// ============================================================================
+
+primary_expr = {
+    "(" ~ expression ~ ")"
+    | if_expr
+    | match_expr
+    | parallel_block
+    | parallel_map_expr
+    | sql_expr
+    | lambda_expr
+    | list_literal
+    | map_literal
+    | struct_literal
+    | literal
+    | enum_constructor
+    | identifier
+}
+
+/// Enum constructor: EnumName::Variant
+enum_constructor = { identifier ~ "::" ~ identifier }
+
+/// If expression: if cond { expr } else { expr }
+if_expr = {
+    "if" ~ expression ~ block ~ else_expr_clause?
+}
+
+else_expr_clause = {
+    "else" ~ (if_expr | block)
+}
+
+/// Match expression
+match_expr = {
+    "match" ~ expression ~ "{" ~ match_arm+ ~ "}"
+}
+
+match_arm = {
+    pattern ~ "=>" ~ (expression | block) ~ ","?
+}
+
+pattern = {
+    result_pattern
+    | enum_pattern
+    | literal_pattern
+    | wildcard_pattern
+    | binding_pattern
+}
+
+result_pattern = { ("Ok" | "Err") ~ "(" ~ identifier ~ ")" }
+
+enum_pattern = { identifier ~ "::" ~ identifier }
+
+literal_pattern = { literal }
+
+wildcard_pattern = { "_" }
+
+binding_pattern = { identifier }
+
+/// Parallel block: parallel { expr1, expr2, ... }
+parallel_block = {
+    "parallel" ~ "{" ~ expression ~ ("," ~ expression)* ~ ","? ~ "}"
+}
+
+/// Parallel map: parallel_map(collection, |x| expr)
+parallel_map_expr = {
+    "parallel_map" ~ "(" ~ expression ~ "," ~ lambda_expr ~ ")"
+}
+
+/// SQL expression: SQL("query") or SQL<Type>("query")
+sql_expr = {
+    "SQL" ~ ("<" ~ type_annotation ~ ">")? ~ "(" ~ expression ~ ")"
+}
+
+/// Lambda: |x, y| expr or |x, y| { stmts }
+lambda_expr = {
+    "|" ~ lambda_params? ~ "|" ~ (expression | block)
+}
+
+lambda_params = { identifier ~ ("," ~ identifier)* }
+
+/// List literal: [1, 2, 3]
+list_literal = {
+    "[" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ "]"
+}
+
+/// Map literal: {"key": value, ...}
+map_literal = {
+    "{" ~ (map_entry ~ ("," ~ map_entry)* ~ ","?)? ~ "}"
+}
+
+map_entry = { (string_literal | identifier) ~ ":" ~ expression }
+
+/// Struct literal: TypeName { field: value, ... }
+struct_literal = {
+    identifier ~ "{" ~ (struct_field ~ ("," ~ struct_field)* ~ ","?)? ~ "}"
+}
+
+struct_field = { identifier ~ ":" ~ expression }
+
+/// Block: { stmts }
+block = { "{" ~ block_contents ~ "}" }
+
+// ============================================================================
+// Literals
+// ============================================================================
+
+literal = {
+    float_literal
+    | int_literal
+    | bool_literal
+    | null_literal
+    | raw_string_literal
+    | fstring_literal
+    | string_literal
+}
+
+int_literal = @{ "-"? ~ ASCII_DIGIT+ }
+
+float_literal = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+
+bool_literal = { "true" | "false" }
+
+null_literal = { "null" }
+
+/// Regular string: "hello \"world\""
+string_literal = @{ "\"" ~ string_content* ~ "\"" }
+
+string_content = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ANY
+}
+
+/// Raw/multiline string: """content"""
+raw_string_literal = @{ "\"\"\"" ~ raw_string_content* ~ "\"\"\"" }
+
+raw_string_content = {
+    !("\"\"\"") ~ ANY
+}
+
+/// F-string (interpolated string): f"hello {name}"
+/// Using ${ } to allow inner whitespace suppression
+fstring_literal = ${ "f\"" ~ fstring_part* ~ "\"" }
+
+fstring_part = ${
+    fstring_interpolation
+    | fstring_text
+}
+
+/// Text portion of f-string (no braces or escapes them)
+fstring_text = @{ fstring_char+ }
+
+fstring_char = {
+    !("\"" | "{" | "}") ~ ANY
+    | "{{" // escaped left brace
+    | "}}" // escaped right brace
+    | "\\" ~ ANY
+}
+
+/// Interpolation: {expression}
+fstring_interpolation = !{ "{" ~ expression ~ "}" }
+
+// ============================================================================
+// Identifiers and Keywords
+// ============================================================================
+
+identifier = @{
+    !keyword_boundary ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
+}
+
+// A keyword followed by a word boundary (not alphanumeric or underscore)
+keyword_boundary = {
+    keyword ~ !(ASCII_ALPHANUMERIC | "_")
+}
+
+keyword = {
+    "type" | "enum" | "def" | "let" | "if" | "else" | "while" | "for" | "in"
+    | "return" | "match" | "true" | "false" | "null" | "parallel" | "parallel_map"
+    | "SQL" | "Ok" | "Err" | "String" | "Int" | "Float" | "Bool" | "Null" | "Path"
+    | "Map" | "Result"
+}
+
+// ============================================================================
+// Whitespace and Comments
+// ============================================================================
+
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+
+NEWLINE = _{ "\r\n" | "\n" | "\r" }
+
+COMMENT = _{ line_comment | block_comment }
+
+line_comment = { "//" ~ (!NEWLINE ~ ANY)* }
+
+block_comment = { "/*" ~ (!"*/" ~ ANY)* ~ "*/" }

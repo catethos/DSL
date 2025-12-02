@@ -1,0 +1,63 @@
+// F-Strings (Interpolated Strings) in Lattice
+// =============================================
+// F-strings allow you to embed expressions directly in strings using {expr} syntax.
+
+// Basic interpolation with variables
+let name = "Alice"
+let greeting = f"Hello, {name}!"
+print(greeting)  // Hello, Alice!
+
+// Expressions inside interpolation
+let x = 10
+let y = 20
+print(f"{x} + {y} = {x + y}")  // 10 + 20 = 30
+
+// Multiple interpolations
+let first = "John"
+let last = "Doe"
+let age = 30
+print(f"{first} {last} is {age} years old")
+
+// Works with any expression
+let items = [1, 2, 3, 4, 5]
+print(f"The list has {len(items)} items")
+
+// Nested expressions
+let a = 5
+let b = 3
+print(f"max({a}, {b}) = {if a > b { a } else { b }}")
+
+// F-strings in functions
+def greet(person: String) -> String {
+    f"Welcome, {person}!"
+}
+print(greet("Bob"))
+
+// Building dynamic SQL queries (main use case!)
+let table_name = "users"
+let column = "email"
+let query = f"SELECT {column} FROM {table_name} WHERE active = true"
+print(query)
+
+// Escaping braces: use {{ and }}
+print(f"Use {{expr}} for interpolation")  // Use {expr} for interpolation
+
+// Empty f-string
+let empty = f""
+print(f"Empty string length: {len(empty)}")
+
+// Type coercion - non-strings are automatically converted
+let count = 42
+let pi = 3.14159
+let flag = true
+print(f"int: {count}, float: {pi}, bool: {flag}")
+
+// F-strings in data structures
+let messages = [
+    f"Message 1: {x}",
+    f"Message 2: {y}",
+    f"Message 3: {x + y}"
+]
+for msg in messages {
+    print(msg)
+}

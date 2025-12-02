@@ -1,0 +1,129 @@
+// =============================================================================
+// Lattice Variables: Let Bindings, Assignments, and Scopes
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Let Bindings (immutable by default pattern, but reassignment allowed)
+// -----------------------------------------------------------------------------
+
+// Simple let bindings
+let x = 10
+let y = 20
+let z = x + y
+
+print("Initial values:")
+print("x = " + str(x))
+print("y = " + str(y))
+print("z = " + str(z))
+
+// -----------------------------------------------------------------------------
+// Type Annotations (optional)
+// -----------------------------------------------------------------------------
+
+// You can optionally specify types
+let my_num: Int = 42
+let my_str: String = "hello"
+let my_flt: Float = 3.14
+let my_flag: Bool = true
+
+// Optional types (can be null)
+let maybe_value: Int? = null
+
+print("\nTyped values:")
+print("my_num: " + str(my_num))
+print("my_str: " + my_str)
+
+// -----------------------------------------------------------------------------
+// Reassignment
+// -----------------------------------------------------------------------------
+
+let counter = 0
+print("\nReassignment demo:")
+print("counter before: " + str(counter))
+
+counter = counter + 1
+print("counter after +1: " + str(counter))
+
+counter = counter + 1
+print("counter after +1: " + str(counter))
+
+counter = 100
+print("counter after =100: " + str(counter))
+
+// -----------------------------------------------------------------------------
+// Shadowing (new binding with same name)
+// -----------------------------------------------------------------------------
+
+let value = 10
+print("\nShadowing demo:")
+print("value (first): " + str(value))
+
+// Note: In Lattice, this is actually reassignment, not shadowing
+// since we're in global scope
+
+// -----------------------------------------------------------------------------
+// Variable Scope in Blocks
+// -----------------------------------------------------------------------------
+
+let outer = "outer value"
+print("\nScope demo:")
+print("outer: " + outer)
+
+// Variables defined in inner scopes
+if true {
+    let scoped_var = "inner value"
+    print("scoped_var (inside block): " + scoped_var)
+    print("outer (inside block): " + outer)
+}
+
+// 'scoped_var' is not accessible here (would error if uncommented)
+// print(scoped_var)
+
+// -----------------------------------------------------------------------------
+// Complex Assignment Targets
+// -----------------------------------------------------------------------------
+
+// Assigning to list elements
+let numbers = [1, 2, 3, 4, 5]
+print("\nComplex assignment:")
+print("numbers before: " + str(numbers))
+
+numbers[0] = 100
+numbers[2] = 300
+print("numbers after: " + str(numbers))
+
+// Assigning to map entries
+let person = {"name": "Alice", "age": 30}
+print("\nperson before: " + str(person))
+
+person["age"] = 31
+person["city"] = "NYC"
+print("person after: " + str(person))
+
+// -----------------------------------------------------------------------------
+// Chained Field/Index Access
+// -----------------------------------------------------------------------------
+
+let data = {
+    "users": [
+        {"name": "Alice", "score": 95},
+        {"name": "Bob", "score": 87}
+    ]
+}
+
+print("\nChained access:")
+print("First user name: " + data["users"][0]["name"])
+print("Second user score: " + str(data["users"][1]["score"]))
+
+// Note: Deep nested assignment (data["users"][0]["score"] = 100)
+// is not yet supported - requires multiple steps
+let users_list = data["users"]
+let first_user = users_list[0]
+first_user["score"] = 100
+print("Updated first user score: " + str(first_user["score"]))
+
+// -----------------------------------------------------------------------------
+// Result
+// -----------------------------------------------------------------------------
+
+"Variables demo complete!"

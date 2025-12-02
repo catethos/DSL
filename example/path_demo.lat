@@ -1,0 +1,43 @@
+// Path Type Demo
+// Demonstrates the Path primitive type and its manipulation functions
+
+// Create a path from a string
+let file_path = path("/home/user/documents/report.pdf")
+print("Original path:")
+print(file_path)
+
+// Extract path components
+print("\nPath components:")
+print("  File name: " + path_file_name(file_path))
+print("  Extension: " + path_extension(file_path))
+print("  Parent: " + path_to_str(path_parent(file_path)))
+
+// Join paths
+let base_dir = path("/home/user")
+let sub_path = path_join(base_dir, "projects")
+let full_path = path_join(sub_path, "my_app")
+print("\nPath joining:")
+print("  Base: " + path_to_str(base_dir))
+print("  After join 'projects': " + path_to_str(sub_path))
+print("  After join 'my_app': " + path_to_str(full_path))
+
+// Check path properties (these check actual filesystem)
+let current_dir = path(".")
+print("\nFilesystem checks for current directory '.':")
+print("  Exists: " + str(path_exists(current_dir)))
+print("  Is file: " + str(path_is_file(current_dir)))
+print("  Is directory: " + str(path_is_dir(current_dir)))
+
+// Path with no extension
+let no_ext = path("/usr/bin/bash")
+print("\nPath without extension:")
+print("  File: " + path_to_str(no_ext))
+print("  Extension: " + str(path_extension(no_ext)))
+
+// Nested parent traversal
+let deep_path = path("/a/b/c/d/e")
+print("\nParent traversal:")
+print("  Original: " + path_to_str(deep_path))
+print("  Parent 1: " + path_to_str(path_parent(deep_path)))
+print("  Parent 2: " + path_to_str(path_parent(path_parent(deep_path))))
+print("  Parent 3: " + path_to_str(path_parent(path_parent(path_parent(deep_path)))))

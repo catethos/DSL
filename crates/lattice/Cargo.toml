@@ -1,0 +1,47 @@
+[package]
+name = "lattice"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Parsing
+pest = "2.7"
+pest_derive = "2.7"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client for LLM
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# JSON handling
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Template rendering (for LLM prompts)
+minijinja = "2.0"
+
+# DuckDB
+duckdb = { version = "1.0", features = ["bundled"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# FFI (feature-gated)
+[features]
+python = ["pyo3"]
+elixir = ["rustler"]
+node = ["neon"]
+
+[dependencies.pyo3]
+version = "0.22"
+optional = true
+
+[dependencies.rustler]
+version = "0.34"
+optional = true
+
+[dependencies.neon]
+version = "1"
+optional = true

@@ -1,0 +1,408 @@
+// =============================================================================
+// Lattice LLM Functions: AI-Powered Type-Safe Function Definitions
+// =============================================================================
+//
+// This example demonstrates Lattice's unique feature: LLM-backed functions
+// that use large language models to process inputs and return typed outputs.
+//
+// NOTE: To run LLM functions, you need to configure:
+// - API base URL (e.g., OpenAI-compatible endpoint)
+// - API key via environment variable
+// - Model name
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Type Definitions for LLM Functions
+// -----------------------------------------------------------------------------
+
+// Output type for sentiment analysis
+enum Sentiment {
+    Positive,
+    Negative,
+    Neutral,
+    Mixed
+}
+
+// Output type for entity extraction
+type Entity {
+    name: String @"The entity name",
+    entity_type: String @"Entity type: PERSON, ORG, LOCATION, DATE, etc.",
+    confidence: Float @"Confidence score from 0.0 to 1.0"
+}
+
+// Output type for summarization
+type Summary {
+    title: String @"A brief title for the content",
+    summary: String @"The summarized content in 2-3 sentences",
+    key_points: [String] @"List of main points extracted"
+}
+
+// Output type for classification
+type Classification {
+    category: String @"The assigned category",
+    confidence: Float @"Confidence score from 0.0 to 1.0",
+    reasoning: String @"Explanation for the classification"
+}
+
+// Output type for translation
+type Translation {
+    original: String @"Original text",
+    translated: String @"Translated text",
+    source_language: String @"Detected source language",
+    target_language: String @"Target language"
+}
+
+// Output type for Q&A
+type Answer {
+    answer: String @"The answer to the question",
+    confidence: Float @"Confidence score",
+    sources: [String]? @"Optional source references"
+}
+
+// -----------------------------------------------------------------------------
+// Basic LLM Function: Sentiment Analysis
+// -----------------------------------------------------------------------------
+
+// An LLM function uses curly braces with config and prompt
+def analyze_sentiment(text: String) -> Sentiment {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+
+    prompt: """
+    Analyze the sentiment of the following text and classify it as one of:
+    - Positive: Expresses positive emotions, satisfaction, or optimism
+    - Negative: Expresses negative emotions, dissatisfaction, or pessimism
+    - Neutral: Factual, objective, or emotionally neutral
+    - Mixed: Contains both positive and negative sentiments
+
+    Text to analyze:
+    ${text}
+
+    Return only the sentiment classification.
+    """
+}
+
+// -----------------------------------------------------------------------------
+// LLM Function: Entity Extraction
+// -----------------------------------------------------------------------------
+
+def extract_entities(text: String) -> [Entity] {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+
+    prompt: """
+    Extract all named entities from the following text.
+
+    For each entity, provide:
+    - name: The entity as it appears in the text
+    - type: One of PERSON, ORG, LOCATION, DATE, PRODUCT, EVENT
+    - confidence: Your confidence score from 0.0 to 1.0
+
+    Text:
+    ${text}
+
+    Return the entities as a JSON array.
+    """
+}
+
+// -----------------------------------------------------------------------------
+// LLM Function: Text Summarization
+// -----------------------------------------------------------------------------
+
+def summarize(text: String, max_length: Int) -> Summary {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.3
+    max_tokens: 500
+
+    prompt: """
+    Summarize the following text in no more than ${max_length} words.
+
+    Provide:
+    1. A brief title (max 10 words)
+    2. A concise summary (2-3 sentences)
+    3. A list of 3-5 key points
+
+    Text to summarize:
+    ${text}
+    """
+}
+
+// -----------------------------------------------------------------------------
+// LLM Function: Text Classification
+// -----------------------------------------------------------------------------
+
+def classify_text(text: String, categories: [String]) -> Classification {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+
+    prompt: """
+    Classify the following text into one of these categories: ${categories}
+
+    Text: ${text}
+
+    Provide:
+    - category: The most appropriate category from the list
+    - confidence: Your confidence score (0.0 to 1.0)
+    - reasoning: A brief explanation for your choice
+    """
+}
+
+// -----------------------------------------------------------------------------
+// LLM Function: Translation
+// -----------------------------------------------------------------------------
+
+def translate(text: String, target_language: String) -> Translation {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.3
+
+    prompt: """
+    Translate the following text to ${target_language}.
+
+    Original text:
+    ${text}
+
+    Provide:
+    - original: The original text
+    - translated: The translated text
+    - source_language: The detected source language
+    - target_language: "${target_language}"
+    """
+}
+
+// -----------------------------------------------------------------------------
+// LLM Function: Question Answering
+// -----------------------------------------------------------------------------
+
+def answer_question(context: String, question: String) -> Answer {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.2
+
+    prompt: """
+    Based on the following context, answer the question.
+
+    Context:
+    ${context}
+
+    Question: ${question}
+
+    Provide:
+    - answer: Your answer based on the context
+    - confidence: How confident you are (0.0 to 1.0)
+    - sources: Relevant quotes from the context (if applicable)
+
+    If the answer cannot be found in the context, say so and set confidence to 0.
+    """
+}
+
+// -----------------------------------------------------------------------------
+// LLM Function: Code Generation
+// -----------------------------------------------------------------------------
+
+type CodeResult {
+    code: String @"The generated code",
+    language: String @"Programming language",
+    explanation: String @"Explanation of how the code works"
+}
+
+def generate_code(description: String, language: String) -> CodeResult {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.2
+    max_tokens: 1000
+
+    prompt: """
+    Generate ${language} code that does the following:
+    ${description}
+
+    Provide:
+    - code: The complete, working code
+    - language: "${language}"
+    - explanation: A brief explanation of how the code works
+
+    Make sure the code is clean, well-commented, and follows best practices.
+    """
+}
+
+// -----------------------------------------------------------------------------
+// LLM Function: Data Extraction (Structured)
+// -----------------------------------------------------------------------------
+
+type ContactInfo {
+    name: String?,
+    email: String?,
+    phone: String?,
+    company: String?,
+    title: String?
+}
+
+def extract_contact(text: String) -> ContactInfo {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+
+    prompt: """
+    Extract contact information from the following text.
+
+    Text:
+    ${text}
+
+    Extract (if present):
+    - name: Person's full name
+    - email: Email address
+    - phone: Phone number
+    - company: Company or organization
+    - title: Job title or position
+
+    Use null for any fields not found in the text.
+    """
+}
+
+// -----------------------------------------------------------------------------
+// Example Usage (commented out - requires API access)
+// -----------------------------------------------------------------------------
+
+/*
+// Sentiment Analysis
+let review = "This product exceeded my expectations! Great quality and fast shipping."
+let sentiment = analyze_sentiment(review)
+print("Sentiment: " + str(sentiment))
+
+// Entity Extraction
+let news = "Apple CEO Tim Cook announced the new iPhone at their Cupertino headquarters yesterday."
+let entities = extract_entities(news)
+for entity in entities {
+    print(entity.name + " (" + entity.entity_type + ")")
+}
+
+// Text Classification
+let email = "Hi, I'd like to schedule a meeting to discuss the Q4 budget."
+let categories = ["Meeting Request", "Information", "Complaint", "Sales Inquiry"]
+let classification = classify_text(email, categories)
+print("Category: " + classification.category)
+
+// Translation
+let english_text = "Hello, how are you?"
+let spanish = translate(english_text, "Spanish")
+print("Translation: " + spanish.translated)
+
+// Question Answering
+let context = "The Eiffel Tower was built in 1889 in Paris, France. It stands 330 meters tall."
+let answer = answer_question(context, "When was the Eiffel Tower built?")
+print("Answer: " + answer.answer)
+*/
+
+// -----------------------------------------------------------------------------
+// Parallel LLM Calls
+// -----------------------------------------------------------------------------
+
+/*
+// Process multiple items concurrently
+let reviews = [
+    "Great product, love it!",
+    "Terrible experience, would not recommend.",
+    "It's okay, nothing special."
+]
+
+// Use parallel block for concurrent LLM calls
+let sentiments = parallel {
+    analyze_sentiment(reviews[0]),
+    analyze_sentiment(reviews[1]),
+    analyze_sentiment(reviews[2])
+}
+
+// Or use parallel_map for cleaner syntax
+let all_sentiments = parallel_map(reviews, |review| analyze_sentiment(review))
+*/
+
+// -----------------------------------------------------------------------------
+// Chaining LLM Functions
+// -----------------------------------------------------------------------------
+
+/*
+// Example: Analyze a document
+def analyze_document(text: String) -> Map<String, String> {
+    // First, extract entities
+    let entities = extract_entities(text)
+
+    // Then, summarize
+    let summary = summarize(text, 100)
+
+    // Finally, analyze sentiment
+    let sentiment = analyze_sentiment(text)
+
+    // Return combined results
+    {
+        "title": summary.title,
+        "summary": summary.summary,
+        "sentiment": str(sentiment),
+        "entity_count": str(len(entities))
+    }
+}
+*/
+
+// -----------------------------------------------------------------------------
+// Using Different LLM Providers
+// -----------------------------------------------------------------------------
+
+// Example: Using a local LLM via Ollama
+def local_summarize(text: String) -> Summary {
+    base_url: "http://localhost:11434/v1"
+    model: "llama2"
+    api_key_env: "DUMMY_KEY"  // Ollama doesn't require a key
+    temperature: 0.3
+
+    prompt: """
+    Summarize the following text:
+    ${text}
+
+    Provide a title, summary, and key points.
+    """
+}
+
+// Example: Using Anthropic Claude
+def claude_classify(text: String) -> Classification {
+    base_url: "https://api.anthropic.com/v1"
+    model: "claude-3-sonnet-20240229"
+    api_key_env: "ANTHROPIC_API_KEY"
+    temperature: 0.0
+
+    prompt: """
+    Classify this text into one of: Technical, Business, Personal, News
+
+    Text: ${text}
+
+    Return category, confidence, and reasoning.
+    """
+}
+
+// -----------------------------------------------------------------------------
+// Result
+// -----------------------------------------------------------------------------
+
+print("=== LLM Functions Demo ===")
+print("This file demonstrates LLM function definitions in Lattice.")
+print("")
+print("Key features:")
+print("- Type-safe LLM outputs with structured types")
+print("- Configurable model, temperature, and tokens")
+print("- String interpolation in prompts with ${variable}")
+print("- Support for different LLM providers")
+print("- Parallel execution with parallel {} and parallel_map")
+print("")
+print("To run LLM functions, configure your API credentials.")
+
+"LLM demo complete!"

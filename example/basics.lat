@@ -1,0 +1,115 @@
+// =============================================================================
+// Lattice Basics: Literals, Arithmetic, Comparisons, and Logic
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Literals
+// -----------------------------------------------------------------------------
+
+// Integer literals
+let my_int = 42
+let negative = -17
+
+// Float literals
+let my_float = 3.14159
+let neg_float = -2.5
+
+// String literals
+let greeting = "Hello, World!"
+let escaped = "She said \"hi\""
+
+// Boolean literals
+let is_true = true
+let is_false = false
+
+// Null literal
+let nothing = null
+
+// -----------------------------------------------------------------------------
+// Arithmetic Operations
+// -----------------------------------------------------------------------------
+
+// Basic arithmetic
+let sum = 10 + 5          // 15
+let diff = 10 - 5         // 5
+let product = 10 * 5      // 50
+let quotient = 10 / 3     // 3 (integer division)
+let remainder = 10 % 3    // 1
+
+// Float arithmetic
+let fsum = 3.5 + 2.5    // 6.0
+let fdiv = 10.0 / 4.0   // 2.5
+
+// Mixed arithmetic (promotes to float)
+let mixed = 10 + 2.5      // 12.5
+
+// Negation
+let negated = -42
+
+// Operator precedence (multiplication before addition)
+let precedence = 2 + 3 * 4    // 14, not 20
+let with_parens = (2 + 3) * 4 // 20
+
+// -----------------------------------------------------------------------------
+// Comparison Operations
+// -----------------------------------------------------------------------------
+
+// Equality
+let eq = 5 == 5     // true
+let ne = 5 != 3     // true
+
+// Relational
+let lt = 3 < 5      // true
+let le = 5 <= 5     // true
+let gt = 7 > 3      // true
+let ge = 3 >= 3     // true
+
+// String comparison
+let str_eq = "abc" == "abc"  // true
+let str_lt = "abc" < "xyz"   // true (lexicographic)
+
+// -----------------------------------------------------------------------------
+// Logical Operations
+// -----------------------------------------------------------------------------
+
+// NOT
+let not_true = !true    // false
+let not_false = !false  // true
+
+// AND (short-circuit)
+let and_tt = true && true    // true
+let and_tf = true && false   // false
+let and_ff = false && false  // false
+
+// OR (short-circuit)
+let or_tt = true || true     // true
+let or_tf = true || false    // true
+let or_ff = false || false   // false
+
+// Complex logical expressions
+let complex = (5 > 3) && (10 < 20) || false  // true
+
+// -----------------------------------------------------------------------------
+// String Concatenation
+// -----------------------------------------------------------------------------
+
+let first = "Hello"
+let second = "World"
+let combined = first + ", " + second + "!"  // "Hello, World!"
+
+// -----------------------------------------------------------------------------
+// Print the results
+// -----------------------------------------------------------------------------
+
+print("=== Basics Demo ===")
+print("Integer: " + str(my_int))
+print("Float: " + str(my_float))
+print("String: " + greeting)
+print("Sum: " + str(sum))
+print("Precedence: " + str(precedence))
+print("Comparison (5 < 10): " + str(5 < 10))
+print("Logic (true && false): " + str(true && false))
+print("Combined string: " + combined)
+
+// Final expression is the program's result
+"Basics demo complete!"

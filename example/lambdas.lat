@@ -1,0 +1,293 @@
+// =============================================================================
+// Lattice Lambdas: Anonymous Functions and Closures
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Basic Lambda Syntax
+// -----------------------------------------------------------------------------
+
+print("=== Basic Lambdas ===")
+
+// Lambda with single parameter (expression body)
+let double = |x| x * 2
+print("double(5) = " + str(double(5)))
+
+// Lambda with multiple parameters
+let add = |a, b| a + b
+print("add(3, 4) = " + str(add(3, 4)))
+
+// Lambda with no parameters
+let get_pi = || 3.14159
+print("get_pi() = " + str(get_pi()))
+
+// Lambda with block body
+let greet = |name| {
+    let message = "Hello, " + name + "!"
+    message
+}
+print(greet("World"))
+
+// -----------------------------------------------------------------------------
+// Lambdas with Complex Logic
+// -----------------------------------------------------------------------------
+
+print("\n=== Complex Lambdas ===")
+
+// Lambda with conditionals
+let abs = |n| if n < 0 { -n } else { n }
+print("abs(-42) = " + str(abs(-42)))
+print("abs(42) = " + str(abs(42)))
+
+// Lambda with block and multiple statements
+let calculate_stats = |numbers| {
+    let sum = 0
+    let count = 0
+    for n in numbers {
+        sum = sum + n
+        count = count + 1
+    }
+    {
+        "sum": sum,
+        "count": count,
+        "average": sum / count
+    }
+}
+
+let stats = calculate_stats([10, 20, 30, 40, 50])
+print("Stats: sum=" + str(stats.sum) + ", avg=" + str(stats.average))
+
+// -----------------------------------------------------------------------------
+// Higher-Order Functions with Lambdas
+// -----------------------------------------------------------------------------
+
+print("\n=== Higher-Order Functions ===")
+
+// Define a map-like function
+def apply_to_each(items: [Int], f: (Int) -> Int) -> [Int] {
+    let result = []
+    for item in items {
+        result = push(result, f(item))
+    }
+    result
+}
+
+// Use with lambdas
+let numbers = [1, 2, 3, 4, 5]
+
+let doubled = apply_to_each(numbers, |x| x * 2)
+print("Doubled: " + str(doubled))
+
+let squared = apply_to_each(numbers, |x| x * x)
+print("Squared: " + str(squared))
+
+let incremented = apply_to_each(numbers, |x| x + 1)
+print("Incremented: " + str(incremented))
+
+// -----------------------------------------------------------------------------
+// Filter with Lambdas
+// -----------------------------------------------------------------------------
+
+print("\n=== Filter Pattern ===")
+
+def filter_list(items: [Int], predicate: (Int) -> Bool) -> [Int] {
+    let result = []
+    for item in items {
+        if predicate(item) {
+            result = push(result, item)
+        }
+    }
+    result
+}
+
+let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+let evens = filter_list(data, |x| x % 2 == 0)
+print("Evens: " + str(evens))
+
+let odds = filter_list(data, |x| x % 2 != 0)
+print("Odds: " + str(odds))
+
+let greater_than_five = filter_list(data, |x| x > 5)
+print("Greater than 5: " + str(greater_than_five))
+
+// -----------------------------------------------------------------------------
+// Reduce/Fold with Lambdas
+// -----------------------------------------------------------------------------
+
+print("\n=== Reduce Pattern ===")
+
+def reduce(items: [Int], initial: Int, reducer: (Int, Int) -> Int) -> Int {
+    let acc = initial
+    for item in items {
+        acc = reducer(acc, item)
+    }
+    acc
+}
+
+let nums = [1, 2, 3, 4, 5]
+
+let sum = reduce(nums, 0, |acc, x| acc + x)
+print("Sum: " + str(sum))
+
+let product = reduce(nums, 1, |acc, x| acc * x)
+print("Product: " + str(product))
+
+let max_val = reduce(nums, nums[0], |acc, x| if x > acc { x } else { acc })
+print("Max: " + str(max_val))
+
+// -----------------------------------------------------------------------------
+// Composing Lambdas
+// -----------------------------------------------------------------------------
+
+print("\n=== Lambda Composition ===")
+
+def compose(f: (Int) -> Int, g: (Int) -> Int) -> (Int) -> Int {
+    |x| f(g(x))
+}
+
+let add_one = |x| x + 1
+let times_two = |x| x * 2
+
+let add_then_double = compose(times_two, add_one)
+let double_then_add = compose(add_one, times_two)
+
+print("(5 + 1) * 2 = " + str(add_then_double(5)))  // 12
+print("(5 * 2) + 1 = " + str(double_then_add(5)))  // 11
+
+// -----------------------------------------------------------------------------
+// Parallel Map with Lambdas
+// -----------------------------------------------------------------------------
+
+print("\n=== Parallel Map ===")
+
+// parallel_map applies a lambda to each element concurrently
+let items = [1, 2, 3, 4, 5]
+
+// Note: parallel_map is a built-in for concurrent processing
+let parallel_doubled = parallel_map(items, |x| {
+    // Simulates some work
+    x * 2
+})
+print("Parallel doubled: " + str(parallel_doubled))
+
+// -----------------------------------------------------------------------------
+// Lambdas with Closures (capturing variables)
+// -----------------------------------------------------------------------------
+
+print("\n=== Closures ===")
+
+// Lambda captures outer variable
+let multiplier = 10
+let scale = |x| x * multiplier
+print("scale(5) with multiplier=10: " + str(scale(5)))
+
+// Create counter factory
+def make_counter(start: Int) -> () -> Int {
+    let count = start
+    || {
+        count = count + 1
+        count
+    }
+}
+
+let counter = make_counter(0)
+print("Counter: " + str(counter()))  // 1
+print("Counter: " + str(counter()))  // 2
+print("Counter: " + str(counter()))  // 3
+
+// Create adder factory
+def make_adder(n: Int) -> (Int) -> Int {
+    |x| x + n
+}
+
+let add5 = make_adder(5)
+let add10 = make_adder(10)
+print("add5(3) = " + str(add5(3)))    // 8
+print("add10(3) = " + str(add10(3)))  // 13
+
+// -----------------------------------------------------------------------------
+// Lambdas for Callbacks
+// -----------------------------------------------------------------------------
+
+print("\n=== Callbacks ===")
+
+def process_data(data: [Int], on_start: () -> Null, on_item: (Int) -> Null, on_end: () -> Null) {
+    on_start()
+    for item in data {
+        on_item(item)
+    }
+    on_end()
+}
+
+process_data(
+    [1, 2, 3],
+    || print("Starting processing..."),
+    |item| print("Processing item: " + str(item)),
+    || print("Done!")
+)
+
+// -----------------------------------------------------------------------------
+// Lambdas with Struct Operations
+// -----------------------------------------------------------------------------
+
+print("\n=== Lambdas with Structs ===")
+
+type Person {
+    name: String,
+    age: Int
+}
+
+let people = [
+    Person { name: "Alice", age: 30 },
+    Person { name: "Bob", age: 25 },
+    Person { name: "Carol", age: 35 }
+]
+
+// Extract names
+let get_name = |p| p.name
+let names = []
+for p in people {
+    names = push(names, get_name(p))
+}
+print("Names: " + str(names))
+
+// Filter by age
+def filter_people(ps: [Person], pred: (Person) -> Bool) -> [Person] {
+    let result = []
+    for p in ps {
+        if pred(p) {
+            result = push(result, p)
+        }
+    }
+    result
+}
+
+let adults = filter_people(people, |p| p.age >= 30)
+print("Adults (30+): " + str(len(adults)) + " people")
+
+// -----------------------------------------------------------------------------
+// Chaining Operations with Lambdas
+// -----------------------------------------------------------------------------
+
+print("\n=== Chaining Operations ===")
+
+// Process pipeline: filter -> map -> reduce
+let raw_data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+// Step 1: Filter evens
+let step1 = filter_list(raw_data, |x| x % 2 == 0)
+print("After filter evens: " + str(step1))
+
+// Step 2: Square them
+let step2 = apply_to_each(step1, |x| x * x)
+print("After squaring: " + str(step2))
+
+// Step 3: Sum them
+let step3 = reduce(step2, 0, |acc, x| acc + x)
+print("After summing: " + str(step3))
+
+// -----------------------------------------------------------------------------
+// Result
+// -----------------------------------------------------------------------------
+
+"Lambdas demo complete!"

@@ -1,0 +1,32 @@
+// Simple LLM test - actually calls the API
+//
+// To run: OPENAI_API_KEY=your-key cargo run -p lattice-cli -- run example/llm_test.lat
+
+enum Sentiment {
+    Positive,
+    Negative,
+    Neutral,
+    Mixed
+}
+
+type SentimentWithReason {
+    sentiment: Sentiment,
+    reason: String
+}
+
+def analyze_sentiment(text: String) -> SentimentWithReason {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+
+    prompt: """
+    Analyze the sentiment of the following text and respond with exactly one word, also think more on the symbolic meaning of numbers:
+
+    Text: ${text}
+    """
+}
+
+// Actually call the LLM
+let result = analyze_sentiment("5201314")
+result

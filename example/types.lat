@@ -1,0 +1,245 @@
+// =============================================================================
+// Lattice Types: Type Definitions, Enums, and Structs
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Type Definitions (Classes/Structs)
+// -----------------------------------------------------------------------------
+
+// Basic type definition
+type Person {
+    name: String,
+    age: Int,
+    email: String
+}
+
+// Type with optional fields
+type User {
+    id: Int,
+    username: String,
+    bio: String?,       // Optional (can be null)
+    avatar_url: String?
+}
+
+// Type with field descriptions (for LLM context)
+type Product {
+    name: String @"The product name",
+    price: Float @"Price in USD",
+    quantity: Int @"Stock quantity",
+    category: String @"Product category (electronics, clothing, etc.)"
+}
+
+// Type with nested types
+type Address {
+    street: String,
+    city: String,
+    country: String,
+    zip: String?
+}
+
+type Company {
+    name: String,
+    address: Address,
+    employees: [Person]
+}
+
+// Type with collections
+type Order {
+    id: Int,
+    items: [String],
+    metadata: Map<String, String>
+}
+
+print("=== Type Definitions ===")
+print("Types defined: Person, User, Product, Address, Company, Order")
+
+// -----------------------------------------------------------------------------
+// Enum Definitions
+// -----------------------------------------------------------------------------
+
+// Simple enum
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+// Status enum
+enum Status {
+    Pending,
+    Active,
+    Completed,
+    Cancelled
+}
+
+// HTTP Method enum
+enum HttpMethod {
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH
+}
+
+// Sentiment enum (for LLM classification)
+enum Sentiment {
+    Positive,
+    Negative,
+    Neutral,
+    Mixed
+}
+
+print("\n=== Enum Definitions ===")
+print("Enums defined: Color, Status, HttpMethod, Sentiment")
+
+// -----------------------------------------------------------------------------
+// Struct Literals (Creating Instances)
+// -----------------------------------------------------------------------------
+
+print("\n=== Creating Struct Instances ===")
+
+// Create a Person
+let alice = Person {
+    name: "Alice Smith",
+    age: 28,
+    email: "alice@example.com"
+}
+print("Person: " + alice.name + ", age " + str(alice.age))
+
+// Create a User with optional fields
+let bob = User {
+    id: 1,
+    username: "bob_dev",
+    bio: "Software developer",
+    avatar_url: null
+}
+print("User: " + bob.username)
+
+// Create a Product
+let laptop = Product {
+    name: "MacBook Pro",
+    price: 2499.99,
+    quantity: 50,
+    category: "electronics"
+}
+print("Product: " + laptop.name + " - $" + str(laptop.price))
+
+// -----------------------------------------------------------------------------
+// Nested Structs
+// -----------------------------------------------------------------------------
+
+print("\n=== Nested Structs ===")
+
+let hq_address = Address {
+    street: "123 Tech Blvd",
+    city: "San Francisco",
+    country: "USA",
+    zip: "94105"
+}
+
+let tech_corp = Company {
+    name: "TechCorp Inc",
+    address: hq_address,
+    employees: []
+}
+
+print("Company: " + tech_corp.name)
+print("Location: " + tech_corp.address.city + ", " + tech_corp.address.country)
+
+// -----------------------------------------------------------------------------
+// Accessing Struct Fields
+// -----------------------------------------------------------------------------
+
+print("\n=== Field Access ===")
+
+// Dot notation
+print("alice.name: " + alice.name)
+print("alice.age: " + str(alice.age))
+
+// Map-style access (structs are represented as maps internally)
+print("alice[\"email\"]: " + alice["email"])
+
+// Nested access
+print("tech_corp.address.street: " + tech_corp.address.street)
+
+// -----------------------------------------------------------------------------
+// Modifying Struct Fields
+// -----------------------------------------------------------------------------
+
+print("\n=== Modifying Structs ===")
+
+let employee = Person {
+    name: "Charlie",
+    age: 25,
+    email: "charlie@example.com"
+}
+print("Before: " + employee.name + ", age " + str(employee.age))
+
+employee.age = 26
+employee.email = "charlie.new@example.com"
+print("After: " + employee.name + ", age " + str(employee.age))
+
+// -----------------------------------------------------------------------------
+// Structs with List Fields
+// -----------------------------------------------------------------------------
+
+print("\n=== Structs with Collections ===")
+
+let order = Order {
+    id: 12345,
+    items: ["Widget A", "Widget B", "Gadget C"],
+    metadata: {
+        "priority": "high",
+        "source": "web"
+    }
+}
+
+print("Order #" + str(order.id))
+print("Items: " + str(order.items))
+print("Priority: " + order.metadata["priority"])
+
+// Add to items
+order.items = push(order.items, "Widget D")
+print("Updated items: " + str(order.items))
+
+// -----------------------------------------------------------------------------
+// Type Checking with __type field
+// -----------------------------------------------------------------------------
+
+print("\n=== Type Information ===")
+
+// Structs have a __type field
+print("alice.__type: " + alice.__type)
+print("laptop.__type: " + laptop.__type)
+print("order.__type: " + order.__type)
+
+// -----------------------------------------------------------------------------
+// Result Types (for error handling)
+// -----------------------------------------------------------------------------
+
+// Result type annotation
+type ApiResponse {
+    data: String?,
+    error: String?
+}
+
+// Simulating a Result
+let success_result = {
+    "__type": "Ok",
+    "value": "Data fetched successfully"
+}
+
+let error_result = {
+    "__type": "Err",
+    "value": "Connection timeout"
+}
+
+print("\n=== Result Types ===")
+print("Success: " + success_result.value)
+print("Error: " + error_result.value)
+
+// -----------------------------------------------------------------------------
+// Result
+// -----------------------------------------------------------------------------
+
+"Types demo complete!"

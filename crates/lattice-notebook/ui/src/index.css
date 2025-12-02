@@ -1,0 +1,114 @@
+/*
+ * Lattice Notebook - Crystal Lab Design System
+ * A refined, scientific aesthetic evoking precision instruments and crystallography
+ */
+
+:root {
+  /* Typography */
+  --font-ui: 'Instrument Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+
+  /* Color Palette - Deep ocean with crystalline accents */
+  --bg-deep: #0a0e14;
+  --bg-primary: #0d1117;
+  --bg-elevated: #151b23;
+  --bg-surface: #1c232d;
+  --bg-hover: #242d3a;
+
+  /* Glass effects */
+  --glass-border: rgba(99, 179, 237, 0.12);
+  --glass-shine: rgba(255, 255, 255, 0.03);
+
+  /* Text hierarchy */
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #484f58;
+
+  /* Accent colors - Crystalline spectrum */
+  --accent-cyan: #79c0ff;
+  --accent-teal: #56d4dd;
+  --accent-emerald: #3fb950;
+  --accent-rose: #f78166;
+  --accent-purple: #d2a8ff;
+  --accent-gold: #e3b341;
+
+  /* Semantic colors */
+  --success: #238636;
+  --success-soft: rgba(35, 134, 54, 0.15);
+  --error: #da3633;
+  --error-soft: rgba(218, 54, 51, 0.15);
+  --running: #1f6feb;
+  --running-soft: rgba(31, 111, 235, 0.15);
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadows - Layered depth */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px rgba(121, 192, 255, 0.1);
+
+  /* Transitions */
+  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  font-family: var(--font-ui);
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text-primary);
+  background-color: var(--bg-deep);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    /* Subtle grid pattern */
+    linear-gradient(var(--glass-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--glass-border) 1px, transparent 1px),
+    /* Deep gradient */
+    linear-gradient(135deg, var(--bg-deep) 0%, #0d1218 50%, #0a1014 100%);
+  background-size: 40px 40px, 40px 40px, 100% 100%;
+  background-position: -1px -1px, -1px -1px, 0 0;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(121, 192, 255, 0.3);
+  color: var(--text-primary);
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}

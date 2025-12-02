@@ -1,0 +1,196 @@
+// =============================================================================
+// Lattice Collections: Lists and Maps
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// List Literals
+// -----------------------------------------------------------------------------
+
+// Empty list
+let empty_list = []
+
+// List of integers
+let numbers = [1, 2, 3, 4, 5]
+
+// List of strings
+let fruits = ["apple", "banana", "cherry"]
+
+// List of mixed types (dynamically typed)
+let mixed = [1, "two", 3.0, true, null]
+
+// Nested lists
+let matrix = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+]
+
+print("=== List Basics ===")
+print("numbers: " + str(numbers))
+print("fruits: " + str(fruits))
+print("matrix: " + str(matrix))
+
+// -----------------------------------------------------------------------------
+// List Indexing
+// -----------------------------------------------------------------------------
+
+print("\n=== List Indexing ===")
+print("First fruit: " + fruits[0])
+print("Second fruit: " + fruits[1])
+print("Last fruit: " + fruits[2])
+
+// Negative indexing (from the end)
+print("Last via -1: " + fruits[-1])
+print("Second-to-last via -2: " + fruits[-2])
+
+// Nested indexing
+print("matrix[1][2]: " + str(matrix[1][2]))  // 6
+
+// -----------------------------------------------------------------------------
+// List Modification
+// -----------------------------------------------------------------------------
+
+let items = [10, 20, 30]
+print("\n=== List Modification ===")
+print("items before: " + str(items))
+
+items[0] = 100
+items[1] = 200
+print("items after: " + str(items))
+
+// -----------------------------------------------------------------------------
+// List Operations (Native Functions)
+// -----------------------------------------------------------------------------
+
+print("\n=== List Operations ===")
+
+// Length
+let nums = [1, 2, 3, 4, 5]
+print("len([1,2,3,4,5]): " + str(len(nums)))
+
+// Push (returns new list)
+let with_six = push(nums, 6)
+print("push(nums, 6): " + str(with_six))
+
+// Pop (returns last element)
+let last = pop(with_six)
+print("pop result: " + str(last))
+
+// -----------------------------------------------------------------------------
+// Map Literals
+// -----------------------------------------------------------------------------
+
+print("\n=== Map Basics ===")
+
+// Empty map
+let empty_map = {}
+
+// String-keyed map
+let person = {
+    "name": "Alice",
+    "age": 30,
+    "city": "New York"
+}
+
+// Shorthand (identifier keys become strings)
+let config = {
+    host: "localhost",
+    port: 8080,
+    debug: true
+}
+
+print("person: " + str(person))
+print("config: " + str(config))
+
+// -----------------------------------------------------------------------------
+// Map Access
+// -----------------------------------------------------------------------------
+
+print("\n=== Map Access ===")
+print("person name: " + person["name"])
+print("person age: " + str(person["age"]))
+print("config host: " + config["host"])
+
+// Field access syntax (dot notation)
+print("person.name: " + person.name)
+print("config.port: " + str(config.port))
+
+// -----------------------------------------------------------------------------
+// Map Modification
+// -----------------------------------------------------------------------------
+
+print("\n=== Map Modification ===")
+let data = {"x": 1, "y": 2}
+print("data before: " + str(data))
+
+data["x"] = 100
+data["z"] = 3  // Add new key
+print("data after: " + str(data))
+
+// Using field syntax
+data.y = 200
+print("data after .y=200: " + str(data))
+
+// -----------------------------------------------------------------------------
+// Map Operations (Native Functions)
+// -----------------------------------------------------------------------------
+
+print("\n=== Map Operations ===")
+
+// Length
+print("len(person): " + str(len(person)))
+
+// Keys
+let k = keys(person)
+print("keys(person): " + str(k))
+
+// Values
+let v = values(person)
+print("values(person): " + str(v))
+
+// -----------------------------------------------------------------------------
+// Nested Collections
+// -----------------------------------------------------------------------------
+
+print("\n=== Nested Collections ===")
+
+let company = {
+    "name": "TechCorp",
+    "employees": [
+        {"name": "Alice", "role": "Engineer"},
+        {"name": "Bob", "role": "Designer"},
+        {"name": "Carol", "role": "Manager"}
+    ],
+    "locations": {
+        "hq": "San Francisco",
+        "satellite": "New York"
+    }
+}
+
+print("Company: " + company.name)
+print("First employee: " + company.employees[0].name)
+print("HQ location: " + company.locations.hq)
+
+// Modify nested data (multi-step workaround for deep assignment)
+let emps = company.employees
+let bob = emps[1]
+bob["role"] = "Senior Designer"
+print("Updated Bob's role: " + bob.role)
+
+// -----------------------------------------------------------------------------
+// Type Annotations for Collections
+// -----------------------------------------------------------------------------
+
+// List type annotation
+let num_list: [Int] = [1, 2, 3]
+
+// Map type annotation
+let str_map: Map<String, Int> = {"a": 1, "b": 2}
+
+print("\nTyped collections created successfully")
+
+// -----------------------------------------------------------------------------
+// Result
+// -----------------------------------------------------------------------------
+
+"Collections demo complete!"

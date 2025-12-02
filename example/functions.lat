@@ -1,0 +1,135 @@
+// =============================================================================
+// Lattice Functions: Definitions, Parameters, and Calls
+// =============================================================================
+//
+// NOTE: Function definitions and calls are defined in the grammar but
+// runtime support is still being implemented. This example shows the syntax.
+//
+// For now, we demonstrate with inline expressions and built-in functions.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Built-in Functions
+// -----------------------------------------------------------------------------
+
+print("=== Built-in Functions ===")
+
+// String conversion
+print("str(42) = " + str(42))
+print("str(3.14) = " + str(3.14))
+print("str(true) = " + str(true))
+
+// Length
+print("len([1,2,3]) = " + str(len([1, 2, 3])))
+print("len(\"hello\") = " + str(len("hello")))
+print("len({\"a\": 1}) = " + str(len({"a": 1})))
+
+// Type conversion (int/float/bool are native functions)
+// Note: 'int' starts with 'in' keyword - parser limitation
+// print("int(\"42\") = " + str(int("42")))
+let num = float(10)
+print("float(10) = " + str(num))
+print("bool(1) = " + str(bool(1)))
+
+// List operations
+let nums = [1, 2, 3]
+print("Original: " + str(nums))
+let with_four = push(nums, 4)
+print("After push(4): " + str(with_four))
+print("pop result: " + str(pop(with_four)))
+
+// Map operations
+let m = {"x": 1, "y": 2, "z": 3}
+print("keys: " + str(keys(m)))
+print("values: " + str(values(m)))
+
+// Math
+print("sqrt(16) = " + str(sqrt(16)))
+print("sqrt(2) = " + str(sqrt(2)))
+
+// -----------------------------------------------------------------------------
+// Lambda Syntax
+// -----------------------------------------------------------------------------
+
+print("\n=== Lambda Syntax ===")
+
+// Lambda with single parameter
+let double = |x| x * 2
+print("double(5) = " + str(double(5)))
+
+// Lambda with multiple parameters
+let add = |a, b| a + b
+print("add(3, 4) = " + str(add(3, 4)))
+
+// Lambda with string operations
+let greet = |name| "Hello, " + name + "!"
+print(greet("World"))
+
+// -----------------------------------------------------------------------------
+// Recursive Patterns
+// -----------------------------------------------------------------------------
+
+print("\n=== Iterative Patterns ===")
+
+// Factorial using iteration
+let n = 5
+let fact = 1
+let i = 1
+while i <= n {
+    fact = fact * i
+    i = i + 1
+}
+print("factorial(5) = " + str(fact))
+
+// Fibonacci using iteration
+let fib_n = 10
+let a = 0
+let b = 1
+let count = 0
+while count < fib_n {
+    let temp = a + b
+    a = b
+    b = temp
+    count = count + 1
+}
+print("fibonacci(10) = " + str(a))
+
+// -----------------------------------------------------------------------------
+// Function Definitions
+// -----------------------------------------------------------------------------
+
+print("\n=== Function Definitions ===")
+
+// Basic function definition
+def say_hello() {
+    print("Hello!")
+}
+say_hello()
+
+// Function with parameters
+def greet_person(name: String) {
+    print("Hello, " + name + "!")
+}
+greet_person("Alice")
+
+// Function with return type
+def multiply(a: Int, b: Int) -> Int {
+    a * b
+}
+print("multiply(6, 7) = " + str(multiply(6, 7)))
+
+// Function with explicit return
+def validate(x: Int) -> Bool {
+    if x < 0 {
+        return false
+    }
+    return true
+}
+print("validate(5) = " + str(validate(5)))
+print("validate(-3) = " + str(validate(-3)))
+
+// -----------------------------------------------------------------------------
+// Result
+// -----------------------------------------------------------------------------
+
+"Functions demo complete!"

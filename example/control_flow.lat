@@ -1,0 +1,347 @@
+// =============================================================================
+// Lattice Control Flow: If/Else, While, For, and Match
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// If Statements
+// -----------------------------------------------------------------------------
+
+print("=== If Statements ===")
+
+let x = 10
+
+// Simple if
+if x > 5 {
+    print("x is greater than 5")
+}
+
+// If-else
+if x > 15 {
+    print("x is greater than 15")
+} else {
+    print("x is not greater than 15")
+}
+
+// If-else if-else chain
+let score = 85
+
+if score >= 90 {
+    print("Grade: A")
+} else if score >= 80 {
+    print("Grade: B")
+} else if score >= 70 {
+    print("Grade: C")
+} else if score >= 60 {
+    print("Grade: D")
+} else {
+    print("Grade: F")
+}
+
+// -----------------------------------------------------------------------------
+// If as Expression (returns value)
+// -----------------------------------------------------------------------------
+
+print("\n=== If Expression ===")
+
+let age = 20
+let status = if age >= 18 { "adult" } else { "minor" }
+print("Age " + str(age) + " is: " + status)
+
+// Nested if expression
+let n = 15
+let description = if n < 0 {
+    "negative"
+} else if n == 0 {
+    "zero"
+} else if n < 10 {
+    "small positive"
+} else {
+    "large positive"
+}
+print(str(n) + " is " + description)
+
+// -----------------------------------------------------------------------------
+// Complex Conditions
+// -----------------------------------------------------------------------------
+
+print("\n=== Complex Conditions ===")
+
+let temperature = 72
+let humidity = 45
+
+if temperature > 70 && temperature < 80 && humidity < 60 {
+    print("Perfect weather!")
+}
+
+let day = "Saturday"
+if day == "Saturday" || day == "Sunday" {
+    print("It's the weekend!")
+}
+
+// Negation
+let is_raining = false
+if !is_raining {
+    print("No need for an umbrella")
+}
+
+// -----------------------------------------------------------------------------
+// While Loops
+// -----------------------------------------------------------------------------
+
+print("\n=== While Loops ===")
+
+// Simple counting loop
+let i = 0
+while i < 5 {
+    print("Count: " + str(i))
+    i = i + 1
+}
+
+// Accumulator pattern
+let sum = 0
+let j = 1
+while j <= 10 {
+    sum = sum + j
+    j = j + 1
+}
+print("Sum of 1-10: " + str(sum))
+
+// Find first match
+let numbers = [3, 7, 2, 9, 4, 6]
+let idx = 0
+while idx < len(numbers) {
+    if numbers[idx] > 5 {
+        print("First number > 5: " + str(numbers[idx]))
+        idx = len(numbers)  // Exit loop
+    } else {
+        idx = idx + 1
+    }
+}
+
+// -----------------------------------------------------------------------------
+// For Loops (iteration over collections)
+// -----------------------------------------------------------------------------
+
+print("\n=== For Loops ===")
+
+// Iterate over list
+let fruits = ["apple", "banana", "cherry"]
+for fruit in fruits {
+    print("Fruit: " + fruit)
+}
+
+// Iterate with index tracking
+let items = ["a", "b", "c", "d"]
+let idx2 = 0
+for item in items {
+    print("Index " + str(idx2) + ": " + item)
+    idx2 = idx2 + 1
+}
+
+// Nested for loops
+print("\nMultiplication table (1-3):")
+for row in [1, 2, 3] {
+    let line = ""
+    for col in [1, 2, 3] {
+        line = line + str(row * col) + " "
+    }
+    print(line)
+}
+
+// Accumulate values
+let nums = [1, 2, 3, 4, 5]
+let total = 0
+for n in nums {
+    total = total + n
+}
+print("Sum: " + str(total))
+
+// Filter-like pattern
+let evens = []
+for n in [1, 2, 3, 4, 5, 6, 7, 8] {
+    if n % 2 == 0 {
+        evens = push(evens, n)
+    }
+}
+print("Even numbers: " + str(evens))
+
+// -----------------------------------------------------------------------------
+// Match Expressions
+// -----------------------------------------------------------------------------
+
+print("\n=== Match Expressions ===")
+
+// Match on literal values
+let day_num = 3
+let day_name = match day_num {
+    1 => "Monday",
+    2 => "Tuesday",
+    3 => "Wednesday",
+    4 => "Thursday",
+    5 => "Friday",
+    6 => "Saturday",
+    7 => "Sunday",
+    _ => "Unknown"
+}
+print("Day " + str(day_num) + " is " + day_name)
+
+// Match with blocks
+let grade = "B"
+match grade {
+    "A" => {
+        print("Excellent work!")
+        print("Keep it up!")
+    },
+    "B" => {
+        print("Good job!")
+        print("Room for improvement")
+    },
+    "C" => print("Satisfactory"),
+    _ => print("Needs work")
+}
+
+// Match on boolean
+let is_active = true
+let label = match is_active {
+    true => "Active",
+    false => "Inactive"
+}
+print("Status: " + label)
+
+// -----------------------------------------------------------------------------
+// Match with Enum Patterns
+// -----------------------------------------------------------------------------
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+print("\n=== Enum Matching ===")
+
+let color = Color::Green
+
+let hex = match color {
+    Color::Red => "#FF0000",
+    Color::Green => "#00FF00",
+    Color::Blue => "#0000FF"
+}
+print("Color hex: " + hex)
+
+// Match with actions per variant
+enum Status {
+    Pending,
+    Processing,
+    Complete,
+    Failed
+}
+
+let current_status = Status::Processing
+
+match current_status {
+    Status::Pending => print("Waiting to start..."),
+    Status::Processing => {
+        print("Working on it...")
+        print("Please wait")
+    },
+    Status::Complete => print("All done!"),
+    Status::Failed => print("Something went wrong")
+}
+
+// -----------------------------------------------------------------------------
+// Match with Result Patterns (Ok/Err)
+// -----------------------------------------------------------------------------
+
+print("\n=== Result Matching ===")
+
+// Simulating Result type
+let success = {"__type": "Ok", "value": 42}
+let failure = {"__type": "Err", "value": "Not found"}
+
+// Using pattern matching on Result-like structure
+if success.__type == "Ok" {
+    print("Success! Value: " + str(success.value))
+} else {
+    print("Error: " + failure.value)
+}
+
+// Match on result patterns
+let result = success
+match result.__type {
+    "Ok" => print("Operation succeeded: " + str(result.value)),
+    "Err" => print("Operation failed: " + result.value),
+    _ => print("Unknown result type")
+}
+
+// -----------------------------------------------------------------------------
+// Match with Binding Patterns
+// -----------------------------------------------------------------------------
+
+print("\n=== Binding Patterns ===")
+
+let value = 42
+
+// Bind matched value to variable
+let msg = match value {
+    0 => "zero",
+    n => "non-zero: " + str(n)
+}
+print(msg)
+
+// Wildcard pattern (catch-all)
+let code = 404
+let response = match code {
+    200 => "OK",
+    201 => "Created",
+    400 => "Bad Request",
+    404 => "Not Found",
+    500 => "Internal Server Error",
+    _ => "Unknown status"
+}
+print("HTTP " + str(code) + ": " + response)
+
+// -----------------------------------------------------------------------------
+// Complex Control Flow
+// -----------------------------------------------------------------------------
+
+print("\n=== Complex Control Flow ===")
+
+// Combining if with loops
+let data = [1, -2, 3, -4, 5, -6]
+let positives = []
+let negatives = []
+
+for n in data {
+    if n > 0 {
+        positives = push(positives, n)
+    } else {
+        negatives = push(negatives, n)
+    }
+}
+
+print("Positives: " + str(positives))
+print("Negatives: " + str(negatives))
+
+// Early termination simulation
+let search_target = 4
+let found = false
+let search_idx = 0
+
+while search_idx < len(data) && !found {
+    if data[search_idx] == search_target {
+        found = true
+        print("Found " + str(search_target) + " at index " + str(search_idx))
+    }
+    search_idx = search_idx + 1
+}
+
+if !found {
+    print(str(search_target) + " not found in list")
+}
+
+// -----------------------------------------------------------------------------
+// Result
+// -----------------------------------------------------------------------------
+
+"Control flow demo complete!"
