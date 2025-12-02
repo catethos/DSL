@@ -1,44 +1,57 @@
 /*
- * Lattice Notebook - Crystal Lab Design System
- * A refined, scientific aesthetic evoking precision instruments and crystallography
+ * Lattice Notebook - Botanical Laboratory Design System
+ * Warm scientific aesthetic: terracotta, sage, cream with organic precision
  */
 
 :root {
-  /* Typography */
-  --font-ui: 'Instrument Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  /* Typography - Warm, readable, distinctive */
+  --font-display: 'Playfair Display', 'Times New Roman', serif;
+  --font-ui: 'Source Sans 3', 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Consolas', monospace;
 
-  /* Color Palette - Deep ocean with crystalline accents */
-  --bg-deep: #0a0e14;
-  --bg-primary: #0d1117;
-  --bg-elevated: #151b23;
-  --bg-surface: #1c232d;
-  --bg-hover: #242d3a;
+  /* Color Palette - Botanical Laboratory */
+  /* Warm neutrals */
+  --bg-deep: #1a1612;
+  --bg-primary: #211d18;
+  --bg-elevated: #2a251e;
+  --bg-surface: #342e26;
+  --bg-hover: #3d362c;
+  --bg-warm: #453d32;
 
-  /* Glass effects */
-  --glass-border: rgba(99, 179, 237, 0.12);
-  --glass-shine: rgba(255, 255, 255, 0.03);
+  /* Paper tones for contrast areas */
+  --paper-cream: #f5f0e6;
+  --paper-aged: #e8e0d0;
+  --paper-shadow: #d4c9b5;
 
-  /* Text hierarchy */
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #484f58;
+  /* Organic borders */
+  --border-subtle: rgba(212, 180, 131, 0.15);
+  --border-warm: rgba(212, 180, 131, 0.25);
+  --border-accent: rgba(172, 135, 80, 0.4);
 
-  /* Accent colors - Crystalline spectrum */
-  --accent-cyan: #79c0ff;
-  --accent-teal: #56d4dd;
-  --accent-emerald: #3fb950;
-  --accent-rose: #f78166;
-  --accent-purple: #d2a8ff;
-  --accent-gold: #e3b341;
+  /* Text hierarchy - warm undertones */
+  --text-primary: #f2ebe0;
+  --text-secondary: #b8a992;
+  --text-muted: #7a6f5f;
+  --text-dark: #2a251e;
+
+  /* Accent colors - Botanical spectrum */
+  --accent-terracotta: #c17c5a;
+  --accent-terracotta-bright: #d99474;
+  --accent-sage: #7d9c7a;
+  --accent-sage-bright: #96b893;
+  --accent-gold: #c9a957;
+  --accent-gold-bright: #dfc26e;
+  --accent-rust: #a65d3f;
+  --accent-moss: #5a7356;
+  --accent-lavender: #9a8bab;
 
   /* Semantic colors */
-  --success: #238636;
-  --success-soft: rgba(35, 134, 54, 0.15);
-  --error: #da3633;
-  --error-soft: rgba(218, 54, 51, 0.15);
-  --running: #1f6feb;
-  --running-soft: rgba(31, 111, 235, 0.15);
+  --success: #6b8e5e;
+  --success-soft: rgba(107, 142, 94, 0.2);
+  --error: #b85450;
+  --error-soft: rgba(184, 84, 80, 0.15);
+  --running: #8b7355;
+  --running-soft: rgba(139, 115, 85, 0.2);
 
   /* Spacing scale */
   --space-1: 4px;
@@ -49,22 +62,23 @@
   --space-6: 32px;
   --space-8: 48px;
 
-  /* Border radius */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  /* Border radius - slightly softer */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
 
-  /* Shadows - Layered depth */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px rgba(121, 192, 255, 0.1);
+  /* Shadows - warm, layered */
+  --shadow-sm: 0 1px 3px rgba(26, 22, 18, 0.4);
+  --shadow-md: 0 4px 12px rgba(26, 22, 18, 0.5);
+  --shadow-lg: 0 8px 32px rgba(26, 22, 18, 0.6);
+  --shadow-inner: inset 0 2px 4px rgba(26, 22, 18, 0.3);
+  --shadow-glow: 0 0 24px rgba(193, 124, 90, 0.15);
 
   /* Transitions */
-  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: 100ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 280ms cubic-bezier(0.4, 0, 0.2, 1);
 
   font-family: var(--font-ui);
   line-height: 1.5;
@@ -85,30 +99,85 @@
 
 body {
   min-height: 100vh;
+  position: relative;
+  background: var(--bg-deep);
+}
+
+/* Layered background with texture */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
   background:
-    /* Subtle grid pattern */
-    linear-gradient(var(--glass-border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--glass-border) 1px, transparent 1px),
-    /* Deep gradient */
-    linear-gradient(135deg, var(--bg-deep) 0%, #0d1218 50%, #0a1014 100%);
-  background-size: 40px 40px, 40px 40px, 100% 100%;
-  background-position: -1px -1px, -1px -1px, 0 0;
+    /* Radial gradient for warmth */
+    radial-gradient(ellipse 120% 80% at 20% 10%, rgba(193, 124, 90, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 100% 60% at 80% 90%, rgba(125, 156, 122, 0.06) 0%, transparent 50%),
+    /* Subtle diagonal lines like notebook paper */
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0px,
+      transparent 40px,
+      rgba(212, 180, 131, 0.02) 40px,
+      rgba(212, 180, 131, 0.02) 41px
+    ),
+    /* Base gradient */
+    linear-gradient(180deg, var(--bg-deep) 0%, #1e1a15 50%, var(--bg-deep) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Grain texture overlay - static */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 1;
 }
 
 #root {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 2;
 }
 
 /* Selection styling */
 ::selection {
-  background: rgba(121, 192, 255, 0.3);
+  background: rgba(193, 124, 90, 0.35);
   color: var(--text-primary);
 }
 
 /* Focus ring */
 :focus-visible {
-  outline: 2px solid var(--accent-cyan);
+  outline: 2px solid var(--accent-terracotta);
   outline-offset: 2px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-deep);
+  border-left: 1px solid var(--border-subtle);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--bg-warm) 0%, var(--bg-surface) 100%);
+  border: 3px solid var(--bg-deep);
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--accent-terracotta) 0%, var(--accent-rust) 100%);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--bg-deep);
 }

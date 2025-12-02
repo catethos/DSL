@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
+import ReactMarkdown from 'react-markdown'
 import { PaginatedTable } from './PaginatedTable'
 import { registerLatticeLanguage } from '../monaco'
 
@@ -31,6 +32,7 @@ export interface EvalResponse {
 interface CellProps {
   id: string
   initialCode?: string
+  initialDescription?: string
   output?: CellOutput | null
   llmDebug?: LlmDebugOutput | null
   error?: string | null
@@ -39,6 +41,7 @@ interface CellProps {
   onRunAndAddCell?: (id: string, code: string) => void
   onDelete?: (id: string) => void
   onCodeChange?: (id: string, code: string) => void
+  onDescriptionChange?: (id: string, description: string) => void
   shouldFocus?: boolean
   onFocused?: () => void
 }
@@ -50,6 +53,7 @@ export const Cell = forwardRef<CellHandle, CellProps>(function Cell(
   {
     id,
     initialCode = '',
+    initialDescription = '',
     output = null,
     llmDebug = null,
     error = null,
@@ -58,15 +62,19 @@ export const Cell = forwardRef<CellHandle, CellProps>(function Cell(
     onRunAndAddCell,
     onDelete,
     onCodeChange,
+    onDescriptionChange,
     shouldFocus = false,
     onFocused,
   },
   ref
 ) {
   const [code, setCode] = useState(initialCode)
+  const [description, setDescription] = useState(initialDescription)
+  const [isEditingDescription, setIsEditingDescription] = useState(false)
   const [editorHeight, setEditorHeight] = useState(DEFAULT_HEIGHT)
   const [debugExpanded, setDebugExpanded] = useState(false)
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const codeRef = useRef(initialCode)  // Initialize with initialCode, not code
   const onRunAndAddCellRef = useRef(onRunAndAddCell)
   const isResizing = useRef(false)
@@ -154,8 +162,54 @@ export const Cell = forwardRef<CellHandle, CellProps>(function Cell(
     onRun(id, code)
   }
 
+  const handleDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newDescription = e.target.value
+    setDescription(newDescription)
+    onDescriptionChange?.(id, newDescription)
+  }
+
+  const handleDescriptionBlur = () => {
+    setIsEditingDescription(false)
+  }
+
+  const handleDescriptionKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape') {
+      setIsEditingDescription(false)
+    }
+  }
+
+  const handleBannerClick = () => {
+    setIsEditingDescription(true)
+    // Focus the textarea after state update
+    setTimeout(() => {
+      descriptionTextareaRef.current?.focus()
+    }, 0)
+  }
+
   return (
     <div className="cell">
+      <div className="cell-banner" onClick={!isEditingDescription ? handleBannerClick : undefined}>
+        {isEditingDescription ? (
+          <textarea
+            ref={descriptionTextareaRef}
+            className="cell-banner-editor"
+            value={description}
+            onChange={handleDescriptionChange}
+            onBlur={handleDescriptionBlur}
+            onKeyDown={handleDescriptionKeyDown}
+            placeholder="Add a description (supports markdown)..."
+            rows={3}
+          />
+        ) : description ? (
+          <div className="cell-banner-content">
+            <ReactMarkdown>{description}</ReactMarkdown>
+          </div>
+        ) : (
+          <div className="cell-banner-placeholder">
+            Click to add description...
+          </div>
+        )}
+      </div>
       <div className="cell-header">
         <div className="cell-actions">
           <button

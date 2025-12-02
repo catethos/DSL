@@ -6,6 +6,7 @@ import './App.css'
 interface CellData {
   id: string
   code: string
+  description: string
   output: CellOutput | null
   llmDebug: LlmDebugOutput | null
   error: string | null
@@ -21,6 +22,7 @@ function App() {
     {
       id: generateId(),
       code: '// Define a function\ndef multiply(a: int, b: int) {\n    a * b\n}\n\nmultiply(3, 4)',
+      description: '',
       output: null,
       llmDebug: null,
       error: null,
@@ -74,6 +76,7 @@ function App() {
           newCells.splice(index + 1, 0, {
             id: newId,
             code: '',
+            description: '',
             output: null,
             llmDebug: null,
             error: null,
@@ -87,6 +90,7 @@ function App() {
         {
           id: newId,
           code: '',
+          description: '',
           output: null,
           llmDebug: null,
           error: null,
@@ -119,6 +123,12 @@ function App() {
   const updateCellCode = useCallback((id: string, code: string) => {
     setCells((prev) =>
       prev.map((cell) => (cell.id === id ? { ...cell, code } : cell))
+    )
+  }, [])
+
+  const updateCellDescription = useCallback((id: string, description: string) => {
+    setCells((prev) =>
+      prev.map((cell) => (cell.id === id ? { ...cell, description } : cell))
     )
   }, [])
 
@@ -168,6 +178,7 @@ function App() {
             }}
             id={cell.id}
             initialCode={cell.code}
+            initialDescription={cell.description}
             output={cell.output}
             llmDebug={cell.llmDebug}
             error={cell.error}
@@ -176,6 +187,7 @@ function App() {
             onRunAndAddCell={runCellAndAddNew}
             onDelete={cells.length > 1 ? deleteCell : undefined}
             onCodeChange={updateCellCode}
+            onDescriptionChange={updateCellDescription}
             shouldFocus={focusCellId === cell.id}
             onFocused={() => setFocusCellId(null)}
           />
