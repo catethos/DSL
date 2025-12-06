@@ -4,12 +4,50 @@
 //! are resolved before parsing by replacing them with the contents of the imported files.
 //!
 //! This approach requires NO changes to the AST, compiler, or VM.
+//!
+//! ## Supported File Types
+//!
+//! - `.lat` files: Standard Lattice source files (recursively resolved)
+//! - `.md` files: Markdown LLM function definitions (transpiled to Lattice source)
+//!
+//! ## Import Variants
+//!
+//! ### Standard Imports
+//! ```lattice
+//! import "path/to/file.lat"  // Import all definitions
+//! ```
+//!
+//! ### Namespaced Imports
+//! ```lattice
+//! import "math.lat" as math
+//! let result = math.add(1, 2)  // Calls math_add internally
+//! ```
+//! Implemented via source-level transformation - all definitions prefixed with alias.
+//!
+//! ### Selective Imports
+//! ```lattice
+//! from "math.lat" import add, Vector
+//! let result = add(1, 2)  // Direct usage without prefix
+//! ```
+//! Only the specified definitions are imported.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::error::LatticeError;
+use crate::syntax::markdown::parse_markdown_llm;
 use regex::Regex;
+
+/// Represents the kind of import statement
+#[derive(Debug, Clone)]
+enum ImportKind {
+    /// import "path" - import all definitions
+    All,
+    /// import "path" as alias - import all with namespace prefix
+    Namespaced(String),
+    /// from "path" import name1, name2 - import only specific names
+    Selective(Vec<String>),
+}
 
 /// Resolve imports in source code.
 ///
@@ -19,6 +57,7 @@ use regex::Regex;
 /// - Circular import detection
 /// - Recursive imports (imported files can have their own imports)
 /// - Deduplication (same file imported from multiple places is included only once)
+/// - Markdown LLM files (.md) are transpiled to Lattice source
 ///
 /// # Arguments
 ///
@@ -35,10 +74,85 @@ use regex::Regex;
 /// - An imported file cannot be read
 /// - A circular import is detected (A imports B, B imports A)
 /// - The import path is invalid
+/// - A markdown file has invalid frontmatter
 pub fn resolve_imports(source: &str, base_path: &Path) -> Result<String, LatticeError> {
     let mut imported = HashSet::new();  // Files fully processed
     let mut stack = HashSet::new();     // Files currently being processed (for circular detection)
     resolve_imports_inner(source, base_path, &mut imported, &mut stack)
+}
+
+/// Parsed import statement with all relevant information
+struct ParsedImport {
+    start: usize,
+    end: usize,
+    path: String,
+    kind: ImportKind,
+}
+
+/// Parse all import statements from source code.
+/// Returns a list of parsed imports in order of appearance.
+fn parse_imports(source: &str) -> Result<Vec<ParsedImport>, LatticeError> {
+    // Regex for "from" style imports: from "path" import name1, name2, ...
+    let from_re = Regex::new(r#"from\s+"([^"]+)"\s+import\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*)*)"#)
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+
+    // Regex for regular imports: import "path" or import "path" as alias
+    let import_re = Regex::new(r#"import\s+"([^"]+)"(?:\s+as\s+([a-zA-Z_][a-zA-Z0-9_]*))?"#)
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+
+    let mut imports = Vec::new();
+
+    // First, find all "from" imports
+    for cap in from_re.captures_iter(source) {
+        let full_match = cap.get(0).unwrap();
+        let path = cap.get(1).unwrap().as_str().to_string();
+        let names_str = cap.get(2).unwrap().as_str();
+
+        // Parse the comma-separated names
+        let names: Vec<String> = names_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+
+        imports.push(ParsedImport {
+            start: full_match.start(),
+            end: full_match.end(),
+            path,
+            kind: ImportKind::Selective(names),
+        });
+    }
+
+    // Then, find regular imports (but skip any that overlap with "from" imports)
+    for cap in import_re.captures_iter(source) {
+        let full_match = cap.get(0).unwrap();
+        let start = full_match.start();
+        let end = full_match.end();
+
+        // Skip if this overlaps with an existing import (shouldn't happen, but be safe)
+        if imports.iter().any(|i| start < i.end && end > i.start) {
+            continue;
+        }
+
+        let path = cap.get(1).unwrap().as_str().to_string();
+        let alias = cap.get(2).map(|m| m.as_str().to_string());
+
+        let kind = match alias {
+            Some(a) => ImportKind::Namespaced(a),
+            None => ImportKind::All,
+        };
+
+        imports.push(ParsedImport {
+            start,
+            end,
+            path,
+            kind,
+        });
+    }
+
+    // Sort by position in source
+    imports.sort_by_key(|i| i.start);
+
+    Ok(imports)
 }
 
 /// Internal recursive import resolution.
@@ -55,27 +169,22 @@ fn resolve_imports_inner(
     imported: &mut HashSet<PathBuf>,
     stack: &mut HashSet<PathBuf>,
 ) -> Result<String, LatticeError> {
-    // Regex to match import statements: import "path/to/file.lat"
-    // Matches: import followed by a string literal (with optional whitespace)
-    let import_re = Regex::new(r#"import\s+"([^"]+)""#)
-        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+    let imports = parse_imports(source)?;
 
     let mut result = String::new();
     let mut last_end = 0;
+    let mut aliases: Vec<String> = Vec::new(); // Track aliases for qualified name resolution
 
-    for cap in import_re.captures_iter(source) {
-        let full_match = cap.get(0).unwrap();
-        let import_path = cap.get(1).unwrap().as_str();
-
+    for import in imports {
         // Add text before this import
-        result.push_str(&source[last_end..full_match.start()]);
+        result.push_str(&source[last_end..import.start]);
 
         // Resolve the import path
-        let resolved_path = base_path.join(import_path);
+        let resolved_path = base_path.join(&import.path);
         let canonical_path = resolved_path.canonicalize().map_err(|e| {
             LatticeError::Parse(format!(
                 "Cannot resolve import '{}': {}",
-                import_path, e
+                import.path, e
             ))
         })?;
 
@@ -87,12 +196,21 @@ fn resolve_imports_inner(
             )));
         }
 
-        // Skip files that have already been fully imported (prevents duplicate definitions)
-        // This allows the same file to be imported from multiple places
-        if imported.contains(&canonical_path) {
+        // Generate import description for comments
+        let import_desc = match &import.kind {
+            ImportKind::All => format!("import \"{}\"", import.path),
+            ImportKind::Namespaced(a) => format!("import \"{}\" as {}", import.path, a),
+            ImportKind::Selective(names) => format!("from \"{}\" import {}", import.path, names.join(", ")),
+        };
+
+        // For selective imports, we can import the same file multiple times with different symbols
+        // But for All/Namespaced, skip if already imported
+        let skip_if_imported = !matches!(import.kind, ImportKind::Selective(_));
+
+        if skip_if_imported && imported.contains(&canonical_path) {
             // Add a comment noting this was skipped
-            result.push_str(&format!("// import \"{}\" (already imported)\n", import_path));
-            last_end = full_match.end();
+            result.push_str(&format!("// {} (already imported)\n", import_desc));
+            last_end = import.end;
             continue;
         }
 
@@ -108,26 +226,334 @@ fn resolve_imports_inner(
             ))
         })?;
 
-        // Recursively resolve imports in the imported file
-        let imported_base = canonical_path.parent().unwrap_or(Path::new("."));
-        let resolved_import = resolve_imports_inner(&imported_source, imported_base, imported, stack)?;
+        // Handle based on file extension
+        let mut resolved_import = if import.path.ends_with(".md") {
+            // Markdown LLM file: transpile to Lattice source
+            let md_def = parse_markdown_llm(&imported_source).map_err(|e| {
+                LatticeError::Parse(format!(
+                    "Error parsing markdown file '{}': {}",
+                    import.path, e
+                ))
+            })?;
+            md_def.to_lattice_source()
+        } else {
+            // Regular .lat file: recursively resolve imports
+            let imported_base = canonical_path.parent().unwrap_or(Path::new("."));
+            resolve_imports_inner(&imported_source, imported_base, imported, stack)?
+        };
 
-        // Remove from stack and add to imported (fully processed)
+        // Apply transformations based on import kind
+        resolved_import = match &import.kind {
+            ImportKind::All => resolved_import,
+            ImportKind::Namespaced(alias) => {
+                aliases.push(alias.clone());
+                prefix_definitions(&resolved_import, alias)?
+            }
+            ImportKind::Selective(names) => {
+                extract_definitions(&resolved_import, names, &import.path)?
+            }
+        };
+
+        // Remove from stack and add to imported (fully processed) for non-selective
         stack.remove(&canonical_path);
-        imported.insert(canonical_path.clone());
+        if !matches!(import.kind, ImportKind::Selective(_)) {
+            imported.insert(canonical_path.clone());
+        }
 
         // Add a comment marking the import source for debugging
-        result.push_str(&format!("// BEGIN import \"{}\"\n", import_path));
+        result.push_str(&format!("// BEGIN {}\n", import_desc));
         result.push_str(&resolved_import);
-        result.push_str(&format!("\n// END import \"{}\"\n", import_path));
+        result.push_str(&format!("\n// END {}\n", import_desc));
 
-        last_end = full_match.end();
+        last_end = import.end;
     }
 
     // Add remaining text after last import
-    result.push_str(&source[last_end..]);
+    let remaining = &source[last_end..];
+
+    // Transform qualified name references (alias.name -> alias_name) in the remaining source
+    let transformed_remaining = transform_qualified_names(remaining, &aliases)?;
+    result.push_str(&transformed_remaining);
 
     Ok(result)
+}
+
+/// Prefix all top-level definitions in the source with the given alias.
+///
+/// This transforms:
+/// - `def foo(...)` → `def alias_foo(...)`
+/// - `type Foo { ... }` → `type alias_Foo { ... }`
+/// - `enum Foo { ... }` → `enum alias_Foo { ... }`
+/// - `llm_config foo { ... }` → `llm_config alias_foo { ... }`
+fn prefix_definitions(source: &str, alias: &str) -> Result<String, LatticeError> {
+    let mut result = source.to_string();
+
+    // Prefix function definitions: def name( -> def alias_name(
+    let def_re = Regex::new(r"\bdef\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(")
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+    result = def_re.replace_all(&result, |caps: &regex::Captures| {
+        format!("def {}_{}(", alias, &caps[1])
+    }).to_string();
+
+    // Prefix type definitions: type Name { -> type alias_Name {
+    let type_re = Regex::new(r"\btype\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\{")
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+    result = type_re.replace_all(&result, |caps: &regex::Captures| {
+        format!("type {}_{} {{", alias, &caps[1])
+    }).to_string();
+
+    // Prefix enum definitions: enum Name { -> enum alias_Name {
+    let enum_re = Regex::new(r"\benum\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\{")
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+    result = enum_re.replace_all(&result, |caps: &regex::Captures| {
+        format!("enum {}_{} {{", alias, &caps[1])
+    }).to_string();
+
+    // Prefix llm_config definitions: llm_config name { -> llm_config alias_name {
+    let config_re = Regex::new(r"\bllm_config\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\{")
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+    result = config_re.replace_all(&result, |caps: &regex::Captures| {
+        format!("llm_config {}_{} {{", alias, &caps[1])
+    }).to_string();
+
+    Ok(result)
+}
+
+/// Extract only the specified definitions from the source.
+///
+/// This is used for selective imports: `from "file.lat" import name1, name2`
+/// Only the definitions matching the requested names are included in the output.
+///
+/// Supports:
+/// - `def name(...)` - function definitions
+/// - `type Name { ... }` - type definitions
+/// - `enum Name { ... }` - enum definitions
+/// - `llm_config name { ... }` - LLM config definitions
+fn extract_definitions(source: &str, names: &[String], import_path: &str) -> Result<String, LatticeError> {
+    let mut extracted = Vec::new();
+    let mut found_names = HashSet::new();
+
+    // Regex patterns for each definition type
+    // These capture the entire definition including the body
+    // We use a simple approach: find the start, then match braces/parens to find the end
+
+    for name in names {
+        // Try each definition type
+        if let Some(def) = extract_function(source, name)? {
+            extracted.push(def);
+            found_names.insert(name.clone());
+        } else if let Some(def) = extract_type(source, name)? {
+            extracted.push(def);
+            found_names.insert(name.clone());
+        } else if let Some(def) = extract_enum(source, name)? {
+            extracted.push(def);
+            found_names.insert(name.clone());
+        } else if let Some(def) = extract_llm_config(source, name)? {
+            extracted.push(def);
+            found_names.insert(name.clone());
+        }
+    }
+
+    // Check for any names that weren't found
+    let missing: Vec<_> = names.iter()
+        .filter(|n| !found_names.contains(*n))
+        .collect();
+
+    if !missing.is_empty() {
+        return Err(LatticeError::Parse(format!(
+            "Cannot find definition(s) {} in '{}'. Available definitions may not match.",
+            missing.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(", "),
+            import_path
+        )));
+    }
+
+    Ok(extracted.join("\n\n"))
+}
+
+/// Extract a function definition by name from source
+fn extract_function(source: &str, name: &str) -> Result<Option<String>, LatticeError> {
+    let pattern = format!(r"\bdef\s+{}\s*\(", regex::escape(name));
+    let re = Regex::new(&pattern)
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+
+    if let Some(m) = re.find(source) {
+        // Found the function start, now find the function body's opening brace
+        let start = m.start();
+        // Search for the opening brace after the parameters
+        if let Some(brace_pos) = source[m.end()..].find('{') {
+            let brace_start = m.end() + brace_pos;
+            if let Some(end) = find_matching_brace(source, brace_start) {
+                return Ok(Some(source[start..=end].to_string()));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Extract a type definition by name from source
+fn extract_type(source: &str, name: &str) -> Result<Option<String>, LatticeError> {
+    let pattern = format!(r"\btype\s+{}\s*\{{", regex::escape(name));
+    let re = Regex::new(&pattern)
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+
+    if let Some(m) = re.find(source) {
+        let start = m.start();
+        if let Some(end) = find_matching_brace(source, m.end() - 1) {
+            return Ok(Some(source[start..=end].to_string()));
+        }
+    }
+    Ok(None)
+}
+
+/// Extract an enum definition by name from source
+fn extract_enum(source: &str, name: &str) -> Result<Option<String>, LatticeError> {
+    let pattern = format!(r"\benum\s+{}\s*\{{", regex::escape(name));
+    let re = Regex::new(&pattern)
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+
+    if let Some(m) = re.find(source) {
+        let start = m.start();
+        if let Some(end) = find_matching_brace(source, m.end() - 1) {
+            return Ok(Some(source[start..=end].to_string()));
+        }
+    }
+    Ok(None)
+}
+
+/// Extract an llm_config definition by name from source
+fn extract_llm_config(source: &str, name: &str) -> Result<Option<String>, LatticeError> {
+    let pattern = format!(r"\bllm_config\s+{}\s*\{{", regex::escape(name));
+    let re = Regex::new(&pattern)
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+
+    if let Some(m) = re.find(source) {
+        let start = m.start();
+        if let Some(end) = find_matching_brace(source, m.end() - 1) {
+            return Ok(Some(source[start..=end].to_string()));
+        }
+    }
+    Ok(None)
+}
+
+/// Find the position of the closing brace that matches the opening brace at `start`
+/// Returns the byte offset of the closing brace, or None if not found
+fn find_matching_brace(source: &str, start: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    if start >= bytes.len() || bytes[start] != b'{' {
+        return None;
+    }
+
+    let mut depth = 0;
+    let mut in_string = false;
+    let mut in_triple_string = false;
+    let mut escape_next = false;
+    let mut i = start;
+
+    while i < bytes.len() {
+        let c = bytes[i];
+
+        if escape_next {
+            escape_next = false;
+            i += 1;
+            continue;
+        }
+
+        if c == b'\\' && in_string {
+            escape_next = true;
+            i += 1;
+            continue;
+        }
+
+        // Check for triple-quoted strings
+        if i + 2 < bytes.len() && &bytes[i..i+3] == b"\"\"\"" {
+            if in_triple_string {
+                in_triple_string = false;
+                i += 3;
+                continue;
+            } else if !in_string {
+                in_triple_string = true;
+                i += 3;
+                continue;
+            }
+        }
+
+        // Check for regular strings (only if not in triple string)
+        if c == b'"' && !in_triple_string {
+            in_string = !in_string;
+            i += 1;
+            continue;
+        }
+
+        // Only count braces outside strings
+        if !in_string && !in_triple_string {
+            if c == b'{' {
+                depth += 1;
+            } else if c == b'}' {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+        }
+
+        i += 1;
+    }
+
+    None
+}
+
+/// Transform qualified name references (alias.name) to prefixed names (alias_name).
+///
+/// This handles:
+/// - Function calls: `alias.func(args)` → `alias_func(args)`
+/// - Type references: `alias.Type` → `alias_Type`
+/// - Field access is NOT transformed (e.g., `obj.field` stays as is)
+/// - Text inside string literals is preserved unchanged
+fn transform_qualified_names(source: &str, aliases: &[String]) -> Result<String, LatticeError> {
+    if aliases.is_empty() {
+        return Ok(source.to_string());
+    }
+
+    // Build a regex that matches strings or qualified names
+    // We'll capture strings to preserve them and replace only outside strings
+    let alias_pattern = aliases
+        .iter()
+        .map(|a| regex::escape(a))
+        .collect::<Vec<_>>()
+        .join("|");
+
+    // This regex matches:
+    // 1. Triple-quoted strings (f""" or """)
+    // 2. Regular strings (f" or ")
+    // 3. Qualified names (alias.identifier)
+    let pattern = format!(
+        r#"(f?"""[\s\S]*?"""|f?"[^"\\]*(?:\\.[^"\\]*)*")|(\b(?:{})\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*))"#,
+        alias_pattern
+    );
+
+    let combined_re = Regex::new(&pattern)
+        .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
+
+    let result = combined_re.replace_all(source, |caps: &regex::Captures| {
+        // Group 1 = string literal (preserve as-is)
+        if let Some(string_match) = caps.get(1) {
+            return string_match.as_str().to_string();
+        }
+        // Group 2 = qualified name (alias.name), Group 3 = name part
+        if let (Some(_qualified), Some(name)) = (caps.get(2), caps.get(3)) {
+            // Find which alias matched
+            for alias in aliases {
+                let qualified_str = caps.get(2).unwrap().as_str();
+                if qualified_str.starts_with(alias) || qualified_str.starts_with(&format!("{} ", alias)) {
+                    return format!("{}_{}", alias, name.as_str());
+                }
+            }
+        }
+        // Fallback: return the whole match unchanged
+        caps.get(0).unwrap().as_str().to_string()
+    });
+
+    Ok(result.to_string())
 }
 
 #[cfg(test)]
@@ -323,5 +749,714 @@ let after = 2
         assert!(result.contains("type T { x: Int }"));
         assert!(result.contains("let after = 2"));
         assert!(result.contains("// Footer"));
+    }
+
+    // =========================================================================
+    // Markdown LLM file import tests
+    // =========================================================================
+
+    #[test]
+    fn test_import_markdown_llm_file() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create a markdown LLM function file
+        create_test_file(
+            dir_path,
+            "greet.md",
+            r#"---
+name: greet
+model: gpt-4
+input:
+  name: String
+output: String
+---
+Say hello to {name}!"#,
+        );
+
+        // Main file imports the markdown
+        let source = r#"import "greet.md"
+let result = greet("World")"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Should contain the transpiled function
+        assert!(result.contains("def greet(name: String) -> String {"));
+        assert!(result.contains("model: \"gpt-4\""));
+        assert!(result.contains("${name}"));
+        assert!(result.contains("prompt: \"\"\""));
+        // Should also contain the usage
+        assert!(result.contains("let result = greet(\"World\")"));
+    }
+
+    #[test]
+    fn test_import_markdown_with_inline_type() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        create_test_file(
+            dir_path,
+            "analyze.md",
+            r#"---
+name: analyze_sentiment
+model: gpt-4
+input:
+  text: String
+output:
+  sentiment: String
+  confidence: Float
+---
+Analyze: {text}"#,
+        );
+
+        let source = r#"import "analyze.md""#;
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Should generate the inline type
+        assert!(result.contains("type AnalyzeSentimentOutput {"));
+        assert!(result.contains("confidence: Float"));
+        assert!(result.contains("sentiment: String"));
+        // Function should use the generated type
+        assert!(result.contains("-> AnalyzeSentimentOutput {"));
+    }
+
+    #[test]
+    fn test_import_markdown_and_lat_together() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create a type definition in a .lat file
+        create_test_file(
+            dir_path,
+            "types.lat",
+            "type Sentiment { label: String, score: Float }",
+        );
+
+        // Create a markdown LLM function that uses that type
+        create_test_file(
+            dir_path,
+            "analyze.md",
+            r#"---
+name: analyze
+model: gpt-4
+input:
+  text: String
+output: Sentiment
+---
+Analyze: {text}"#,
+        );
+
+        // Main imports both
+        let source = r#"import "types.lat"
+import "analyze.md"
+let result = analyze("Great!")"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Should contain both the type and the function
+        assert!(result.contains("type Sentiment { label: String, score: Float }"));
+        assert!(result.contains("def analyze(text: String) -> Sentiment {"));
+        assert!(result.contains("let result = analyze"));
+    }
+
+    #[test]
+    fn test_import_markdown_invalid_frontmatter() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create an invalid markdown file (missing required 'model' field)
+        create_test_file(
+            dir_path,
+            "invalid.md",
+            r#"---
+name: broken
+input:
+  x: String
+output: String
+---
+prompt"#,
+        );
+
+        let source = r#"import "invalid.md""#;
+        let result = resolve_imports(source, dir_path);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Error parsing markdown file"));
+    }
+
+    #[test]
+    fn test_import_markdown_deduplication() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create a markdown file
+        create_test_file(
+            dir_path,
+            "shared.md",
+            r#"---
+name: shared_fn
+model: gpt-4
+input:
+  x: String
+output: String
+---
+{x}"#,
+        );
+
+        // Import the same markdown file twice
+        let source = r#"import "shared.md"
+import "shared.md""#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Should only include the function once
+        let fn_count = result.matches("def shared_fn").count();
+        assert_eq!(fn_count, 1, "Function should be included exactly once");
+        // Second import should be marked as already imported
+        assert!(result.contains("already imported"));
+    }
+
+    // =========================================================================
+    // Namespaced import tests
+    // =========================================================================
+
+    #[test]
+    fn test_namespaced_import_function() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create a math library
+        create_test_file(
+            dir_path,
+            "math.lat",
+            r#"def add(a: Int, b: Int) -> Int { a + b }
+def multiply(a: Int, b: Int) -> Int { a * b }"#,
+        );
+
+        // Import with alias
+        let source = r#"import "math.lat" as math
+let result = math.add(1, 2)"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Functions should be prefixed
+        assert!(result.contains("def math_add(a: Int, b: Int)"));
+        assert!(result.contains("def math_multiply(a: Int, b: Int)"));
+        // Qualified call should be transformed
+        assert!(result.contains("let result = math_add(1, 2)"));
+        // Comment should show alias
+        assert!(result.contains("import \"math.lat\" as math"));
+    }
+
+    #[test]
+    fn test_namespaced_import_type() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create a types library
+        create_test_file(
+            dir_path,
+            "types.lat",
+            "type Point { x: Int, y: Int }",
+        );
+
+        // Import with alias
+        let source = r#"import "types.lat" as geo
+let p = geo.Point { x: 1, y: 2 }"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Type should be prefixed
+        assert!(result.contains("type geo_Point {"));
+        // Qualified type reference should be transformed
+        assert!(result.contains("let p = geo_Point { x: 1, y: 2 }"));
+    }
+
+    #[test]
+    fn test_namespaced_import_enum() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create an enum library
+        create_test_file(
+            dir_path,
+            "colors.lat",
+            "enum Color { Red, Green, Blue }",
+        );
+
+        // Import with alias
+        let source = r#"import "colors.lat" as colors
+let c = colors.Color"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Enum should be prefixed
+        assert!(result.contains("enum colors_Color {"));
+        // Qualified reference should be transformed
+        assert!(result.contains("let c = colors_Color"));
+    }
+
+    #[test]
+    fn test_namespaced_import_llm_config() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create an llm_config library
+        create_test_file(
+            dir_path,
+            "configs.lat",
+            r#"llm_config fast_model {
+    model: "gpt-4o-mini"
+}"#,
+        );
+
+        // Import with alias
+        let source = r#"import "configs.lat" as cfg"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // llm_config should be prefixed
+        assert!(result.contains("llm_config cfg_fast_model {"));
+    }
+
+    #[test]
+    fn test_namespaced_import_multiple_aliases() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create two libraries
+        create_test_file(
+            dir_path,
+            "math.lat",
+            "def add(a: Int, b: Int) -> Int { a + b }",
+        );
+        create_test_file(
+            dir_path,
+            "string.lat",
+            "def concat(a: String, b: String) -> String { a + b }",
+        );
+
+        // Import both with aliases
+        let source = r#"import "math.lat" as math
+import "string.lat" as str
+let x = math.add(1, 2)
+let y = str.concat("a", "b")"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Both should be prefixed
+        assert!(result.contains("def math_add"));
+        assert!(result.contains("def str_concat"));
+        // Both qualified calls should be transformed
+        assert!(result.contains("let x = math_add(1, 2)"));
+        assert!(result.contains("let y = str_concat(\"a\", \"b\")"));
+    }
+
+    #[test]
+    fn test_namespaced_import_mixed_with_regular() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create two libraries
+        create_test_file(
+            dir_path,
+            "math.lat",
+            "def add(a: Int, b: Int) -> Int { a + b }",
+        );
+        create_test_file(
+            dir_path,
+            "helpers.lat",
+            "def helper() -> Int { 42 }",
+        );
+
+        // Mix aliased and non-aliased imports
+        let source = r#"import "math.lat" as math
+import "helpers.lat"
+let x = math.add(1, 2)
+let y = helper()"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // math should be prefixed
+        assert!(result.contains("def math_add"));
+        // helpers should NOT be prefixed
+        assert!(result.contains("def helper()"));
+        // Qualified call should be transformed
+        assert!(result.contains("let x = math_add(1, 2)"));
+        // Regular call should remain unchanged
+        assert!(result.contains("let y = helper()"));
+    }
+
+    #[test]
+    fn test_namespaced_import_with_markdown() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create a markdown LLM function
+        create_test_file(
+            dir_path,
+            "sentiment.md",
+            r#"---
+name: analyze
+model: gpt-4
+input:
+  text: String
+output: String
+---
+Analyze: {text}"#,
+        );
+
+        // Import with alias
+        let source = r#"import "sentiment.md" as ai
+let result = ai.analyze("Hello")"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Function should be prefixed
+        assert!(result.contains("def ai_analyze(text: String)"));
+        // Qualified call should be transformed
+        assert!(result.contains("let result = ai_analyze(\"Hello\")"));
+    }
+
+    #[test]
+    fn test_prefix_definitions_function() {
+        let source = "def foo(x: Int) -> Int { x + 1 }";
+        let result = prefix_definitions(source, "math").unwrap();
+        assert_eq!(result, "def math_foo(x: Int) -> Int { x + 1 }");
+    }
+
+    #[test]
+    fn test_prefix_definitions_type() {
+        let source = "type Point { x: Int, y: Int }";
+        let result = prefix_definitions(source, "geo").unwrap();
+        assert_eq!(result, "type geo_Point { x: Int, y: Int }");
+    }
+
+    #[test]
+    fn test_prefix_definitions_enum() {
+        let source = "enum Status { Active, Inactive }";
+        let result = prefix_definitions(source, "state").unwrap();
+        assert_eq!(result, "enum state_Status { Active, Inactive }");
+    }
+
+    #[test]
+    fn test_transform_qualified_names_simple() {
+        let source = "let x = math.add(1, 2)";
+        let aliases = vec!["math".to_string()];
+        let result = transform_qualified_names(source, &aliases).unwrap();
+        assert_eq!(result, "let x = math_add(1, 2)");
+    }
+
+    #[test]
+    fn test_transform_qualified_names_type() {
+        let source = "let p = geo.Point { x: 1 }";
+        let aliases = vec!["geo".to_string()];
+        let result = transform_qualified_names(source, &aliases).unwrap();
+        assert_eq!(result, "let p = geo_Point { x: 1 }");
+    }
+
+    #[test]
+    fn test_transform_qualified_names_preserves_field_access() {
+        // obj.field should NOT be transformed when obj is not an alias
+        let source = "let x = obj.field";
+        let aliases = vec!["math".to_string()];
+        let result = transform_qualified_names(source, &aliases).unwrap();
+        assert_eq!(result, "let x = obj.field");
+    }
+
+    #[test]
+    fn test_transform_qualified_names_multiple_aliases() {
+        let source = "let x = math.add(1, str.len(\"hi\"))";
+        let aliases = vec!["math".to_string(), "str".to_string()];
+        let result = transform_qualified_names(source, &aliases).unwrap();
+        assert_eq!(result, "let x = math_add(1, str_len(\"hi\"))");
+    }
+
+    #[test]
+    fn test_transform_qualified_names_preserves_strings() {
+        // Qualified names inside strings should NOT be transformed
+        let source = r#"let x = math.add(1, 2)
+let msg = "Using math.add function""#;
+        let aliases = vec!["math".to_string()];
+        let result = transform_qualified_names(source, &aliases).unwrap();
+        assert!(result.contains("math_add(1, 2)"), "Code should be transformed");
+        assert!(result.contains("\"Using math.add function\""), "String should be preserved");
+    }
+
+    #[test]
+    fn test_transform_qualified_names_preserves_fstrings() {
+        // Qualified names in f-string text should NOT be transformed
+        // But actual code expressions would be (which happens before import resolution)
+        let source = r#"let x = math.add(1, 2)
+print(f"Called math.add: {x}")"#;
+        let aliases = vec!["math".to_string()];
+        let result = transform_qualified_names(source, &aliases).unwrap();
+        assert!(result.contains("math_add(1, 2)"), "Code should be transformed");
+        assert!(result.contains("f\"Called math.add: {x}\""), "F-string literal should be preserved");
+    }
+
+    // =========================================================================
+    // Selective import tests
+    // =========================================================================
+
+    #[test]
+    fn test_selective_import_single_function() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        // Create a library with multiple functions
+        create_test_file(
+            dir_path,
+            "math.lat",
+            r#"def add(a: Int, b: Int) -> Int { a + b }
+def subtract(a: Int, b: Int) -> Int { a - b }
+def multiply(a: Int, b: Int) -> Int { a * b }"#,
+        );
+
+        // Import only one function
+        let source = r#"from "math.lat" import add
+let result = add(1, 2)"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Only add should be included
+        assert!(result.contains("def add(a: Int, b: Int)"));
+        assert!(!result.contains("def subtract"));
+        assert!(!result.contains("def multiply"));
+        assert!(result.contains("let result = add(1, 2)"));
+    }
+
+    #[test]
+    fn test_selective_import_multiple_functions() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        create_test_file(
+            dir_path,
+            "math.lat",
+            r#"def add(a: Int, b: Int) -> Int { a + b }
+def subtract(a: Int, b: Int) -> Int { a - b }
+def multiply(a: Int, b: Int) -> Int { a * b }"#,
+        );
+
+        // Import two functions
+        let source = r#"from "math.lat" import add, multiply
+let sum = add(1, 2)
+let product = multiply(3, 4)"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // add and multiply should be included, but not subtract
+        assert!(result.contains("def add(a: Int, b: Int)"));
+        assert!(result.contains("def multiply(a: Int, b: Int)"));
+        assert!(!result.contains("def subtract"));
+    }
+
+    #[test]
+    fn test_selective_import_type() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        create_test_file(
+            dir_path,
+            "types.lat",
+            r#"type Point { x: Int, y: Int }
+type Rectangle { width: Int, height: Int }
+type Circle { radius: Float }"#,
+        );
+
+        // Import only Point
+        let source = r#"from "types.lat" import Point
+let p = Point { x: 1, y: 2 }"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        assert!(result.contains("type Point { x: Int, y: Int }"));
+        assert!(!result.contains("type Rectangle"));
+        assert!(!result.contains("type Circle"));
+    }
+
+    #[test]
+    fn test_selective_import_enum() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        create_test_file(
+            dir_path,
+            "enums.lat",
+            r#"enum Color { Red, Green, Blue }
+enum Status { Active, Inactive }
+enum Size { Small, Medium, Large }"#,
+        );
+
+        // Import only Color
+        let source = r#"from "enums.lat" import Color"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        assert!(result.contains("enum Color { Red, Green, Blue }"));
+        assert!(!result.contains("enum Status"));
+        assert!(!result.contains("enum Size"));
+    }
+
+    #[test]
+    fn test_selective_import_mixed_types() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        create_test_file(
+            dir_path,
+            "lib.lat",
+            r#"type Point { x: Int, y: Int }
+enum Color { Red, Green, Blue }
+def distance(p: Point) -> Int { p.x * p.x + p.y * p.y }"#,
+        );
+
+        // Import a type and a function
+        let source = r#"from "lib.lat" import Point, distance
+let p = Point { x: 3, y: 4 }
+let d = distance(p)"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        assert!(result.contains("type Point { x: Int, y: Int }"));
+        assert!(result.contains("def distance(p: Point)"));
+        assert!(!result.contains("enum Color"));
+    }
+
+    #[test]
+    fn test_selective_import_not_found() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        create_test_file(
+            dir_path,
+            "math.lat",
+            "def add(a: Int, b: Int) -> Int { a + b }",
+        );
+
+        // Try to import a function that doesn't exist
+        let source = r#"from "math.lat" import nonexistent"#;
+
+        let result = resolve_imports(source, dir_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Cannot find definition"));
+        assert!(err.contains("nonexistent"));
+    }
+
+    #[test]
+    fn test_selective_import_with_regular_import() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+
+        create_test_file(
+            dir_path,
+            "math.lat",
+            r#"def add(a: Int, b: Int) -> Int { a + b }
+def multiply(a: Int, b: Int) -> Int { a * b }"#,
+        );
+        create_test_file(
+            dir_path,
+            "helpers.lat",
+            "def helper() -> Int { 42 }",
+        );
+
+        // Mix selective and regular imports
+        let source = r#"from "math.lat" import add
+import "helpers.lat"
+let x = add(1, 2)
+let y = helper()"#;
+
+        let result = resolve_imports(source, dir_path).unwrap();
+
+        // Selective: only add from math
+        assert!(result.contains("def add(a: Int, b: Int)"));
+        assert!(!result.contains("def multiply"));
+        // Regular: all of helpers
+        assert!(result.contains("def helper()"));
+    }
+
+    #[test]
+    fn test_extract_function_simple() {
+        let source = r#"def foo(x: Int) -> Int { x + 1 }
+def bar() -> String { "hello" }"#;
+        let result = extract_function(source, "foo").unwrap();
+        assert!(result.is_some());
+        let extracted = result.unwrap();
+        assert!(extracted.starts_with("def foo"));
+        assert!(extracted.contains("x + 1"));
+        assert!(!extracted.contains("bar"));
+    }
+
+    #[test]
+    fn test_extract_function_with_nested_braces() {
+        let source = r#"def foo(x: Int) -> Int {
+    if x > 0 {
+        x + 1
+    } else {
+        0
+    }
+}
+def bar() -> Int { 1 }"#;
+        let result = extract_function(source, "foo").unwrap();
+        assert!(result.is_some());
+        let extracted = result.unwrap();
+        assert!(extracted.contains("if x > 0"));
+        assert!(extracted.contains("else"));
+        assert!(extracted.ends_with("}"));
+    }
+
+    #[test]
+    fn test_extract_type_simple() {
+        let source = r#"type Point { x: Int, y: Int }
+type Other { a: String }"#;
+        let result = extract_type(source, "Point").unwrap();
+        assert!(result.is_some());
+        let extracted = result.unwrap();
+        assert_eq!(extracted, "type Point { x: Int, y: Int }");
+    }
+
+    #[test]
+    fn test_extract_enum_simple() {
+        let source = r#"enum Color { Red, Green, Blue }
+enum Size { Small, Large }"#;
+        let result = extract_enum(source, "Color").unwrap();
+        assert!(result.is_some());
+        let extracted = result.unwrap();
+        assert_eq!(extracted, "enum Color { Red, Green, Blue }");
+    }
+
+    #[test]
+    fn test_find_matching_brace_simple() {
+        let source = "{ }";
+        let end = find_matching_brace(source, 0);
+        assert_eq!(end, Some(2));
+    }
+
+    #[test]
+    fn test_find_matching_brace_nested() {
+        let source = "{ { } }";
+        let end = find_matching_brace(source, 0);
+        assert_eq!(end, Some(6));
+    }
+
+    #[test]
+    fn test_find_matching_brace_with_string() {
+        let source = r#"{ "}" }"#;
+        let end = find_matching_brace(source, 0);
+        assert_eq!(end, Some(6));
+    }
+
+    #[test]
+    fn test_find_matching_brace_with_triple_string() {
+        // Triple-quoted strings containing braces should be handled
+        let source = r#"{ """}}""" }"#;
+        let end = find_matching_brace(source, 0);
+        // The string is: { """}}""" }
+        //               01234567890123
+        // The closing brace is at position 11
+        assert_eq!(end, Some(11));
     }
 }

@@ -12,8 +12,17 @@ program = { SOI ~ item* ~ EOI }
 /// An item is either an import, definition, or statement
 item = { import_stmt | type_def | enum_def | llm_config_decl | function_def | statement }
 
-/// Import statement: import "path/to/file.lat"
-import_stmt = { "import" ~ string_literal }
+/// Import statement variants:
+/// - import "path/to/file.lat" (import all)
+/// - import "path/to/file.lat" as alias (namespaced import)
+/// - from "path/to/file.lat" import name1, name2, ... (selective import)
+import_stmt = {
+    "from" ~ string_literal ~ "import" ~ import_list
+    | "import" ~ string_literal ~ ("as" ~ identifier)?
+}
+
+/// List of names to import
+import_list = { identifier ~ ("," ~ identifier)* }
 
 // ============================================================================
 // LLM Config Declarations
