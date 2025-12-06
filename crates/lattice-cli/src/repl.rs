@@ -1,7 +1,7 @@
 //! Interactive REPL (Read-Eval-Print Loop) for Lattice
 //!
 //! Provides an interactive session with:
-//! - Persistent VM state across inputs
+//! - Persistent runtime state across inputs
 //! - Multiline input support
 //! - Command history via rustyline
 //! - Syntax error reporting with line numbers
@@ -14,10 +14,7 @@ use rustyline::hint::HistoryHinter;
 use rustyline::validate::MatchingBracketValidator;
 use rustyline::{Completer, Editor, Helper, Highlighter, Hinter, Validator};
 
-use lattice::compiler::{CompileResult, Compiler};
-use lattice::syntax::parser;
-use lattice::types::Value;
-use lattice::vm::VM;
+use lattice::runtime::{LatticeRuntime, LatticeValue, RuntimeBuilder};
 
 /// REPL helper combining bracket validation, highlighting, hints, etc.
 #[derive(Completer, Helper, Highlighter, Hinter, Validator)]
@@ -42,8 +39,8 @@ impl Default for ReplHelper {
 
 /// The interactive REPL state
 pub struct Repl {
-    /// The VM instance - persists across inputs
-    vm: VM,
+    /// The runtime instance - persists across inputs
+    runtime: LatticeRuntime,
     /// Line editor with history
     editor: Editor<ReplHelper, DefaultHistory>,
     /// Current input buffer for multiline input
@@ -70,8 +67,16 @@ impl Repl {
             let _ = editor.load_history(path);
         }
 
+        // Create runtime with default providers
+        let built = RuntimeBuilder::new()
+            .with_default_providers()
+            .map_err(|e| anyhow::anyhow!("Failed to initialize providers: {}", e))?
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to build runtime: {}", e))?;
+        let runtime = LatticeRuntime::from_built(built);
+
         Ok(Self {
-            vm: VM::new(),
+            runtime,
             editor,
             buffer: String::new(),
             multiline: false,
@@ -247,68 +252,20 @@ impl Repl {
             return Ok(());
         }
 
-        // Parse the input
-        let program = match parser::parse(trimmed) {
-            Ok(p) => p,
-            Err(e) => {
-                self.print_parse_error(&e.to_string(), input);
-                return Ok(());
-            }
-        };
-
-        // Compile
-        let compile_result = match Compiler::compile(&program) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("Compile error: {}", e);
-                return Ok(());
-            }
-        };
-
-        // Register types and functions in the VM (persistent state)
-        self.register_artifacts(&compile_result);
-
-        // Execute
-        match self.vm.run(&compile_result.chunk) {
+        // Use the runtime's eval method (handles parsing, compilation, and execution)
+        match self.runtime.eval(trimmed) {
             Ok(value) => {
                 // Print result (unless null)
-                if !matches!(value, Value::Null) {
+                if !matches!(value, LatticeValue::Null) {
                     println!("{}", value);
                 }
             }
             Err(e) => {
-                eprintln!("Runtime error: {}", e);
+                eprintln!("Error: {}", e);
             }
         }
 
-        // Reset VM execution state but keep globals and registered items
-        self.vm.reset();
-
         Ok(())
-    }
-
-    /// Register compiled artifacts in the VM
-    fn register_artifacts(&mut self, result: &CompileResult) {
-        // Register types
-        for class in &result.classes {
-            self.vm.ir_mut().classes.push(class.clone());
-        }
-        for enum_def in &result.enums {
-            self.vm.ir_mut().enums.push(enum_def.clone());
-        }
-
-        // Register functions
-        for func in &result.functions {
-            self.vm.register_function(func.clone());
-        }
-        for llm_func in &result.llm_functions {
-            self.vm.register_llm_function(llm_func.clone());
-        }
-    }
-
-    /// Print a parse error with context
-    fn print_parse_error(&self, error: &str, _input: &str) {
-        eprintln!("Parse error: {}", error);
     }
 
     /// Handle REPL commands
@@ -326,8 +283,8 @@ impl Repl {
                 Ok(None)
             }
             ":clear" | ":reset" => {
-                self.vm.clear();
-                println!("VM state cleared.");
+                self.runtime.reset();
+                println!("Runtime state cleared.");
                 Ok(None)
             }
             ":vars" | ":globals" => {
@@ -363,7 +320,7 @@ impl Repl {
         println!("Lattice REPL Commands:");
         println!("  :help, :h, :?     Show this help message");
         println!("  :quit, :q, :exit  Exit the REPL");
-        println!("  :clear, :reset    Clear all VM state (globals, types, functions)");
+        println!("  :clear, :reset    Clear all runtime state (globals, types, functions)");
         println!("  :vars, :globals   List all global variables");
         println!("  :types            List all defined types");
         println!("  :functions        List all defined functions");
@@ -378,13 +335,13 @@ impl Repl {
 
     /// Print all global variables
     fn print_globals(&self) {
-        let names: Vec<_> = self.vm.global_names().collect();
+        let names = self.runtime.global_names();
         if names.is_empty() {
             println!("No global variables defined.");
         } else {
             println!("Global variables:");
             for name in names {
-                if let Ok(value) = self.vm.get_global(name) {
+                if let Some(value) = self.runtime.get_global(&name) {
                     println!("  {} = {}", name, value);
                 }
             }
@@ -393,38 +350,59 @@ impl Repl {
 
     /// Print all defined types
     fn print_types(&self) {
-        let ir = self.vm.ir();
+        use lattice::runtime::TypeSchema;
 
-        if ir.classes.is_empty() && ir.enums.is_empty() {
+        let types = self.runtime.get_types();
+
+        if types.is_empty() {
             println!("No types defined.");
             return;
         }
 
-        if !ir.classes.is_empty() {
+        let mut classes = Vec::new();
+        let mut enums = Vec::new();
+
+        for schema in types {
+            match schema {
+                TypeSchema::Struct(s) => classes.push(s),
+                TypeSchema::Enum(e) => enums.push(e),
+                _ => {}
+            }
+        }
+
+        if !classes.is_empty() {
             println!("Classes:");
-            for class in &ir.classes {
+            for class in &classes {
                 print!("  type {} {{ ", class.name);
                 let fields: Vec<_> = class.fields.iter()
-                    .map(|f| format!("{}: {:?}", f.name, f.field_type))
+                    .map(|f| format!("{}: {}", f.name, f.type_schema))
                     .collect();
                 print!("{}", fields.join(", "));
                 println!(" }}");
             }
         }
 
-        if !ir.enums.is_empty() {
+        if !enums.is_empty() {
             println!("Enums:");
-            for enum_def in &ir.enums {
-                println!("  enum {} {{ {} }}", enum_def.name, enum_def.values.join(", "));
+            for enum_def in &enums {
+                println!("  enum {} {{ {} }}", enum_def.name, enum_def.variants.join(", "));
             }
         }
     }
 
     /// Print all defined functions
     fn print_functions(&self) {
-        // Note: We can't easily iterate user_functions since it's private
-        // For now, just indicate that functions exist
-        println!("(Function listing not yet implemented)");
+        let signatures = self.runtime.get_function_signatures();
+
+        if signatures.is_empty() {
+            println!("No functions defined.");
+            return;
+        }
+
+        println!("Functions:");
+        for sig in signatures {
+            println!("  {}", sig);
+        }
     }
 
     /// Load and execute a file

@@ -5,9 +5,9 @@ use std::path::Path;
 
 use lattice::compiler::{CompileResult, Compiler};
 use lattice::output::{value_to_output, value_to_json, CellOutput, format_table_as_text};
+use lattice::runtime::{LatticeRuntime, LatticeValue, RuntimeBuilder};
 use lattice::syntax::parser;
 use lattice::types::Value;
-use lattice::vm::VM;
 
 /// Output format for CLI results
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -99,6 +99,16 @@ fn main() -> Result<()> {
     }
 }
 
+/// Create a LatticeRuntime with default providers
+fn create_runtime() -> Result<LatticeRuntime> {
+    let built = RuntimeBuilder::new()
+        .with_default_providers()
+        .map_err(|e| anyhow::anyhow!("Failed to initialize providers: {}", e))?
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to build runtime: {}", e))?;
+    Ok(LatticeRuntime::from_built(built))
+}
+
 /// Execute a Lattice source file
 fn run_file(file_path: &str, verbose: bool, format: OutputFormat) -> Result<()> {
     let path = Path::new(file_path);
@@ -113,49 +123,26 @@ fn run_file(file_path: &str, verbose: bool, format: OutputFormat) -> Result<()> 
         eprintln!();
     }
 
-    // Parse source to AST
-    let program = parser::parse(&source)
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
-
+    // For verbose mode, we still need to show parse/compile info
     if verbose {
+        let program = parser::parse(&source)
+            .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
         eprintln!("=== Parsed {} items ===", program.items.len());
         eprintln!();
-    }
 
-    // Compile AST to bytecode
-    let compile_result = Compiler::compile(&program)
-        .map_err(|e| anyhow::anyhow!("Compile error: {}", e))?;
-
-    if verbose {
+        let compile_result = Compiler::compile(&program)
+            .map_err(|e| anyhow::anyhow!("Compile error: {}", e))?;
         print_compile_info(&compile_result);
     }
 
-    // Create VM and register compiled artifacts
-    let mut vm = VM::new();
-
-    // Register types
-    for class in compile_result.classes {
-        vm.ir_mut().classes.push(class);
-    }
-    for enum_def in compile_result.enums {
-        vm.ir_mut().enums.push(enum_def);
-    }
-
-    // Register functions
-    for func in compile_result.functions {
-        vm.register_function(func);
-    }
-    for llm_func in compile_result.llm_functions {
-        vm.register_llm_function(llm_func);
-    }
-
-    // Execute
-    let result = vm.run(&compile_result.chunk)
-        .map_err(|e| anyhow::anyhow!("Runtime error: {}", e))?;
+    // Create runtime with default providers and evaluate
+    let mut runtime = create_runtime()?;
+    let result = runtime.eval(&source)
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Print result (unless null)
-    if !matches!(result, Value::Null) {
-        print_formatted(&result, format);
+    if !matches!(result, LatticeValue::Null) {
+        print_formatted_lattice(&result, format);
     }
 
     Ok(())
@@ -163,43 +150,24 @@ fn run_file(file_path: &str, verbose: bool, format: OutputFormat) -> Result<()> 
 
 /// Evaluate a code string directly
 fn eval_code(code: &str, format: OutputFormat) -> Result<()> {
-    // Parse source to AST
-    let program = parser::parse(code)
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
-
-    // Compile AST to bytecode
-    let compile_result = Compiler::compile(&program)
-        .map_err(|e| anyhow::anyhow!("Compile error: {}", e))?;
-
-    // Create VM and register compiled artifacts
-    let mut vm = VM::new();
-
-    // Register types
-    for class in compile_result.classes {
-        vm.ir_mut().classes.push(class);
-    }
-    for enum_def in compile_result.enums {
-        vm.ir_mut().enums.push(enum_def);
-    }
-
-    // Register functions
-    for func in compile_result.functions {
-        vm.register_function(func);
-    }
-    for llm_func in compile_result.llm_functions {
-        vm.register_llm_function(llm_func);
-    }
-
-    // Execute
-    let result = vm.run(&compile_result.chunk)
-        .map_err(|e| anyhow::anyhow!("Runtime error: {}", e))?;
+    // Create runtime with default providers and evaluate
+    let mut runtime = create_runtime()?;
+    let result = runtime.eval(code)
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Print result (unless null)
-    if !matches!(result, Value::Null) {
-        print_formatted(&result, format);
+    if !matches!(result, LatticeValue::Null) {
+        print_formatted_lattice(&result, format);
     }
 
     Ok(())
+}
+
+/// Print a LatticeValue formatted according to the specified output format
+fn print_formatted_lattice(value: &LatticeValue, format: OutputFormat) {
+    // Convert to internal Value for formatting (reuse existing formatting logic)
+    let internal_value = value.to_internal();
+    print_formatted(&internal_value, format);
 }
 
 /// Print a value formatted according to the specified output format
