@@ -3,12 +3,14 @@
 //! Lattice provides first-class support for LLM function definitions and
 //! data manipulation via DuckDB SQL integration.
 
-pub mod types;
-pub mod llm;
-pub mod syntax;
 pub mod compiler;
-pub mod vm;
+pub mod error;
+pub mod llm;
+pub mod output;
+pub mod runtime;
+#[cfg(feature = "sql")]
 pub mod sql;
 pub mod stdlib;
-pub mod output;
-pub mod error;
+pub mod syntax;
+pub mod types;
+pub mod vm;

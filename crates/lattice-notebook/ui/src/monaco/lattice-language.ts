@@ -61,6 +61,9 @@ export const latticeMonarchLanguage: languages.IMonarchLanguage = {
     root: [
       { include: '@whitespace' },
 
+      // SQL function with embedded SQL highlighting: SQL("""...""") or SQL(f"""...""")
+      [/SQL(\s*)\((\s*)f?"""/, { token: 'keyword', next: '@sqlRawString', nextEmbedded: 'sql' }],
+
       // Config key: prompt
       [/(prompt)(\s*)(:)/, [
         'keyword',
@@ -137,6 +140,11 @@ export const latticeMonarchLanguage: languages.IMonarchLanguage = {
       [/[^"]+/, 'string'],
       [/"""/, { token: 'string.quote', next: '@pop' }],
       [/"/, 'string'],
+    ],
+
+    sqlRawString: [
+      [/"""\s*\)/, { token: 'keyword', next: '@pop', nextEmbedded: '@pop' }],
+      [/./, ''],
     ],
 
     fstring: [

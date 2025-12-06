@@ -1,0 +1,133 @@
+/* ============================================
+   Dropdown Menu - Botanical Laboratory Style
+   ============================================ */
+
+.dropdown-menu {
+  position: relative;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: all var(--transition-fast);
+}
+
+.dropdown-trigger:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-warm);
+}
+
+.dropdown-trigger.active {
+  background: var(--bg-surface);
+  border-color: var(--accent-terracotta);
+  color: var(--accent-terracotta);
+}
+
+.dropdown-chevron {
+  width: 10px;
+  height: 10px;
+  transition: transform var(--transition-fast);
+}
+
+.dropdown-trigger.active .dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+/* Dropdown Panel */
+.dropdown-content {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-warm);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-1) 0;
+  z-index: 1000;
+  animation: dropdownFadeIn 0.15s ease-out;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Decorative top accent line */
+.dropdown-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--space-3);
+  right: var(--space-3);
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--accent-terracotta) 0%,
+    var(--accent-gold) 100%
+  );
+  border-radius: 1px;
+}
+
+/* Menu Items */
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.dropdown-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--accent-terracotta);
+}
+
+.dropdown-item:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.dropdown-item-label {
+  flex: 1;
+}
+
+.dropdown-item-shortcut {
+  margin-left: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Divider */
+.dropdown-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-1) var(--space-3);
+}

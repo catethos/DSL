@@ -1,16 +1,20 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use lattice::compiler::Compiler;
 use lattice::syntax::parser;
 use lattice::types::Value;
 use lattice::vm::VM;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use chrono::Utc;
 
 struct AppState {
-    vm: Arc<Mutex<VM>>,
+    /// Map from session_id to VM instance - each tab gets its own VM
+    vms: Arc<Mutex<HashMap<String, VM>>>,
 }
 
 /// Debug info from an LLM call (serializable for UI)
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LlmDebugOutput {
     /// The function name that was called
     pub function_name: String,
@@ -23,7 +27,7 @@ pub struct LlmDebugOutput {
 }
 
 /// Structured output from cell evaluation
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum CellOutput {
     /// Empty output (null result)
@@ -45,6 +49,58 @@ pub struct EvalResponse {
     /// Debug info from the last LLM call (if any)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_debug: Option<LlmDebugOutput>,
+    /// Execution time in milliseconds
+    pub execution_time_ms: u64,
+}
+
+/// UI state for a cell (persisted for user convenience)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CellUiState {
+    /// Editor height in pixels (default: 120)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor_height: Option<u32>,
+    /// Banner/description height in pixels (default: 100)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub banner_height: Option<u32>,
+    /// Whether the code editor is collapsed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor_collapsed: Option<bool>,
+    /// Whether the output section is collapsed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_collapsed: Option<bool>,
+    /// Monaco editor view state (JSON string, includes folding state)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor_view_state: Option<String>,
+    /// Hierarchy level (0 = root, 1 = child, 2 = grandchild, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<u32>,
+    /// Whether children of this cell are collapsed/hidden
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collapsed: Option<bool>,
+}
+
+/// A single cell in a notebook file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotebookCell {
+    pub id: String,
+    pub code: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<CellOutput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_debug: Option<LlmDebugOutput>,
+    /// UI state (heights, collapse states)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_state: Option<CellUiState>,
+}
+
+/// The notebook file format (.lat.nb)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Notebook {
+    pub version: String,
+    pub created_at: String,
+    pub modified_at: String,
+    pub cells: Vec<NotebookCell>,
 }
 
 impl CellOutput {
@@ -98,7 +154,7 @@ impl CellOutput {
                     .iter()
                     .map(|h| {
                         map.get(h)
-                            .map(|v| Self::value_to_cell_string(v))
+                            .map(Self::value_to_cell_string)
                             .unwrap_or_default()
                     })
                     .collect()
@@ -111,19 +167,34 @@ impl CellOutput {
     /// Convert a Value to a string suitable for a table cell
     fn value_to_cell_string(value: &Value) -> String {
         match value {
-            Value::String(s) => s.clone(),
+            Value::String(s) => s.to_string(),
             Value::Null => "".to_string(),
             other => other.to_string(),
         }
     }
 }
 
+/// Create a new VM session and return its session_id
 #[tauri::command]
-async fn reset_vm(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let vm = Arc::clone(&state.vm);
+async fn create_session(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let vms = Arc::clone(&state.vms);
     tokio::task::spawn_blocking(move || {
-        let mut vm = vm.lock().map_err(|e| e.to_string())?;
-        *vm = VM::new();
+        let mut vms = vms.lock().map_err(|e| e.to_string())?;
+        let session_id = generate_id();
+        vms.insert(session_id.clone(), VM::new());
+        Ok(session_id)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+/// Destroy a VM session
+#[tauri::command]
+async fn destroy_session(state: tauri::State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let vms = Arc::clone(&state.vms);
+    tokio::task::spawn_blocking(move || {
+        let mut vms = vms.lock().map_err(|e| e.to_string())?;
+        vms.remove(&session_id);
         Ok(())
     })
     .await
@@ -131,13 +202,33 @@ async fn reset_vm(state: tauri::State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn eval_cell(state: tauri::State<'_, AppState>, code: String) -> Result<EvalResponse, String> {
+async fn reset_vm(state: tauri::State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let vms = Arc::clone(&state.vms);
+    tokio::task::spawn_blocking(move || {
+        let mut vms = vms.lock().map_err(|e| e.to_string())?;
+        if let Some(vm) = vms.get_mut(&session_id) {
+            *vm = VM::new();
+        } else {
+            return Err(format!("Session {} not found", session_id));
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn eval_cell(state: tauri::State<'_, AppState>, session_id: String, code: String) -> Result<EvalResponse, String> {
     // Clone the Arc so we can move it into the blocking task
-    let vm = Arc::clone(&state.vm);
+    let vms = Arc::clone(&state.vms);
 
     // Run the VM execution on a blocking thread pool to avoid nested runtime issues
     tokio::task::spawn_blocking(move || {
-        let mut vm = vm.lock().map_err(|e| e.to_string())?;
+        let start_time = std::time::Instant::now();
+
+        let mut vms = vms.lock().map_err(|e| e.to_string())?;
+        let vm = vms.get_mut(&session_id)
+            .ok_or_else(|| format!("Session {} not found", session_id))?;
 
         // Parse source to AST
         let program = parser::parse(&code).map_err(|e| format!("Parse error: {}", e))?;
@@ -180,23 +271,187 @@ async fn eval_cell(state: tauri::State<'_, AppState>, code: String) -> Result<Ev
             raw_response: debug.raw_response,
         });
 
+        let execution_time_ms = start_time.elapsed().as_millis() as u64;
+
         // Convert result to structured CellOutput
         Ok(EvalResponse {
             output: CellOutput::from_value(result),
             llm_debug,
+            execution_time_ms,
         })
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
+/// Save a notebook to a file (.lat.nb format)
+#[tauri::command]
+async fn save_notebook(path: String, notebook: Notebook) -> Result<(), String> {
+    let notebook = Notebook {
+        modified_at: Utc::now().to_rfc3339(),
+        ..notebook
+    };
+
+    let json = serde_json::to_string_pretty(&notebook)
+        .map_err(|e| format!("Serialization error: {}", e))?;
+
+    fs::write(&path, json)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(())
+}
+
+/// Load a notebook from a file (.lat.nb format)
+#[tauri::command]
+async fn load_notebook(path: String) -> Result<Notebook, String> {
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let notebook: Notebook = serde_json::from_str(&contents)
+        .map_err(|e| format!("Invalid notebook format: {}", e))?;
+
+    Ok(notebook)
+}
+
+/// Export notebook cells as plain .lat source code
+/// Descriptions become block comments, cells are separated by blank lines
+#[tauri::command]
+async fn export_lat(path: String, cells: Vec<NotebookCell>) -> Result<(), String> {
+    let mut output = String::new();
+
+    for (i, cell) in cells.iter().enumerate() {
+        if i > 0 {
+            output.push_str("\n\n");
+        }
+
+        // Add description as block comment if present
+        if !cell.description.is_empty() {
+            output.push_str("/* ");
+            output.push_str(&cell.description);
+            output.push_str(" */\n");
+        }
+
+        // Add code
+        output.push_str(&cell.code);
+    }
+
+    fs::write(&path, output)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(())
+}
+
+/// Import a .lat file as notebook cells
+/// Parses block comments as descriptions, splits at blank lines after comments
+#[tauri::command]
+async fn import_lat(path: String) -> Result<Vec<NotebookCell>, String> {
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let mut cells = Vec::new();
+    let mut current_description = String::new();
+    let mut current_code = String::new();
+    let mut in_block_comment = false;
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+
+        // Handle block comment start
+        if let Some(after_start) = trimmed.strip_prefix("/*") {
+            in_block_comment = true;
+            // Check if comment ends on same line
+            if let Some(end_idx) = after_start.find("*/") {
+                let comment_content = after_start[..end_idx].trim();
+                current_description = comment_content.to_string();
+                in_block_comment = false;
+            } else {
+                current_description = after_start.trim().to_string();
+            }
+            continue;
+        }
+
+        // Handle inside block comment
+        if in_block_comment {
+            if let Some(end_idx) = trimmed.find("*/") {
+                let before_end = &trimmed[..end_idx].trim();
+                if !before_end.is_empty() {
+                    if !current_description.is_empty() {
+                        current_description.push('\n');
+                    }
+                    current_description.push_str(before_end);
+                }
+                in_block_comment = false;
+            } else {
+                if !current_description.is_empty() {
+                    current_description.push('\n');
+                }
+                current_description.push_str(trimmed);
+            }
+            continue;
+        }
+
+        // Regular code line
+        if !current_code.is_empty() {
+            current_code.push('\n');
+        }
+        current_code.push_str(line);
+    }
+
+    // Add the last cell if there's any code
+    let code = current_code.trim().to_string();
+    if !code.is_empty() || !current_description.is_empty() {
+        cells.push(NotebookCell {
+            id: generate_id(),
+            code,
+            description: current_description,
+            output: None,
+            llm_debug: None,
+            ui_state: None,
+        });
+    }
+
+    // If no cells were created, create one empty cell
+    if cells.is_empty() {
+        cells.push(NotebookCell {
+            id: generate_id(),
+            code: String::new(),
+            description: String::new(),
+            output: None,
+            llm_debug: None,
+            ui_state: None,
+        });
+    }
+
+    Ok(cells)
+}
+
+/// Generate a simple random ID for cells
+fn generate_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{:x}", now)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
-            vm: Arc::new(Mutex::new(VM::new())),
+            vms: Arc::new(Mutex::new(HashMap::new())),
         })
-        .invoke_handler(tauri::generate_handler![eval_cell, reset_vm])
+        .invoke_handler(tauri::generate_handler![
+            create_session,
+            destroy_session,
+            eval_cell,
+            reset_vm,
+            save_notebook,
+            load_notebook,
+            export_lat,
+            import_lat
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
