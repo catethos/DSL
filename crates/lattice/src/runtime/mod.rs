@@ -427,6 +427,167 @@ impl LatticeRuntime {
         self.known_functions.contains(&name.to_string())
             || self.known_llm_functions.contains(&name.to_string())
     }
+
+    /// Call a function by name with the given arguments.
+    ///
+    /// This is the primary FFI entry point for host languages to invoke
+    /// Lattice functions. It looks up the function by name, validates
+    /// argument count, executes the function, and returns the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to call
+    /// * `args` - The arguments to pass to the function as LatticeValues
+    ///
+    /// # Returns
+    ///
+    /// Returns the function's return value as a LatticeValue, or an error
+    /// if the function doesn't exist, argument count is wrong, or execution fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Define a function
+    /// runtime.eval(r#"
+    ///     def add(a: Int, b: Int) -> Int {
+    ///         a + b
+    ///     }
+    /// "#)?;
+    ///
+    /// // Call it
+    /// let result = runtime.call("add", vec![
+    ///     LatticeValue::Int(3),
+    ///     LatticeValue::Int(4),
+    /// ])?;
+    /// assert_eq!(result, LatticeValue::Int(7));
+    /// ```
+    pub fn call(&mut self, name: &str, args: Vec<LatticeValue>) -> Result<LatticeValue, LatticeError> {
+        // Check if it's a regular function
+        if let Some(func) = self.vm.get_function(name) {
+            let func = func.clone();
+            let arg_count = args.len();
+
+            // Push arguments onto the VM stack
+            for arg in args {
+                self.vm.push(arg.to_internal())?;
+            }
+
+            // Run the function with args already on stack
+            let result = self.vm.run_function_with_args(func, arg_count)?;
+
+            // Convert result to LatticeValue
+            return LatticeValue::from_internal(&result).map_err(|e| {
+                LatticeError::Runtime(format!("Failed to convert result: {}", e))
+            });
+        }
+
+        // Check if it's an LLM function
+        if self.known_llm_functions.contains(&name.to_string()) {
+            // For LLM functions, we need to generate code that calls the function
+            // and evaluate it
+            let arg_strs: Vec<String> = args.iter().map(|a| format_value_as_code(a)).collect();
+            let call_code = format!("{}({})", name, arg_strs.join(", "));
+            return self.eval(&call_code);
+        }
+
+        Err(LatticeError::Runtime(format!("Undefined function: {}", name)))
+    }
+
+    /// Call a function by name with named arguments.
+    ///
+    /// This is an alternative entry point that allows passing arguments by name,
+    /// which can be more convenient when the function has many parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the function to call
+    /// * `args` - A map of parameter names to values
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Define a function
+    /// runtime.eval(r#"
+    ///     def greet(name: String, greeting: String) -> String {
+    ///         greeting + ", " + name + "!"
+    ///     }
+    /// "#)?;
+    ///
+    /// // Call with named arguments
+    /// let result = runtime.call_with_named_args("greet", vec![
+    ///     ("greeting".to_string(), LatticeValue::String("Hello".to_string())),
+    ///     ("name".to_string(), LatticeValue::String("World".to_string())),
+    /// ])?;
+    /// ```
+    pub fn call_with_named_args(
+        &mut self,
+        name: &str,
+        args: Vec<(String, LatticeValue)>,
+    ) -> Result<LatticeValue, LatticeError> {
+        // Get the function signature to determine parameter order
+        let sig = self.get_function_signature(name).ok_or_else(|| {
+            LatticeError::Runtime(format!("Undefined function: {}", name))
+        })?;
+
+        // Validate we have the right number of arguments
+        if args.len() != sig.arity() {
+            return Err(LatticeError::Runtime(format!(
+                "Function '{}' expects {} arguments, got {}",
+                name, sig.arity(), args.len()
+            )));
+        }
+
+        // Create a map for quick lookup
+        let arg_map: std::collections::HashMap<_, _> = args.into_iter().collect();
+
+        // Build positional args in the order the function expects
+        let mut positional_args = Vec::with_capacity(sig.arity());
+        for param in &sig.params {
+            let value = arg_map.get(&param.name).ok_or_else(|| {
+                LatticeError::Runtime(format!(
+                    "Missing argument '{}' for function '{}'",
+                    param.name, name
+                ))
+            })?;
+            positional_args.push(value.clone());
+        }
+
+        // Now call with positional args
+        self.call(name, positional_args)
+    }
+}
+
+/// Format a LatticeValue as Lattice source code for evaluation.
+///
+/// This is used internally to generate code for calling LLM functions.
+fn format_value_as_code(value: &LatticeValue) -> String {
+    match value {
+        LatticeValue::Null => "null".to_string(),
+        LatticeValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+        LatticeValue::Int(i) => i.to_string(),
+        LatticeValue::Float(f) => {
+            // Ensure float has decimal point
+            let s = f.to_string();
+            if s.contains('.') || s.contains('e') || s.contains('E') {
+                s
+            } else {
+                format!("{}.0", s)
+            }
+        }
+        LatticeValue::String(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+        LatticeValue::Path(p) => format!("path(\"{}\")", p.replace('\\', "\\\\").replace('"', "\\\"")),
+        LatticeValue::List(items) => {
+            let inner: Vec<String> = items.iter().map(format_value_as_code).collect();
+            format!("[{}]", inner.join(", "))
+        }
+        LatticeValue::Map(pairs) => {
+            let inner: Vec<String> = pairs
+                .iter()
+                .map(|(k, v)| format!("\"{}\": {}", k, format_value_as_code(v)))
+                .collect();
+            format!("{{{}}}", inner.join(", "))
+        }
+    }
 }
 
 /// Thread-safe wrapper for LatticeRuntime.
@@ -543,6 +704,30 @@ impl SharedRuntime {
             .lock()
             .map_err(|e| LatticeError::Runtime(format!("Lock poisoned: {}", e)))?
             .has_function(name))
+    }
+
+    /// Call a function by name with the given arguments.
+    ///
+    /// Acquires a lock on the runtime for the duration of the call.
+    pub fn call(&self, name: &str, args: Vec<LatticeValue>) -> Result<LatticeValue, LatticeError> {
+        self.0
+            .lock()
+            .map_err(|e| LatticeError::Runtime(format!("Lock poisoned: {}", e)))?
+            .call(name, args)
+    }
+
+    /// Call a function by name with named arguments.
+    ///
+    /// Acquires a lock on the runtime for the duration of the call.
+    pub fn call_with_named_args(
+        &self,
+        name: &str,
+        args: Vec<(String, LatticeValue)>,
+    ) -> Result<LatticeValue, LatticeError> {
+        self.0
+            .lock()
+            .map_err(|e| LatticeError::Runtime(format!("Lock poisoned: {}", e)))?
+            .call_with_named_args(name, args)
     }
 }
 
@@ -993,5 +1178,344 @@ mod tests {
         );
 
         assert_eq!(sig.to_string(), "fn calculate(x: Int, y: Int) -> Int");
+    }
+
+    // ============================================================
+    // Tests for runtime.call()
+    // ============================================================
+
+    #[test]
+    fn test_call_simple_function() {
+        let mut runtime = create_test_runtime();
+
+        // Define a simple function
+        runtime
+            .eval(
+                r#"
+            def add(a: Int, b: Int) -> Int {
+                a + b
+            }
+        "#,
+            )
+            .unwrap();
+
+        // Call it
+        let result = runtime
+            .call("add", vec![LatticeValue::Int(3), LatticeValue::Int(4)])
+            .unwrap();
+        assert_eq!(result, LatticeValue::Int(7));
+    }
+
+    #[test]
+    fn test_call_no_args() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def get_answer() -> Int {
+                42
+            }
+        "#,
+            )
+            .unwrap();
+
+        let result = runtime.call("get_answer", vec![]).unwrap();
+        assert_eq!(result, LatticeValue::Int(42));
+    }
+
+    #[test]
+    fn test_call_with_string() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def greet(name: String) -> String {
+                "Hello, " + name + "!"
+            }
+        "#,
+            )
+            .unwrap();
+
+        let result = runtime
+            .call("greet", vec![LatticeValue::String("World".to_string())])
+            .unwrap();
+        assert_eq!(result, LatticeValue::String("Hello, World!".to_string()));
+    }
+
+    #[test]
+    fn test_call_with_list() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def sum_list(nums: [Int]) -> Int {
+                let total = 0
+                for n in nums {
+                    total = total + n
+                }
+                total
+            }
+        "#,
+            )
+            .unwrap();
+
+        let result = runtime
+            .call(
+                "sum_list",
+                vec![LatticeValue::List(vec![
+                    LatticeValue::Int(1),
+                    LatticeValue::Int(2),
+                    LatticeValue::Int(3),
+                ])],
+            )
+            .unwrap();
+        assert_eq!(result, LatticeValue::Int(6));
+    }
+
+    #[test]
+    fn test_call_wrong_arity() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def add(a: Int, b: Int) -> Int {
+                a + b
+            }
+        "#,
+            )
+            .unwrap();
+
+        // Too few arguments
+        let result = runtime.call("add", vec![LatticeValue::Int(1)]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("expects 2 arguments, got 1"));
+
+        // Too many arguments
+        let result = runtime.call(
+            "add",
+            vec![
+                LatticeValue::Int(1),
+                LatticeValue::Int(2),
+                LatticeValue::Int(3),
+            ],
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("expects 2 arguments, got 3"));
+    }
+
+    #[test]
+    fn test_call_undefined_function() {
+        let mut runtime = create_test_runtime();
+
+        let result = runtime.call("nonexistent", vec![]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Undefined function"));
+    }
+
+    #[test]
+    fn test_call_multiple_times() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def multiply(a: Int, b: Int) -> Int {
+                a * b
+            }
+        "#,
+            )
+            .unwrap();
+
+        // Call multiple times
+        let r1 = runtime
+            .call("multiply", vec![LatticeValue::Int(2), LatticeValue::Int(3)])
+            .unwrap();
+        let r2 = runtime
+            .call("multiply", vec![LatticeValue::Int(4), LatticeValue::Int(5)])
+            .unwrap();
+        let r3 = runtime
+            .call("multiply", vec![LatticeValue::Int(6), LatticeValue::Int(7)])
+            .unwrap();
+
+        assert_eq!(r1, LatticeValue::Int(6));
+        assert_eq!(r2, LatticeValue::Int(20));
+        assert_eq!(r3, LatticeValue::Int(42));
+    }
+
+    #[test]
+    fn test_call_with_global_state() {
+        let mut runtime = create_test_runtime();
+
+        // Set a global variable
+        runtime.set_global("multiplier", LatticeValue::Int(10));
+
+        runtime
+            .eval(
+                r#"
+            def scale(x: Int) -> Int {
+                x * multiplier
+            }
+        "#,
+            )
+            .unwrap();
+
+        let result = runtime
+            .call("scale", vec![LatticeValue::Int(5)])
+            .unwrap();
+        assert_eq!(result, LatticeValue::Int(50));
+    }
+
+    #[test]
+    fn test_call_function_calling_function() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def double(x: Int) -> Int {
+                x * 2
+            }
+
+            def quadruple(x: Int) -> Int {
+                double(double(x))
+            }
+        "#,
+            )
+            .unwrap();
+
+        let result = runtime
+            .call("quadruple", vec![LatticeValue::Int(5)])
+            .unwrap();
+        assert_eq!(result, LatticeValue::Int(20));
+    }
+
+    #[test]
+    fn test_call_with_named_args() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def greet(greeting: String, name: String) -> String {
+                greeting + ", " + name + "!"
+            }
+        "#,
+            )
+            .unwrap();
+
+        // Note: Currently, compiled functions only store arity, not parameter names.
+        // The signature generates placeholder names (arg0, arg1), so named args
+        // must use those placeholder names. This is a known limitation.
+        let result = runtime
+            .call_with_named_args(
+                "greet",
+                vec![
+                    ("arg0".to_string(), LatticeValue::String("Hello".to_string())),
+                    ("arg1".to_string(), LatticeValue::String("World".to_string())),
+                ],
+            )
+            .unwrap();
+        assert_eq!(result, LatticeValue::String("Hello, World!".to_string()));
+    }
+
+    #[test]
+    fn test_call_with_named_args_missing() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def greet(greeting: String, name: String) -> String {
+                greeting + ", " + name
+            }
+        "#,
+            )
+            .unwrap();
+
+        // Missing argument (using placeholder names since CompiledFunction doesn't store real names)
+        let result = runtime.call_with_named_args(
+            "greet",
+            vec![("arg0".to_string(), LatticeValue::String("Hello".to_string()))],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_call_returns_list() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def get_nums() -> [Int] {
+                [1, 2, 3]
+            }
+        "#,
+            )
+            .unwrap();
+
+        let result = runtime
+            .call("get_nums", vec![])
+            .unwrap();
+        assert_eq!(
+            result,
+            LatticeValue::List(vec![
+                LatticeValue::Int(1),
+                LatticeValue::Int(2),
+                LatticeValue::Int(3),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_call_shared_runtime() {
+        let runtime = create_test_runtime();
+        let shared = SharedRuntime::new(runtime);
+
+        // Define function
+        shared.eval(r#"def square(x: Int) -> Int { x * x }"#).unwrap();
+
+        // Call from shared runtime
+        let result = shared
+            .call("square", vec![LatticeValue::Int(5)])
+            .unwrap();
+        assert_eq!(result, LatticeValue::Int(25));
+    }
+
+    #[test]
+    fn test_format_value_as_code() {
+        assert_eq!(format_value_as_code(&LatticeValue::Null), "null");
+        assert_eq!(format_value_as_code(&LatticeValue::Bool(true)), "true");
+        assert_eq!(format_value_as_code(&LatticeValue::Bool(false)), "false");
+        assert_eq!(format_value_as_code(&LatticeValue::Int(42)), "42");
+        assert_eq!(format_value_as_code(&LatticeValue::Float(3.14)), "3.14");
+        assert_eq!(
+            format_value_as_code(&LatticeValue::String("hello".to_string())),
+            "\"hello\""
+        );
+        assert_eq!(
+            format_value_as_code(&LatticeValue::String("say \"hi\"".to_string())),
+            "\"say \\\"hi\\\"\""
+        );
+        assert_eq!(
+            format_value_as_code(&LatticeValue::List(vec![
+                LatticeValue::Int(1),
+                LatticeValue::Int(2),
+            ])),
+            "[1, 2]"
+        );
+        assert_eq!(
+            format_value_as_code(&LatticeValue::Map(vec![
+                ("a".to_string(), LatticeValue::Int(1)),
+            ])),
+            "{\"a\": 1}"
+        );
     }
 }

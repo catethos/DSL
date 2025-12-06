@@ -516,6 +516,36 @@ impl VM {
         self.execute()
     }
 
+    /// Run a compiled function with arguments already pushed to the stack.
+    ///
+    /// This is used for FFI calls where the caller has already pushed
+    /// the arguments to the stack. The base_pointer is set to point
+    /// to the first argument.
+    ///
+    /// # Arguments
+    ///
+    /// * `function` - The function to call
+    /// * `arg_count` - The number of arguments already on the stack
+    pub fn run_function_with_args(
+        &mut self,
+        function: CompiledFunction,
+        arg_count: usize,
+    ) -> Result<Value> {
+        // Validate arity
+        if function.arity != arg_count {
+            return Err(LatticeError::Runtime(format!(
+                "Function '{}' expects {} arguments, got {}",
+                function.name, function.arity, arg_count
+            )));
+        }
+
+        // Set base_pointer to point to the first argument
+        let base_pointer = self.stack.len() - arg_count;
+        let frame = CallFrame::new(function, base_pointer);
+        self.push_frame(frame)?;
+        self.execute()
+    }
+
     /// The main fetch-decode-execute loop
     fn execute(&mut self) -> Result<Value> {
         loop {
