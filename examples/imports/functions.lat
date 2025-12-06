@@ -1,0 +1,13 @@
+// Functions that use the imported types
+import "types.lat"
+
+def greet(person: Person) -> Greeting {
+    Greeting {
+        message: "Hello",
+        recipient: person.name
+    }
+}
+
+def format_greeting(g: Greeting) -> String {
+    g.message + ", " + g.recipient + "!"
+}

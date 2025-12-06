@@ -39,11 +39,12 @@ mod signature;
 mod value;
 pub mod providers;
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::compiler::Compiler;
 use crate::error::LatticeError;
-use crate::syntax::parser;
+use crate::syntax::{imports, parser};
 use crate::vm::VM;
 
 pub use builder::{BuiltRuntime, RuntimeBuilder, RuntimeConfig};
@@ -206,6 +207,47 @@ impl LatticeRuntime {
         LatticeValue::from_internal(&internal_result).map_err(|e| {
             LatticeError::Runtime(format!("Failed to convert result: {}", e))
         })
+    }
+
+    /// Evaluate a file with import resolution.
+    ///
+    /// This reads the file, resolves any import statements by including the
+    /// contents of imported files, then evaluates the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the file to evaluate
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Given files:
+    /// // types.lat: type Person { name: String }
+    /// // main.lat:  import "types.lat"
+    /// //            Person { name: "Alice" }
+    ///
+    /// let result = runtime.eval_file(Path::new("main.lat"))?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The file cannot be read
+    /// - An imported file cannot be found
+    /// - Circular imports are detected
+    /// - Parsing or execution fails
+    pub fn eval_file(&mut self, path: &Path) -> Result<LatticeValue, LatticeError> {
+        // Read the source file
+        let source = std::fs::read_to_string(path).map_err(|e| {
+            LatticeError::Runtime(format!("Cannot read file '{}': {}", path.display(), e))
+        })?;
+
+        // Resolve imports relative to the file's directory
+        let base_path = path.parent().unwrap_or(Path::new("."));
+        let resolved_source = imports::resolve_imports(&source, base_path)?;
+
+        // Evaluate the resolved source
+        self.eval(&resolved_source)
     }
 
     /// Evaluate source code with pre-bound variables.

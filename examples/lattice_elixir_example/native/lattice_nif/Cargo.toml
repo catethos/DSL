@@ -1,0 +1,20 @@
+[package]
+name = "lattice_nif"
+version = "0.1.0"
+edition = "2021"
+description = "Rustler NIF bindings for embedding Lattice in Elixir"
+
+# Empty workspace to exclude from parent workspace
+[workspace]
+
+[lib]
+name = "lattice_nif"
+crate-type = ["cdylib"]
+
+[dependencies]
+lattice = { path = "../../../../crates/lattice", default-features = false }
+rustler = "0.34"
+
+[features]
+default = []
+sql = ["lattice/sql"]

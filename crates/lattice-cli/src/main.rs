@@ -113,18 +113,14 @@ fn create_runtime() -> Result<LatticeRuntime> {
 fn run_file(file_path: &str, verbose: bool, format: OutputFormat) -> Result<()> {
     let path = Path::new(file_path);
 
-    // Read source file
-    let source = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read file: {}", file_path))?;
-
     if verbose {
+        // Read source file for display
+        let source = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read file: {}", file_path))?;
         eprintln!("=== Source ===");
         eprintln!("{}", source);
         eprintln!();
-    }
 
-    // For verbose mode, we still need to show parse/compile info
-    if verbose {
         let program = parser::parse(&source)
             .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
         eprintln!("=== Parsed {} items ===", program.items.len());
@@ -135,9 +131,9 @@ fn run_file(file_path: &str, verbose: bool, format: OutputFormat) -> Result<()> 
         print_compile_info(&compile_result);
     }
 
-    // Create runtime with default providers and evaluate
+    // Create runtime with default providers and evaluate file (with import resolution)
     let mut runtime = create_runtime()?;
-    let result = runtime.eval(&source)
+    let result = runtime.eval_file(path)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Print result (unless null)

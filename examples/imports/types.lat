@@ -1,0 +1,10 @@
+// Shared type definitions
+type Person {
+    name: String,
+    age: Int
+}
+
+type Greeting {
+    message: String,
+    recipient: String
+}

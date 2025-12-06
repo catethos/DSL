@@ -9,8 +9,11 @@
 /// A program is a sequence of items (definitions and statements)
 program = { SOI ~ item* ~ EOI }
 
-/// An item is either a definition or a statement
-item = { type_def | enum_def | llm_config_decl | function_def | statement }
+/// An item is either an import, definition, or statement
+item = { import_stmt | type_def | enum_def | llm_config_decl | function_def | statement }
+
+/// Import statement: import "path/to/file.lat"
+import_stmt = { "import" ~ string_literal }
 
 // ============================================================================
 // LLM Config Declarations
@@ -485,7 +488,7 @@ keyword = {
     "type" | "enum" | "def" | "let" | "if" | "else" | "while" | "for" | "in"
     | "return" | "match" | "true" | "false" | "null" | "parallel" | "parallel_map"
     | "map_column" | "map_row" | "explode" | "SQL" | "Ok" | "Err" | "String" | "Int" | "Float" | "Bool" | "Null" | "Path"
-    | "Map" | "Result" | "llm_config" | "use"
+    | "Map" | "Result" | "llm_config" | "use" | "import"
 }
 
 // ============================================================================

@@ -1,0 +1,7 @@
+// Main program that uses imports
+import "types.lat"
+import "functions.lat"
+
+let alice = Person { name: "Alice", age: 30 }
+let greeting = greet(alice)
+format_greeting(greeting)
