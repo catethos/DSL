@@ -671,6 +671,89 @@ mod tests {
     }
 
     #[test]
+    fn test_runtime_type_isolation() {
+        // Create two separate runtimes
+        let mut rt1 = create_test_runtime();
+        let mut rt2 = create_test_runtime();
+
+        // Define type in rt1
+        rt1.eval("type Foo { x: Int }").unwrap();
+
+        // Verify rt1 has the type registered
+        assert!(rt1.get_type("Foo").is_some(), "rt1 should have Foo type");
+
+        // rt2 should NOT have the type in its registry
+        assert!(rt2.get_type("Foo").is_none(), "rt2 should not see Foo type defined in rt1");
+
+        // Define a different type with same name in rt2
+        rt2.eval("type Bar { y: String }").unwrap();
+
+        // Each runtime should have only its own type
+        assert!(rt1.get_type("Foo").is_some());
+        assert!(rt1.get_type("Bar").is_none());
+        assert!(rt2.get_type("Bar").is_some());
+        assert!(rt2.get_type("Foo").is_none());
+    }
+
+    #[test]
+    fn test_runtime_global_isolation() {
+        // Create two separate runtimes
+        let mut rt1 = create_test_runtime();
+        let rt2 = create_test_runtime();
+
+        // Define variable in rt1
+        rt1.eval("let shared = 42").unwrap();
+
+        // rt2 should NOT see shared
+        assert!(rt2.get_global("shared").is_none());
+
+        // Verify rt1 still has it
+        assert_eq!(rt1.get_global("shared"), Some(LatticeValue::Int(42)));
+    }
+
+    #[test]
+    fn test_runtime_function_isolation() {
+        // Create two separate runtimes
+        let mut rt1 = create_test_runtime();
+        let mut rt2 = create_test_runtime();
+
+        // Define function in rt1
+        rt1.eval("def add_ten(x: Int) -> Int { x + 10 }").unwrap();
+
+        // rt2 should NOT see add_ten
+        let result = rt2.eval("add_ten(5)");
+        assert!(result.is_err(), "rt2 should not see add_ten defined in rt1");
+
+        // rt1 should still work
+        let val = rt1.eval("add_ten(5)").unwrap();
+        assert_eq!(val, LatticeValue::Int(15));
+    }
+
+    #[test]
+    fn test_runtime_enum_isolation() {
+        let mut rt1 = create_test_runtime();
+        let mut rt2 = create_test_runtime();
+
+        // Define enum in rt1
+        rt1.eval("enum Status { Active, Inactive }").unwrap();
+
+        // Verify rt1 has the enum registered
+        assert!(rt1.get_type("Status").is_some(), "rt1 should have Status enum");
+
+        // rt2 should NOT have the enum in its registry
+        assert!(rt2.get_type("Status").is_none(), "rt2 should not see Status defined in rt1");
+
+        // Define a different enum in rt2
+        rt2.eval("enum Priority { High, Low }").unwrap();
+
+        // Each runtime should have only its own enum
+        assert!(rt1.get_type("Status").is_some());
+        assert!(rt1.get_type("Priority").is_none());
+        assert!(rt2.get_type("Priority").is_some());
+        assert!(rt2.get_type("Status").is_none());
+    }
+
+    #[test]
     fn test_shared_runtime() {
         let runtime = create_test_runtime();
         let shared = SharedRuntime::new(runtime);
