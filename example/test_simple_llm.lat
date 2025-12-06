@@ -1,0 +1,14 @@
+def GenerateProductDescription(name: String, category: String, price: Int) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.7
+    prompt: f"""Write a short, compelling product description:
+
+    Product: {name}
+    Category: {category}
+    Price: {price}
+    """
+}
+
+GenerateProductDescription("Test", "Cat", 100)

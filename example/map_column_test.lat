@@ -1,0 +1,45 @@
+// Test map_column
+
+// Create a table-like structure (list of maps)
+let data = [
+    {"city": "New York", "population": 8000000},
+    {"city": "Los Angeles", "population": 4000000},
+    {"city": "Chicago", "population": 2700000}
+]
+
+print("Original data:")
+for row in data {
+    print(row)
+}
+
+// Use map_column with inline expression
+let enriched = map_column(data, "city", "formatted", |city| "City: " + city)
+
+print("")
+print("Enriched data with 'formatted' column:")
+for row in enriched {
+    print(row)
+}
+
+// Test with pipe operator - using inline multiplication
+let with_doubled = data |> map_column("population", "doubled_pop", |p| p * 2)
+
+print("")
+print("Data with doubled population (using pipe):")
+for row in with_doubled {
+    print(row)
+}
+
+// Chain multiple map_columns with pipe
+let multi = data
+    |> map_column("city", "upper_city", |c| c)
+    |> map_column("population", "pop_str", |p| str(p))
+
+print("")
+print("Multi-column mapping with pipe:")
+for row in multi {
+    print(row)
+}
+
+print("")
+print("map_column tests passed!")

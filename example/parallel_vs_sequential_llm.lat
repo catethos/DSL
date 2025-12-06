@@ -1,0 +1,50 @@
+// Compare parallel vs sequential LLM execution
+//
+// Run with: OPENAI_API_KEY=your_key ./target/release/lat run example/parallel_vs_sequential_llm.lat
+
+def Classify(text: String) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+    prompt: f"Reply with one word - positive, negative, or neutral:\n{text}"
+}
+
+let items = [
+    {"text": "I love this!"},
+    {"text": "This is terrible."},
+    {"text": "It's fine I guess."},
+    {"text": "Amazing product!"},
+    {"text": "Very disappointed."},
+    {"text": "Works as expected."}
+]
+
+print("=== Testing 6 LLM calls ===")
+print("")
+
+// Method 1: Using map_column (PARALLEL via MapColumnLlm opcode)
+print("Method 1: map_column (parallel)")
+let result1 = items |> map_column("text", "sentiment", |t| Classify(t))
+print("Done!")
+for r in result1 {
+    print(r["text"] + " => " + r["sentiment"])
+}
+
+print("")
+
+// Method 2: Using parallel_map (also PARALLEL via ParallelLlmMap opcode)
+print("Method 2: parallel_map on extracted column (parallel)")
+let texts = []
+for item in items {
+    texts = push(texts, item["text"])
+}
+let sentiments = parallel_map(texts, |t| Classify(t))
+print("Done!")
+for i in [0, 1, 2, 3, 4, 5] {
+    print(texts[i] + " => " + sentiments[i])
+}
+
+print("")
+print("Both methods use parallel execution for LLM calls.")
+print("With 6 calls at ~1s each, sequential would take ~6s.")
+print("Parallel should complete in ~1-2s (limited by slowest call).")

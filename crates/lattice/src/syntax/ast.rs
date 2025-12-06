@@ -65,8 +65,46 @@ pub struct Program {
 pub enum Item {
     TypeDef(TypeDef),
     EnumDef(EnumDef),
+    LlmConfigDecl(LlmConfigDecl),
     FunctionDef(FunctionDef),
     Statement(Stmt),
+}
+
+/// OpenRouter provider configuration for routing preferences
+#[derive(Debug, Clone, Default)]
+pub struct ProviderConfig {
+    /// List of provider slugs to try in order (e.g., ["anthropic", "openai"])
+    pub order: Option<Vec<String>>,
+    /// Only allow these providers
+    pub only: Option<Vec<String>>,
+    /// Skip these providers
+    pub ignore: Option<Vec<String>>,
+    /// Whether backup providers activate when primary unavailable (default: true)
+    pub allow_fallbacks: Option<bool>,
+    /// Route only to providers supporting all request parameters
+    pub require_parameters: Option<bool>,
+    /// Filter by data retention policies: "allow" or "deny"
+    pub data_collection: Option<String>,
+    /// Restrict routing to only Zero Data Retention endpoints
+    pub zdr: Option<bool>,
+    /// Prioritize by "price", "throughput", or "latency"
+    pub sort: Option<String>,
+    /// Filter by quantization levels (int4, int8, fp8, etc.)
+    pub quantizations: Option<Vec<String>>,
+}
+
+/// An LLM config declaration (reusable config block)
+#[derive(Debug, Clone)]
+pub struct LlmConfigDecl {
+    pub name: Spanned<String>,
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+    pub api_key_env: Option<String>,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<usize>,
+    /// OpenRouter provider routing configuration
+    pub provider: Option<ProviderConfig>,
+    pub span: Span,
 }
 
 // ============================================================================
@@ -163,18 +201,22 @@ pub struct ParamDef {
 pub enum FunctionBody {
     /// Regular function with statements/expression
     Block(Block),
-    /// LLM function with configuration
-    LlmConfig(LlmConfig),
+    /// LLM function with configuration (boxed to reduce enum size)
+    LlmConfig(Box<LlmConfig>),
 }
 
 /// LLM function configuration
 #[derive(Debug, Clone)]
 pub struct LlmConfig {
+    /// Reference to an llm_config declaration (use: config_name)
+    pub use_config: Option<String>,
     pub base_url: Option<String>,
     pub model: Option<String>,
     pub api_key_env: Option<String>,
     pub temperature: Option<f64>,
     pub max_tokens: Option<usize>,
+    /// OpenRouter provider routing configuration
+    pub provider: Option<ProviderConfig>,
     /// Prompt expression - can be a string literal, raw string, or f-string
     pub prompt: Expr,
     pub span: Span,
@@ -331,6 +373,26 @@ pub enum ExprKind {
         collection: Box<Expr>,
         mapper: Box<Expr>,
     },
+    /// Map column: map_column(table, "input_col", "output_col", |val| expr)
+    MapColumn {
+        table: Box<Expr>,
+        input_col: Box<Expr>,
+        output_col: Box<Expr>,
+        mapper: Box<Expr>,
+    },
+    /// Map row: map_row(table, "output_col", |row| expr) - lambda receives entire row
+    MapRow {
+        table: Box<Expr>,
+        output_col: Box<Expr>,
+        mapper: Box<Expr>,
+    },
+    /// Explode: explode(table, "column") or explode(table, "column", "prefix")
+    /// Expands nested map keys into separate columns
+    Explode {
+        table: Box<Expr>,
+        column: Box<Expr>,
+        prefix: Option<Box<Expr>>,
+    },
     /// SQL query: SQL("query") or SQL<Type>("query")
     Sql {
         ty: Option<TypeAnnotation>,
@@ -342,6 +404,9 @@ pub enum ExprKind {
     Block(Block),
     /// F-string (interpolated string): f"hello {name}"
     FString(Vec<FStringPart>),
+    /// Dollar field access: $field or $["field"]
+    /// Represents an implicit row accessor that becomes a lambda when desugared
+    DollarField(Box<Expr>),
 }
 
 /// Map key (can be string literal or identifier)

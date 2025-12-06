@@ -3,12 +3,17 @@
 //! This module defines the instruction set for the stack-based virtual machine.
 
 use crate::types::{FieldType, Value};
+use serde::Serialize;
+use std::collections::HashMap;
 
 /// Bytecode instructions for the Lattice VM
 ///
 /// The VM is stack-based: most operations pop operands from the stack
 /// and push results back.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// All variants use only Copy types (usize) for zero-cost passing.
+/// String references use indices into the Chunk's string intern table.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OpCode {
     // ========================================================================
     // Stack Operations
@@ -17,6 +22,9 @@ pub enum OpCode {
     Const(usize),
     /// Pop and discard the top of the stack
     Pop,
+    /// Pop N values from below the top of stack, preserving the top value
+    /// Used for cleaning up scope locals while keeping return value
+    PopBelow(usize),
     /// Duplicate the top of the stack
     Dup,
 
@@ -27,10 +35,10 @@ pub enum OpCode {
     GetLocal(usize),
     /// Set a local variable by slot index (pops value from stack)
     SetLocal(usize),
-    /// Get a global variable by name
-    GetGlobal(String),
-    /// Set a global variable by name (pops value from stack)
-    SetGlobal(String),
+    /// Get a global variable by name (index into string intern table)
+    GetGlobal(usize),
+    /// Set a global variable by name (index into string intern table)
+    SetGlobal(usize),
 
     // ========================================================================
     // Arithmetic
@@ -89,10 +97,10 @@ pub enum OpCode {
     // ========================================================================
     /// Call a function with N arguments (args are on stack, function ref on top)
     Call(usize),
-    /// Call a built-in/native function by name with N arguments
-    CallNative(String, usize),
-    /// Call a user-defined function by name with N arguments
-    CallUser(String, usize),
+    /// Call a built-in/native function by name (string index, arg count)
+    CallNative(usize, usize),
+    /// Call a user-defined function by name (string index, arg count)
+    CallUser(usize, usize),
     /// Return from the current function (pops return value from stack)
     Return,
 
@@ -112,28 +120,28 @@ pub enum OpCode {
     // Structs/Objects
     // ========================================================================
     /// Create a struct instance: pop N field values, push struct
-    /// The String is the type name, usize is number of fields
-    MakeStruct(String, usize),
-    /// Get a field from a struct: pop struct, push field value
-    GetField(String),
-    /// Set a field in a struct: pop value and struct, push modified struct
-    SetField(String),
+    /// First usize is type name index, second is number of fields
+    MakeStruct(usize, usize),
+    /// Get a field from a struct: pop struct, push field value (string index)
+    GetField(usize),
+    /// Set a field in a struct: pop value and struct, push modified struct (string index)
+    SetField(usize),
 
     // ========================================================================
     // Async / Special Operations
     // ========================================================================
-    /// Call an LLM function by name
+    /// Call an LLM function by name (string index)
     /// Pops N arguments from the stack (based on function's parameter count)
     /// Pushes Result<Value, LLMError> onto the stack
-    LlmCall(String),
+    LlmCall(usize),
     /// Execute a SQL query via DuckDB
     /// Pops query string from the stack
     /// Pushes List<Map<String, Value>> (rows) onto the stack
     SqlQuery,
-    /// Execute a SQL query with expected return type (index into type registry)
+    /// Execute a SQL query with expected return type (string index for type name)
     /// Pops query string from the stack
     /// Pushes List<T> where T is the specified type
-    SqlQueryTyped(String),
+    SqlQueryTyped(usize),
     /// Begin parallel execution block - pops N async values, executes in parallel
     /// Pushes List of results onto the stack
     Parallel(usize),
@@ -141,6 +149,37 @@ pub enum OpCode {
     /// Pops function reference and collection from stack
     /// Pushes List of mapped results
     ParallelMap,
+    /// Specialized parallel map for LLM functions (compiler optimization)
+    /// Pops collection from stack, calls LLM function on each item in parallel
+    /// String index is the LLM function name
+    /// Pushes List of results onto the stack
+    ParallelLlmMap(usize),
+    /// Map a column: apply a function to each row's input column value,
+    /// adding the result as a new output column
+    /// Pops: mapper function name, output_col, input_col, table
+    /// Pushes: new table with output column added to each row
+    MapColumn,
+    /// Specialized map column for LLM functions (compiler optimization)
+    /// String index is the LLM function name
+    /// Pops: output_col, input_col, table from stack
+    /// Pushes: new table with output column added (LLM results in parallel)
+    MapColumnLlm(usize),
+    /// Map a row: apply a function to each entire row,
+    /// adding the result as a new output column
+    /// Pops: mapper function, output_col, table
+    /// Pushes: new table with output column added to each row
+    MapRow,
+    /// Specialized map row for LLM functions (compiler optimization)
+    /// First usize is the LLM function name string index
+    /// Second usize is the column mappings string index (comma-separated column names)
+    /// The column mappings list the row keys to use for each function parameter, in order
+    /// Pops: output_col, table from stack
+    /// Pushes: new table with output column added (LLM results in parallel)
+    MapRowLlm(usize, usize),
+    /// Explode nested map column into separate columns
+    /// Pops: prefix (or null), column_name, table from stack
+    /// Pushes: new table with nested map keys as separate columns
+    Explode,
     /// Await an async/future value
     /// Pops async value from stack, pushes resolved value
     Await,
@@ -157,7 +196,7 @@ pub enum OpCode {
     Stringify,
 }
 
-/// A chunk of bytecode with its associated constant pool
+/// A chunk of bytecode with its associated constant pool and string intern table
 #[derive(Debug, Clone, Default)]
 pub struct Chunk {
     /// The bytecode instructions
@@ -166,6 +205,11 @@ pub struct Chunk {
     pub constants: Vec<Value>,
     /// Source line numbers for each instruction (for error reporting)
     pub lines: Vec<usize>,
+    /// Interned strings table (for global names, field names, function names, etc.)
+    pub strings: Vec<String>,
+    /// Reverse lookup: string -> index (for deduplication during compilation)
+    #[allow(clippy::type_complexity)]
+    string_indices: HashMap<String, usize>,
 }
 
 impl Chunk {
@@ -183,6 +227,23 @@ impl Chunk {
     pub fn add_constant(&mut self, value: Value) -> usize {
         self.constants.push(value);
         self.constants.len() - 1
+    }
+
+    /// Intern a string and return its index
+    /// If the string already exists, returns the existing index
+    pub fn intern_string(&mut self, s: &str) -> usize {
+        if let Some(&idx) = self.string_indices.get(s) {
+            return idx;
+        }
+        let idx = self.strings.len();
+        self.strings.push(s.to_string());
+        self.string_indices.insert(s.to_string(), idx);
+        idx
+    }
+
+    /// Get a string by index
+    pub fn get_string(&self, idx: usize) -> Option<&str> {
+        self.strings.get(idx).map(|s| s.as_str())
     }
 
     /// Get the current instruction count
@@ -231,6 +292,39 @@ impl CompiledFunction {
     }
 }
 
+/// OpenRouter provider configuration for routing preferences
+/// This is serialized directly to the API request body
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ProviderConfig {
+    /// List of provider slugs to try in order (e.g., ["anthropic", "openai"])
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order: Option<Vec<String>>,
+    /// Only allow these providers
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub only: Option<Vec<String>>,
+    /// Skip these providers
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ignore: Option<Vec<String>>,
+    /// Whether backup providers activate when primary unavailable (default: true)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_fallbacks: Option<bool>,
+    /// Route only to providers supporting all request parameters
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub require_parameters: Option<bool>,
+    /// Filter by data retention policies: "allow" or "deny"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_collection: Option<String>,
+    /// Restrict routing to only Zero Data Retention endpoints
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zdr: Option<bool>,
+    /// Prioritize by "price", "throughput", or "latency"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+    /// Filter by quantization levels (int4, int8, fp8, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantizations: Option<Vec<String>>,
+}
+
 /// A compiled LLM function definition
 ///
 /// LLM functions are defined with special syntax:
@@ -240,6 +334,10 @@ impl CompiledFunction {
 ///   model: "anthropic/claude-3.5-sonnet"
 ///   api_key_env: "OPENROUTER_API_KEY"
 ///   temperature: 0.7
+///   provider: {
+///     order: ["anthropic", "openai"],
+///     allow_fallbacks: false
+///   }
 ///   prompt: """
 ///     Analyze this text: ${text}
 ///   """
@@ -259,8 +357,14 @@ pub struct LlmFunction {
     pub temperature: Option<f64>,
     /// Maximum tokens to generate (optional)
     pub max_tokens: Option<usize>,
-    /// The prompt template with ${variable} interpolation
+    /// OpenRouter provider routing configuration
+    pub provider: Option<ProviderConfig>,
+    /// The prompt template with ${variable} interpolation (legacy, kept for simple templates)
     pub prompt_template: String,
+    /// Compiled bytecode for prompt generation (used when prompt contains complex expressions)
+    /// When present, this is executed to generate the prompt string at runtime.
+    /// The bytecode should leave a single String value on the stack.
+    pub prompt_chunk: Option<Chunk>,
     /// The return type - used for parsing/coercing LLM response
     /// Can be a primitive, Class("MyType"), Enum("MyEnum"), etc.
     pub return_type: FieldType,
@@ -286,7 +390,9 @@ impl LlmFunction {
             api_key_env,
             temperature: None,
             max_tokens: None,
+            provider: None,
             prompt_template,
+            prompt_chunk: None,
             return_type,
             parameters,
         }
@@ -302,6 +408,23 @@ impl LlmFunction {
     pub fn with_max_tokens(mut self, max_tokens: usize) -> Self {
         self.max_tokens = Some(max_tokens);
         self
+    }
+
+    /// Set the provider configuration
+    pub fn with_provider(mut self, provider: ProviderConfig) -> Self {
+        self.provider = Some(provider);
+        self
+    }
+
+    /// Set the prompt chunk (compiled bytecode for dynamic prompt generation)
+    pub fn with_prompt_chunk(mut self, chunk: Chunk) -> Self {
+        self.prompt_chunk = Some(chunk);
+        self
+    }
+
+    /// Check if this function has a compiled prompt chunk
+    pub fn has_prompt_chunk(&self) -> bool {
+        self.prompt_chunk.is_some()
     }
 
     /// Get the number of parameters (arity)
@@ -336,7 +459,7 @@ mod tests {
     fn test_chunk_constants() {
         let mut chunk = Chunk::new();
         let idx1 = chunk.add_constant(Value::Int(42));
-        let idx2 = chunk.add_constant(Value::String("hello".to_string()));
+        let idx2 = chunk.add_constant(Value::string("hello"));
 
         assert_eq!(idx1, 0);
         assert_eq!(idx2, 1);

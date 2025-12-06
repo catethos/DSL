@@ -73,26 +73,26 @@ pub fn duckdb_owned_value_to_value(value: &DuckValue) -> Result<Value> {
             let f = f64::from_str(&d.to_string()).unwrap_or(0.0);
             Ok(Value::Float(f))
         }
-        DuckValue::Text(s) => Ok(Value::String(s.clone())),
+        DuckValue::Text(s) => Ok(Value::string(s.clone())),
         DuckValue::Blob(bytes) => {
             // Convert blob to base64 or hex representation
-            Ok(Value::String(format!("<blob:{} bytes>", bytes.len())))
+            Ok(Value::string(format!("<blob:{} bytes>", bytes.len())))
         }
         DuckValue::Date32(days) => {
             let date = date_from_days(*days);
-            Ok(Value::String(date))
+            Ok(Value::string(date))
         }
         DuckValue::Time64(unit, value) => {
             let time = time_from_value(*unit, *value);
-            Ok(Value::String(time))
+            Ok(Value::string(time))
         }
         DuckValue::Timestamp(unit, value) => {
             let timestamp = timestamp_from_value(*unit, *value);
-            Ok(Value::String(timestamp))
+            Ok(Value::string(timestamp))
         }
         DuckValue::Interval { months, days, nanos } => {
             // ISO 8601 duration format
-            Ok(Value::String(format!(
+            Ok(Value::string(format!(
                 "P{}M{}DT{}N",
                 months, days, nanos
             )))
@@ -100,19 +100,19 @@ pub fn duckdb_owned_value_to_value(value: &DuckValue) -> Result<Value> {
         DuckValue::List(items) => {
             let values: Result<Vec<Value>> = items
                 .iter()
-                .map(|v| duckdb_owned_value_to_value(v))
+                .map(duckdb_owned_value_to_value)
                 .collect();
-            Ok(Value::List(values?))
+            Ok(Value::list(values?))
         }
         DuckValue::Array(items) => {
             let values: Result<Vec<Value>> = items
                 .iter()
-                .map(|v| duckdb_owned_value_to_value(v))
+                .map(duckdb_owned_value_to_value)
                 .collect();
-            Ok(Value::List(values?))
+            Ok(Value::list(values?))
         }
         DuckValue::Enum(variant) => {
-            Ok(Value::String(variant.clone()))
+            Ok(Value::string(variant.clone()))
         }
         DuckValue::Struct(fields) => {
             let mut map = HashMap::new();
@@ -120,7 +120,7 @@ pub fn duckdb_owned_value_to_value(value: &DuckValue) -> Result<Value> {
                 let value = duckdb_owned_value_to_value(val)?;
                 map.insert(key.clone(), value);
             }
-            Ok(Value::Map(map))
+            Ok(Value::map(map))
         }
         DuckValue::Map(entries) => {
             let mut map = HashMap::new();
@@ -135,7 +135,7 @@ pub fn duckdb_owned_value_to_value(value: &DuckValue) -> Result<Value> {
                 let value = duckdb_owned_value_to_value(val)?;
                 map.insert(key_str, value);
             }
-            Ok(Value::Map(map))
+            Ok(Value::map(map))
         }
         DuckValue::Union(inner) => {
             duckdb_owned_value_to_value(inner)
@@ -150,11 +150,11 @@ pub fn value_to_duckdb(value: &Value) -> DuckValue {
         Value::Bool(b) => DuckValue::Boolean(*b),
         Value::Int(i) => DuckValue::BigInt(*i),
         Value::Float(f) => DuckValue::Double(*f),
-        Value::String(s) => DuckValue::Text(s.clone()),
+        Value::String(s) => DuckValue::Text(s.to_string()),
         Value::List(items) => {
             let duck_items: Vec<DuckValue> = items
                 .iter()
-                .map(|v| value_to_duckdb(v))
+                .map(value_to_duckdb)
                 .collect();
             DuckValue::List(duck_items)
         }
@@ -179,7 +179,7 @@ fn date_from_days(days: i32) -> String {
     // Days since 1970-01-01
     // Using a simple calculation instead of chrono dependency
     let epoch_year = 1970;
-    let days_per_year = 365;
+    let _days_per_year = 365;
     let days_per_400_years = 146097; // 400 years including leap years
 
     let mut remaining_days = days as i64;
@@ -322,7 +322,7 @@ impl SqlContext {
             results.push(row_map);
         }
 
-        Ok(Value::List(results))
+        Ok(Value::list(results))
     }
 
     /// Execute a SQL query with parameters
@@ -359,7 +359,7 @@ impl SqlContext {
             results.push(row_map);
         }
 
-        Ok(Value::List(results))
+        Ok(Value::list(results))
     }
 
     /// Get column metadata from a query result
@@ -409,7 +409,7 @@ fn row_to_map(row: &Row, column_names: &[String]) -> Result<Value> {
         map.insert(name.clone(), value);
     }
 
-    Ok(Value::Map(map))
+    Ok(Value::map(map))
 }
 
 #[cfg(test)]
@@ -443,7 +443,7 @@ mod tests {
                 // Check first row
                 if let Value::Map(row1) = &rows[0] {
                     assert!(matches!(row1.get("id"), Some(Value::Int(1))));
-                    assert!(matches!(row1.get("name"), Some(Value::String(s)) if s == "Alice"));
+                    assert!(matches!(row1.get("name"), Some(Value::String(ref s)) if &**s == "Alice"));
                 } else {
                     panic!("Expected Map");
                 }
@@ -451,7 +451,7 @@ mod tests {
                 // Check second row
                 if let Value::Map(row2) = &rows[1] {
                     assert!(matches!(row2.get("id"), Some(Value::Int(2))));
-                    assert!(matches!(row2.get("name"), Some(Value::String(s)) if s == "Bob"));
+                    assert!(matches!(row2.get("name"), Some(Value::String(ref s)) if &**s == "Bob"));
                 } else {
                     panic!("Expected Map");
                 }
@@ -519,7 +519,7 @@ mod tests {
                     assert!(matches!(row.get("int_col"), Some(Value::Int(42))));
                     assert!(matches!(row.get("bigint_col"), Some(Value::Int(9223372036854775807))));
                     assert!(matches!(row.get("bool_col"), Some(Value::Bool(true))));
-                    assert!(matches!(row.get("text_col"), Some(Value::String(s)) if s == "hello"));
+                    assert!(matches!(row.get("text_col"), Some(Value::String(ref s)) if &**s == "hello"));
 
                     // Check float values with tolerance
                     if let Some(Value::Float(f)) = row.get("float_col") {
@@ -569,7 +569,7 @@ mod tests {
                 assert_eq!(rows.len(), 1);
                 if let Value::Map(row) = &rows[0] {
                     if let Some(Value::Map(person)) = row.get("person") {
-                        assert!(matches!(person.get("name"), Some(Value::String(s)) if s == "Alice"));
+                        assert!(matches!(person.get("name"), Some(Value::String(ref s)) if &**s == "Alice"));
                         assert!(matches!(person.get("age"), Some(Value::Int(30))));
                     } else {
                         panic!("Expected Map for person column");
@@ -636,7 +636,7 @@ mod tests {
         }
 
         // Test String
-        let str_val = Value::String("hello".to_string());
+        let str_val = Value::string("hello");
         let duck_str = value_to_duckdb(&str_val);
         assert!(matches!(duck_str, DuckValue::Text(s) if s == "hello"));
 

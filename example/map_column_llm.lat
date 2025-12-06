@@ -1,0 +1,70 @@
+// map_column with LLM Functions (Parallel Execution)
+// ===================================================
+// When map_column detects an LLM function in the lambda, it automatically
+// executes all LLM calls in parallel for better performance.
+
+// Define an LLM function for summarization
+def Summarize(text: String) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.3
+    prompt: f"""Summarize the following text in one sentence:
+
+{text}
+
+Summary:"""
+}
+
+// Define an LLM function for sentiment analysis
+def AnalyzeSentiment(text: String) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+    prompt: f"""Analyze the sentiment of the following text.
+Reply with exactly one word: positive, negative, or neutral.
+
+Text: {text}
+
+Sentiment:"""
+}
+
+// Sample articles to process
+let articles = [
+    {"id": 1, "title": "Tech Boom", "content": "The technology sector saw unprecedented growth this quarter, with major companies reporting record profits and innovative new products launching across the industry."},
+    {"id": 2, "title": "Market Concerns", "content": "Investors are worried about rising inflation and potential interest rate hikes. The uncertainty has led to increased market volatility."},
+    {"id": 3, "title": "Green Energy", "content": "Renewable energy adoption continues to accelerate globally, with solar and wind power becoming increasingly cost-competitive with traditional fossil fuels."}
+]
+
+print("Processing articles with LLM (parallel execution)...")
+print("")
+
+// Use map_column with LLM function - executes in parallel!
+// The compiler detects |text| Summarize(text) pattern and optimizes
+let with_summaries = articles |> map_column("content", "summary", |text| Summarize(text))
+
+print("Articles with summaries:")
+for article in with_summaries {
+    print("---")
+    print("Title: " + article["title"])
+    print("Summary: " + article["summary"])
+}
+
+print("")
+print("Adding sentiment analysis (also parallel)...")
+
+// Chain another LLM operation
+let with_sentiment = with_summaries |> map_column("content", "sentiment", |text| AnalyzeSentiment(text))
+
+print("")
+print("Final results with sentiment:")
+for article in with_sentiment {
+    print("---")
+    print("Title: " + article["title"])
+    print("Sentiment: " + article["sentiment"])
+    print("Summary: " + article["summary"])
+}
+
+print("")
+print("Done! All LLM calls were executed in parallel for better performance.")

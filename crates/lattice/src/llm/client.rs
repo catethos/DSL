@@ -3,6 +3,7 @@
 //! Simplified wrapper around reqwest that handles common LLM API patterns.
 //! Supports OpenAI-compatible APIs.
 
+use crate::vm::bytecode::ProviderConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -15,6 +16,7 @@ pub struct LLMClient {
     pub model: String,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
+    pub provider: Option<ProviderConfig>,
 }
 
 impl LLMClient {
@@ -26,6 +28,7 @@ impl LLMClient {
             model,
             max_tokens: None,
             temperature: None,
+            provider: None,
         }
     }
 
@@ -37,6 +40,7 @@ impl LLMClient {
             model,
             max_tokens: None,
             temperature: None,
+            provider: None,
         }
     }
 
@@ -48,6 +52,7 @@ impl LLMClient {
             model,
             max_tokens: None,
             temperature: None,
+            provider: None,
         }
     }
 
@@ -63,9 +68,22 @@ impl LLMClient {
         self
     }
 
-    /// Call the LLM with a prompt
+    /// Set the provider configuration (for OpenRouter)
+    pub fn with_provider(mut self, provider: ProviderConfig) -> Self {
+        self.provider = Some(provider);
+        self
+    }
+
+    /// Call the LLM with a prompt (creates a new HTTP client per call)
+    /// For better performance with multiple calls, use `call_with_client` with a shared client.
     pub async fn call(&self, prompt: &str) -> Result<String> {
-        // Build the request body (OpenAI format)
+        let client = reqwest::Client::new();
+        self.call_with_client(prompt, &client).await
+    }
+
+    /// Call the LLM with a prompt using a shared HTTP client for connection pooling
+    pub async fn call_with_client(&self, prompt: &str, http_client: &reqwest::Client) -> Result<String> {
+        // Build the request body (OpenAI format, with optional OpenRouter provider field)
         let request_body = ChatCompletionRequest {
             model: self.model.clone(),
             messages: vec![Message {
@@ -74,11 +92,11 @@ impl LLMClient {
             }],
             max_tokens: self.max_tokens,
             temperature: self.temperature,
+            provider: self.provider.clone(),
         };
 
-        // Make the HTTP request
-        let client = reqwest::Client::new();
-        let response = client
+        // Make the HTTP request using the shared client
+        let response = http_client
             .post(format!("{}/chat/completions", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -109,7 +127,7 @@ impl LLMClient {
     }
 }
 
-/// OpenAI Chat Completion Request
+/// OpenAI Chat Completion Request (with optional OpenRouter provider field)
 #[derive(Debug, Serialize)]
 struct ChatCompletionRequest {
     model: String,
@@ -118,6 +136,9 @@ struct ChatCompletionRequest {
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
+    /// OpenRouter provider routing configuration (ignored by non-OpenRouter providers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider: Option<ProviderConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

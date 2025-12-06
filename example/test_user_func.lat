@@ -1,0 +1,49 @@
+// Test map_column with user-defined functions
+
+def format_city(city: String) -> String {
+    "City: " + city
+}
+
+def double(x: Int) -> Int {
+    x * 2
+}
+
+// Nested function calls
+def process(s: String) -> String {
+    format_city(s)
+}
+
+let data = [
+    {"city": "New York", "pop": 8000000},
+    {"city": "Los Angeles", "pop": 4000000},
+    {"city": "Chicago", "pop": 2700000}
+]
+
+print("Original data:")
+for r in data {
+    print(r)
+}
+
+print("")
+print("Test 1: map_column with user-defined function")
+let result1 = map_column(data, "city", "formatted", |c| format_city(c))
+for r in result1 {
+    print(r)
+}
+
+print("")
+print("Test 2: map_column with nested function calls")
+let result2 = map_column(data, "city", "processed", |c| process(c))
+for r in result2 {
+    print(r)
+}
+
+print("")
+print("Test 3: pipe with user function")
+let result3 = data |> map_column("pop", "doubled", |p| double(p))
+for r in result3 {
+    print(r)
+}
+
+print("")
+print("All tests passed!")

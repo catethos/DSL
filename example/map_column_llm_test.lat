@@ -1,0 +1,43 @@
+// Test map_column with real LLM calls - demonstrates parallel execution
+//
+// Run with: OPENAI_API_KEY=your_key ./target/release/lat run example/map_column_llm_test.lat
+// Or use any OpenAI-compatible API (OpenRouter, local LLM, etc.)
+
+// Define an LLM function that classifies sentiment
+def ClassifySentiment(text: String) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+    prompt: f"Classify the sentiment of this text as 'positive', 'negative', or 'neutral'. Reply with just the one word.\n\nText: {text}"
+}
+
+// Test data - 5 items to show parallel speedup
+let reviews = [
+    {"id": 1, "text": "This product is amazing! Best purchase ever!"},
+    {"id": 2, "text": "Terrible quality, broke after one day. Very disappointed."},
+    {"id": 3, "text": "It's okay, nothing special but does the job."},
+    {"id": 4, "text": "Exceeded my expectations, highly recommend!"},
+    {"id": 5, "text": "Worst customer service I've ever experienced."}
+]
+
+print("Original reviews:")
+for r in reviews {
+    print(r)
+}
+
+print("")
+print("Running map_column with LLM (parallel execution)...")
+print("")
+
+// This should run all 5 LLM calls in parallel!
+let enriched = reviews |> map_column("text", "sentiment", |t| ClassifySentiment(t))
+
+print("Results with sentiment:")
+for r in enriched {
+    print(r)
+}
+
+print("")
+print("Done! If this completed in ~1-2 seconds instead of ~5-10 seconds,")
+print("that proves parallel execution is working.")

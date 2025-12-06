@@ -1,0 +1,46 @@
+// Test map_row for multi-column access
+
+// Function that combines two columns
+def combine_city_pop(row: Map<String, String>) -> String {
+    row["city"] + " (pop: " + row["pop"] + ")"
+}
+
+// Alternative: using fields from the row
+def format_entry(row: Map<String, String>) -> String {
+    "City: " + row["city"] + ", Population: " + row["pop"]
+}
+
+let data = [
+    {"city": "New York", "pop": "8000000"},
+    {"city": "Los Angeles", "pop": "4000000"},
+    {"city": "Chicago", "pop": "2700000"}
+]
+
+print("Original data:")
+for r in data {
+    print(r)
+}
+
+print("")
+print("Test 1: map_row with full form")
+let result1 = map_row(data, "combined", |row| combine_city_pop(row))
+for r in result1 {
+    print(r)
+}
+
+print("")
+print("Test 2: map_row with pipe operator")
+let result2 = data |> map_row("formatted", |row| format_entry(row))
+for r in result2 {
+    print(r)
+}
+
+print("")
+print("Test 3: Inline lambda accessing multiple columns")
+let result3 = data |> map_row("info", |r| r["city"] + " has " + r["pop"] + " people")
+for r in result3 {
+    print(r)
+}
+
+print("")
+print("All tests passed!")

@@ -1,0 +1,73 @@
+// Parallel LLM Benchmark
+//
+// This script compares sequential vs parallel LLM calls.
+//
+// Usage:
+//   OPENAI_API_KEY=your_key ./target/release/lat run example/parallel_llm_benchmark.lat
+//
+// For a fair comparison, use a simple task that has consistent latency.
+
+// Define a simple LLM function for benchmarking
+def Classify(text: String) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+    max_tokens: 10
+    prompt: f"""
+        Classify the sentiment of this text as "positive", "negative", or "neutral".
+        Only respond with one word.
+
+        Text: {text}
+    """
+}
+
+// Test data - 10 items for measurable difference
+let texts = [
+    "I love this product, it's amazing!",
+    "This is the worst experience ever.",
+    "The weather is cloudy today.",
+    "Absolutely fantastic service!",
+    "I'm so disappointed with the quality.",
+    "Best purchase I've ever made!",
+    "Complete waste of money.",
+    "It works as expected.",
+    "Exceeded all my expectations!",
+    "Would not recommend to anyone."
+]
+
+print("=== Parallel LLM Benchmark ===")
+print(f"Testing with {len(texts)} items")
+print("")
+
+// --- PARALLEL VERSION ---
+print("Running PARALLEL version...")
+print("(All 10 LLM calls execute concurrently)")
+
+let parallel_results = parallel_map(texts, |t| Classify(t))
+
+print(f"Parallel results: {parallel_results}")
+print("")
+
+// --- SEQUENTIAL VERSION ---
+// Uncomment below to compare with sequential execution:
+//
+// print("Running SEQUENTIAL version...")
+// print("(Each LLM call waits for previous to complete)")
+//
+// let sequential_results = []
+// for text in texts {
+//     let result = Classify(text)
+//     sequential_results = push(sequential_results, result)
+// }
+//
+// print(f"Sequential results: {sequential_results}")
+
+print("")
+print("=== Benchmark Complete ===")
+print("")
+print("To measure timing, run with 'time' command:")
+print("  time ./target/release/lat run example/parallel_llm_benchmark.lat")
+print("")
+print("Expected improvement: ~10x faster with parallel")
+print("(10 parallel calls take ~1 API latency, vs 10x latency sequentially)")

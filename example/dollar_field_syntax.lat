@@ -1,0 +1,178 @@
+// ============================================================================
+// Dollar Field Syntax Examples
+// ============================================================================
+// The $field syntax provides a shorthand for accessing row fields in map_row.
+// Instead of: |row| row["field_name"]
+// You can write: $field_name
+//
+// This makes data transformations much more readable and concise.
+
+// ----------------------------------------------------------------------------
+// Example 1: Basic Field Access
+// ----------------------------------------------------------------------------
+print("=== Example 1: Basic Field Access ===")
+
+let people = [
+    {"first_name": "Alice", "last_name": "Smith", "age": 30},
+    {"first_name": "Bob", "last_name": "Jones", "age": 25},
+    {"first_name": "Carol", "last_name": "Williams", "age": 35}
+]
+
+// Traditional syntax (still works)
+let traditional = people |> map_row("full_name", |row| row["first_name"] + " " + row["last_name"])
+print("Traditional: " + str(traditional[0]["full_name"]))
+
+// New $field shorthand
+let shorthand = people |> map_row("full_name", $first_name + " " + $last_name)
+print("Shorthand:   " + str(shorthand[0]["full_name"]))
+
+// ----------------------------------------------------------------------------
+// Example 2: Arithmetic Operations
+// ----------------------------------------------------------------------------
+print("")
+print("=== Example 2: Arithmetic Operations ===")
+
+let products = [
+    {"name": "Widget", "price": 10.0, "quantity": 5},
+    {"name": "Gadget", "price": 25.0, "quantity": 3},
+    {"name": "Gizmo", "price": 15.0, "quantity": 8}
+]
+
+let with_totals = products |> map_row("total", $price * $quantity)
+for item in with_totals {
+    print(item["name"] + ": $" + str(item["total"]))
+}
+
+// ----------------------------------------------------------------------------
+// Example 3: String Interpolation with F-strings
+// ----------------------------------------------------------------------------
+print("")
+print("=== Example 3: F-String Interpolation ===")
+
+let employees = [
+    {"name": "Alice", "department": "Engineering", "years": 5},
+    {"name": "Bob", "department": "Sales", "years": 3}
+]
+
+let with_bio = employees |> map_row("bio", f"{$name} works in {$department} for {$years} years")
+for emp in with_bio {
+    print(emp["bio"])
+}
+
+// ----------------------------------------------------------------------------
+// Example 4: Conditional Expressions
+// ----------------------------------------------------------------------------
+print("")
+print("=== Example 4: Conditional Expressions ===")
+
+let students = [
+    {"name": "Alice", "score": 92},
+    {"name": "Bob", "score": 78},
+    {"name": "Carol", "score": 65},
+    {"name": "Dan", "score": 88}
+]
+
+let with_grades = students |> map_row("grade",
+    if $score >= 90 { "A" }
+    else if $score >= 80 { "B" }
+    else if $score >= 70 { "C" }
+    else { "D" }
+)
+
+for s in with_grades {
+    print(s["name"] + ": " + str(s["score"]) + " -> " + s["grade"])
+}
+
+// ----------------------------------------------------------------------------
+// Example 5: Function Calls with $field
+// ----------------------------------------------------------------------------
+print("")
+print("=== Example 5: Function Calls ===")
+
+def format_currency(amount: Float) -> String {
+    "$" + str(amount)
+}
+
+def status_text(active: Bool) -> String {
+    if active { "[active]" } else { "[inactive]" }
+}
+
+let accounts = [
+    {"holder": "Alice", "balance": 1500.50, "active": true},
+    {"holder": "Bob", "balance": 250.00, "active": false},
+    {"holder": "Carol", "balance": 3200.75, "active": true}
+]
+
+let formatted = accounts
+    |> map_row("display_balance", format_currency($balance))
+    |> map_row("status", status_text($active))
+
+for acc in formatted {
+    print(acc["holder"] + ": " + acc["display_balance"] + " " + acc["status"])
+}
+
+// ----------------------------------------------------------------------------
+// Example 6: Chaining Multiple map_row Operations
+// ----------------------------------------------------------------------------
+print("")
+print("=== Example 6: Chaining Operations ===")
+
+let orders = [
+    {"product": "Laptop", "price": 999.99, "qty": 2, "discount": 0.1},
+    {"product": "Mouse", "price": 29.99, "qty": 5, "discount": 0.0},
+    {"product": "Keyboard", "price": 79.99, "qty": 3, "discount": 0.15}
+]
+
+let processed = orders
+    |> map_row("subtotal", $price * $qty)
+    |> map_row("savings", $subtotal * $discount)
+    |> map_row("final_total", $subtotal - $savings)
+
+for order in processed {
+    print(order["product"] + ": " + str(order["qty"]) + "x @ $" + str(order["price"]) + " = $" + str(order["final_total"]))
+}
+
+// ----------------------------------------------------------------------------
+// Example 7: Comparison with word_count function
+// ----------------------------------------------------------------------------
+print("")
+print("=== Example 7: Using Built-in Functions ===")
+
+let articles = [
+    {"title": "Short Post", "content": "Hello world"},
+    {"title": "Medium Article", "content": "This is a longer piece of content with more words"},
+    {"title": "Long Essay", "content": "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor"}
+]
+
+let with_stats = articles
+    |> map_row("wc", word_count($content))
+    |> map_row("is_long", $wc > 10)
+
+for a in with_stats {
+    let status = if a["is_long"] { "long" } else { "short" }
+    print(a["title"] + ": " + str(a["wc"]) + " words (" + status + ")")
+}
+
+// ----------------------------------------------------------------------------
+// Example 8: Boolean Logic
+// ----------------------------------------------------------------------------
+print("")
+print("=== Example 8: Boolean Logic ===")
+
+let users = [
+    {"name": "Alice", "age": 25, "verified": true, "premium": true},
+    {"name": "Bob", "age": 17, "verified": true, "premium": false},
+    {"name": "Carol", "age": 30, "verified": false, "premium": true},
+    {"name": "Dan", "age": 22, "verified": true, "premium": false}
+]
+
+let with_access = users
+    |> map_row("can_access", $age >= 18 && $verified)
+    |> map_row("vip", $verified && $premium && $age >= 21)
+
+for u in with_access {
+    print(u["name"] + ": access=" + str(u["can_access"]) + ", vip=" + str(u["vip"]))
+}
+
+print("")
+print("=== All examples completed! ===")

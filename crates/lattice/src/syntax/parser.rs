@@ -57,6 +57,7 @@ fn parse_item(pair: Pair<Rule>) -> Result<Option<Item>> {
         }
         Rule::type_def => Ok(Some(Item::TypeDef(parse_type_def(pair)?))),
         Rule::enum_def => Ok(Some(Item::EnumDef(parse_enum_def(pair)?))),
+        Rule::llm_config_decl => Ok(Some(Item::LlmConfigDecl(parse_llm_config_decl(pair)?))),
         Rule::function_def => Ok(Some(Item::FunctionDef(parse_function_def(pair)?))),
         Rule::statement => Ok(Some(Item::Statement(parse_statement(pair)?))),
         Rule::EOI => Ok(None),
@@ -143,6 +144,138 @@ fn parse_enum_def(pair: Pair<Rule>) -> Result<EnumDef> {
         variants,
         span,
     })
+}
+
+// ============================================================================
+// LLM Config Declaration Parsing
+// ============================================================================
+
+fn parse_llm_config_decl(pair: Pair<Rule>) -> Result<LlmConfigDecl> {
+    let span = make_span(&pair);
+    let mut inner = pair.into_inner();
+
+    let name_pair = inner.next().unwrap();
+    let name = Spanned::new(name_pair.as_str().to_string(), make_span(&name_pair));
+
+    let mut config = LlmConfigDecl {
+        name,
+        base_url: None,
+        model: None,
+        api_key_env: None,
+        temperature: None,
+        max_tokens: None,
+        provider: None,
+        span,
+    };
+
+    for p in inner {
+        if p.as_rule() == Rule::config_field {
+            let field_inner = p.into_inner().next().unwrap();
+            match field_inner.as_rule() {
+                Rule::simple_config_field => {
+                    let mut simple_inner = field_inner.into_inner();
+                    let key = simple_inner.next().unwrap().as_str();
+                    let value_pair = simple_inner.next().unwrap();
+                    let value_str = extract_string_value(&value_pair)?;
+
+                    match key {
+                        "base_url" => config.base_url = Some(value_str),
+                        "model" => config.model = Some(value_str),
+                        "api_key_env" => config.api_key_env = Some(value_str),
+                        "temperature" => config.temperature = value_str.parse().ok(),
+                        "max_tokens" => config.max_tokens = value_str.parse().ok(),
+                        _ => {}
+                    }
+                }
+                Rule::provider_field => {
+                    config.provider = Some(parse_provider_object(field_inner)?);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(config)
+}
+
+fn parse_provider_object(pair: Pair<Rule>) -> Result<ProviderConfig> {
+    let mut provider = ProviderConfig::default();
+
+    // Navigate to provider_object
+    let provider_obj = pair
+        .into_inner()
+        .find(|p| p.as_rule() == Rule::provider_object)
+        .unwrap();
+
+    for field in provider_obj.into_inner() {
+        if field.as_rule() == Rule::provider_config_field {
+            let mut inner = field.into_inner();
+            let key = inner.next().unwrap().as_str();
+            let value_pair = inner.next().unwrap();
+
+            match key {
+                "order" => provider.order = Some(extract_string_list(&value_pair)?),
+                "only" => provider.only = Some(extract_string_list(&value_pair)?),
+                "ignore" => provider.ignore = Some(extract_string_list(&value_pair)?),
+                "quantizations" => provider.quantizations = Some(extract_string_list(&value_pair)?),
+                "allow_fallbacks" => provider.allow_fallbacks = extract_bool_value(&value_pair),
+                "require_parameters" => provider.require_parameters = extract_bool_value(&value_pair),
+                "zdr" => provider.zdr = extract_bool_value(&value_pair),
+                "data_collection" => provider.data_collection = extract_string_value(&value_pair).ok(),
+                "sort" => provider.sort = extract_string_value(&value_pair).ok(),
+                _ => {}
+            }
+        }
+    }
+
+    Ok(provider)
+}
+
+fn extract_string_list(pair: &Pair<Rule>) -> Result<Vec<String>> {
+    let mut result = Vec::new();
+
+    fn collect_strings(pair: &Pair<Rule>, result: &mut Vec<String>) {
+        match pair.as_rule() {
+            Rule::list_literal => {
+                for inner in pair.clone().into_inner() {
+                    collect_strings(&inner, result);
+                }
+            }
+            Rule::string_literal | Rule::raw_string_literal => {
+                result.push(parse_string_content(pair.as_str()));
+            }
+            _ => {
+                for inner in pair.clone().into_inner() {
+                    collect_strings(&inner, result);
+                }
+            }
+        }
+    }
+
+    collect_strings(pair, &mut result);
+    Ok(result)
+}
+
+fn extract_bool_value(pair: &Pair<Rule>) -> Option<bool> {
+    fn find_bool(pair: &Pair<Rule>) -> Option<bool> {
+        match pair.as_rule() {
+            Rule::bool_literal => match pair.as_str() {
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None,
+            },
+            _ => {
+                for inner in pair.clone().into_inner() {
+                    if let Some(b) = find_bool(&inner) {
+                        return Some(b);
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    find_bool(pair)
 }
 
 // ============================================================================
@@ -266,7 +399,7 @@ fn parse_function_body(pair: Pair<Rule>) -> Result<FunctionBody> {
     let inner = pair.into_inner().next().unwrap();
 
     match inner.as_rule() {
-        Rule::llm_config => Ok(FunctionBody::LlmConfig(parse_llm_config(inner)?)),
+        Rule::llm_config => Ok(FunctionBody::LlmConfig(Box::new(parse_llm_config(inner)?))),
         Rule::block_contents => Ok(FunctionBody::Block(parse_block_contents(inner)?)),
         _ => Err(LatticeError::Parse(format!(
             "Unexpected function body rule: {:?}",
@@ -284,32 +417,48 @@ fn parse_llm_config(pair: Pair<Rule>) -> Result<LlmConfig> {
     };
 
     let mut config = LlmConfig {
+        use_config: None,
         base_url: None,
         model: None,
         api_key_env: None,
         temperature: None,
         max_tokens: None,
+        provider: None,
         prompt: placeholder_prompt,
         span,
     };
 
     for p in pair.into_inner() {
         match p.as_rule() {
+            Rule::use_config => {
+                // Parse: use: identifier
+                let ident = p.into_inner().next().unwrap();
+                config.use_config = Some(ident.as_str().to_string());
+            }
             Rule::config_field => {
-                let mut inner = p.into_inner();
-                let key = inner.next().unwrap().as_str();
-                let value_pair = inner.next().unwrap();
-                let value_str = extract_string_value(&value_pair)?;
+                let field_inner = p.into_inner().next().unwrap();
+                match field_inner.as_rule() {
+                    Rule::simple_config_field => {
+                        let mut simple_inner = field_inner.into_inner();
+                        let key = simple_inner.next().unwrap().as_str();
+                        let value_pair = simple_inner.next().unwrap();
+                        let value_str = extract_string_value(&value_pair)?;
 
-                match key {
-                    "base_url" => config.base_url = Some(value_str),
-                    "model" => config.model = Some(value_str),
-                    "api_key_env" => config.api_key_env = Some(value_str),
-                    "temperature" => {
-                        config.temperature = value_str.parse().ok();
+                        match key {
+                            "base_url" => config.base_url = Some(value_str),
+                            "model" => config.model = Some(value_str),
+                            "api_key_env" => config.api_key_env = Some(value_str),
+                            "temperature" => {
+                                config.temperature = value_str.parse().ok();
+                            }
+                            "max_tokens" => {
+                                config.max_tokens = value_str.parse().ok();
+                            }
+                            _ => {}
+                        }
                     }
-                    "max_tokens" => {
-                        config.max_tokens = value_str.parse().ok();
+                    Rule::provider_field => {
+                        config.provider = Some(parse_provider_object(field_inner)?);
                     }
                     _ => {}
                 }
@@ -517,10 +666,12 @@ fn parse_return_statement(pair: Pair<Rule>) -> Result<StmtKind> {
 // ============================================================================
 
 fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
-    let span = make_span(&pair);
+    let _span = make_span(&pair);
 
     match pair.as_rule() {
-        Rule::expression | Rule::or_expr => parse_or_expr(pair),
+        Rule::expression => parse_pipe_expr(pair),
+        Rule::pipe_expr => parse_pipe_expr(pair),
+        Rule::or_expr => parse_or_expr(pair),
         Rule::and_expr => parse_and_expr(pair),
         Rule::equality_expr => parse_equality_expr(pair),
         Rule::comparison_expr => parse_comparison_expr(pair),
@@ -534,21 +685,124 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr> {
             if let Some(inner) = pair.into_inner().next() {
                 parse_expr(inner)
             } else {
-                Err(LatticeError::Parse(format!(
-                    "Unexpected expression rule"
-                )))
+                Err(LatticeError::Parse("Unexpected expression rule".to_string()))
             }
         }
     }
 }
 
+/// Parse pipe expression: x |> f or x |> f(a, b)
+/// Transforms x |> f into f(x) and x |> f(a, b) into f(x, a, b)
+fn parse_pipe_expr(pair: Pair<Rule>) -> Result<Expr> {
+    let _span = make_span(&pair);
+    let mut inner = pair.into_inner();
+
+    let first = inner.next().unwrap();
+    let mut left = parse_expr(first)?;
+
+    for right_pair in inner {
+        let right = parse_expr(right_pair)?;
+        let new_span = left.span.merge(right.span);
+
+        // Transform the pipe: left |> right
+        // If right is a Call, insert left as first argument
+        // If right is a Var (function name), create Call with left as only argument
+        left = match right.kind {
+            ExprKind::Call { callee, args } => {
+                // x |> f(a, b) => f(x, a, b)
+                let mut new_args = vec![left];
+                new_args.extend(args);
+                Expr {
+                    kind: ExprKind::Call {
+                        callee,
+                        args: new_args,
+                    },
+                    span: new_span,
+                }
+            }
+            ExprKind::Var(_) => {
+                // x |> f => f(x)
+                Expr {
+                    kind: ExprKind::Call {
+                        callee: Box::new(right),
+                        args: vec![left],
+                    },
+                    span: new_span,
+                }
+            }
+            ExprKind::Lambda { .. } => {
+                // x |> |y| expr => (|y| expr)(x)
+                Expr {
+                    kind: ExprKind::Call {
+                        callee: Box::new(right),
+                        args: vec![left],
+                    },
+                    span: new_span,
+                }
+            }
+            ExprKind::MapColumn { table: _, input_col, output_col, mapper } => {
+                // x |> map_column("in", "out", func) => map_column(x, "in", "out", func)
+                Expr {
+                    kind: ExprKind::MapColumn {
+                        table: Box::new(left),
+                        input_col,
+                        output_col,
+                        mapper,
+                    },
+                    span: new_span,
+                }
+            }
+            ExprKind::ParallelMap { collection: _, mapper } => {
+                // x |> parallel_map(func) => parallel_map(x, func)
+                Expr {
+                    kind: ExprKind::ParallelMap {
+                        collection: Box::new(left),
+                        mapper,
+                    },
+                    span: new_span,
+                }
+            }
+            ExprKind::MapRow { table: _, output_col, mapper } => {
+                // x |> map_row("out", func) => map_row(x, "out", func)
+                Expr {
+                    kind: ExprKind::MapRow {
+                        table: Box::new(left),
+                        output_col,
+                        mapper,
+                    },
+                    span: new_span,
+                }
+            }
+            ExprKind::Explode { table: _, column, prefix } => {
+                // x |> explode("col") => explode(x, "col")
+                // x |> explode("col", "prefix") => explode(x, "col", "prefix")
+                Expr {
+                    kind: ExprKind::Explode {
+                        table: Box::new(left),
+                        column,
+                        prefix,
+                    },
+                    span: new_span,
+                }
+            }
+            _ => {
+                return Err(LatticeError::Parse(
+                    "Pipe operator requires a function, function call, lambda, map_column, map_row, explode, or parallel_map on the right side".to_string()
+                ));
+            }
+        };
+    }
+
+    Ok(left)
+}
+
 fn parse_or_expr(pair: Pair<Rule>) -> Result<Expr> {
-    let span = make_span(&pair);
+    let _span = make_span(&pair);
     let mut inner = pair.into_inner();
 
     let mut left = parse_expr(inner.next().unwrap())?;
 
-    while let Some(right_pair) = inner.next() {
+    for right_pair in inner {
         let right = parse_expr(right_pair)?;
         let new_span = left.span.merge(right.span);
         left = Expr {
@@ -565,12 +819,12 @@ fn parse_or_expr(pair: Pair<Rule>) -> Result<Expr> {
 }
 
 fn parse_and_expr(pair: Pair<Rule>) -> Result<Expr> {
-    let span = make_span(&pair);
+    let _span = make_span(&pair);
     let mut inner = pair.into_inner();
 
     let mut left = parse_expr(inner.next().unwrap())?;
 
-    while let Some(right_pair) = inner.next() {
+    for right_pair in inner {
         let right = parse_expr(right_pair)?;
         let new_span = left.span.merge(right.span);
         left = Expr {
@@ -587,7 +841,7 @@ fn parse_and_expr(pair: Pair<Rule>) -> Result<Expr> {
 }
 
 fn parse_equality_expr(pair: Pair<Rule>) -> Result<Expr> {
-    let span = make_span(&pair);
+    let _span = make_span(&pair);
     let mut inner = pair.into_inner();
 
     let mut left = parse_expr(inner.next().unwrap())?;
@@ -628,7 +882,7 @@ fn parse_equality_expr(pair: Pair<Rule>) -> Result<Expr> {
 }
 
 fn parse_comparison_expr(pair: Pair<Rule>) -> Result<Expr> {
-    let span = make_span(&pair);
+    let _span = make_span(&pair);
     let mut inner = pair.into_inner();
 
     let mut left = parse_expr(inner.next().unwrap())?;
@@ -670,7 +924,7 @@ fn parse_comparison_expr(pair: Pair<Rule>) -> Result<Expr> {
 }
 
 fn parse_additive_expr(pair: Pair<Rule>) -> Result<Expr> {
-    let span = make_span(&pair);
+    let _span = make_span(&pair);
     let mut inner = pair.into_inner();
 
     let mut left = parse_expr(inner.next().unwrap())?;
@@ -710,7 +964,7 @@ fn parse_additive_expr(pair: Pair<Rule>) -> Result<Expr> {
 }
 
 fn parse_multiplicative_expr(pair: Pair<Rule>) -> Result<Expr> {
-    let span = make_span(&pair);
+    let _span = make_span(&pair);
     let mut inner = pair.into_inner();
 
     let mut left = parse_expr(inner.next().unwrap())?;
@@ -777,7 +1031,7 @@ fn parse_unary_expr(pair: Pair<Rule>) -> Result<Expr> {
 }
 
 fn parse_postfix_expr(pair: Pair<Rule>) -> Result<Expr> {
-    let span = make_span(&pair);
+    let _span = make_span(&pair);
     let mut inner = pair.into_inner();
 
     let mut expr = parse_expr(inner.next().unwrap())?;
@@ -846,6 +1100,9 @@ fn parse_primary_expr(pair: Pair<Rule>) -> Result<Expr> {
         Rule::match_expr => parse_match_expr(inner),
         Rule::parallel_block => parse_parallel_block(inner),
         Rule::parallel_map_expr => parse_parallel_map_expr(inner),
+        Rule::map_column_expr => parse_map_column_expr(inner),
+        Rule::map_row_expr => parse_map_row_expr(inner),
+        Rule::explode_expr => parse_explode_expr(inner),
         Rule::sql_expr => parse_sql_expr(inner),
         Rule::lambda_expr => parse_lambda_expr(inner),
         Rule::list_literal => parse_list_literal(inner),
@@ -853,6 +1110,7 @@ fn parse_primary_expr(pair: Pair<Rule>) -> Result<Expr> {
         Rule::struct_literal => parse_struct_literal(inner),
         Rule::literal => parse_literal_expr(inner),
         Rule::enum_constructor => parse_enum_constructor(inner),
+        Rule::dollar_field => parse_dollar_field(inner),
         Rule::identifier => Ok(Expr {
             kind: ExprKind::Var(inner.as_str().to_string()),
             span,
@@ -862,6 +1120,31 @@ fn parse_primary_expr(pair: Pair<Rule>) -> Result<Expr> {
             inner.as_rule()
         ))),
     }
+}
+
+fn parse_dollar_field(pair: Pair<Rule>) -> Result<Expr> {
+    let span = make_span(&pair);
+    let inner = pair.into_inner().next().unwrap();
+
+    // The inner can be either an identifier ($field) or an expression ($["field"])
+    let field_expr = match inner.as_rule() {
+        Rule::identifier => {
+            // $field -> convert to string literal for indexing
+            Expr {
+                kind: ExprKind::Literal(Literal::String(inner.as_str().to_string())),
+                span: make_span(&inner),
+            }
+        }
+        _ => {
+            // $[expr] -> parse the expression
+            parse_expr(inner)?
+        }
+    };
+
+    Ok(Expr {
+        kind: ExprKind::DollarField(Box::new(field_expr)),
+        span,
+    })
 }
 
 fn parse_enum_constructor(pair: Pair<Rule>) -> Result<Expr> {
@@ -1009,7 +1292,8 @@ fn parse_parallel_map_expr(pair: Pair<Rule>) -> Result<Expr> {
     let mut inner = pair.into_inner();
 
     let collection = parse_expr(inner.next().unwrap())?;
-    let mapper = parse_expr(inner.next().unwrap())?;
+    // The second argument is a lambda_expr, not a general expression
+    let mapper = parse_lambda_expr(inner.next().unwrap())?;
 
     Ok(Expr {
         kind: ExprKind::ParallelMap {
@@ -1020,9 +1304,168 @@ fn parse_parallel_map_expr(pair: Pair<Rule>) -> Result<Expr> {
     })
 }
 
+fn parse_map_column_expr(pair: Pair<Rule>) -> Result<Expr> {
+    let span = make_span(&pair);
+    let inner: Vec<_> = pair.into_inner().collect();
+
+    // Check if we have 4 arguments (full form) or 3 arguments (pipe form)
+    if inner.len() == 4 {
+        // Full form: map_column(table, input_col, output_col, mapper)
+        let table = parse_expr(inner[0].clone())?;
+        let input_col = parse_expr(inner[1].clone())?;
+        let output_col = parse_expr(inner[2].clone())?;
+        let mapper = parse_lambda_expr(inner[3].clone())?;
+
+        Ok(Expr {
+            kind: ExprKind::MapColumn {
+                table: Box::new(table),
+                input_col: Box::new(input_col),
+                output_col: Box::new(output_col),
+                mapper: Box::new(mapper),
+            },
+            span,
+        })
+    } else {
+        // Pipe form: map_column(input_col, output_col, mapper) - table will be provided by pipe
+        let input_col = parse_expr(inner[0].clone())?;
+        let output_col = parse_expr(inner[1].clone())?;
+        let mapper = parse_lambda_expr(inner[2].clone())?;
+
+        // Use a placeholder Null expression for table - pipe will replace it
+        let placeholder_table = Expr {
+            kind: ExprKind::Literal(Literal::Null),
+            span,
+        };
+
+        Ok(Expr {
+            kind: ExprKind::MapColumn {
+                table: Box::new(placeholder_table),
+                input_col: Box::new(input_col),
+                output_col: Box::new(output_col),
+                mapper: Box::new(mapper),
+            },
+            span,
+        })
+    }
+}
+
+fn parse_map_row_expr(pair: Pair<Rule>) -> Result<Expr> {
+    let span = make_span(&pair);
+    let inner: Vec<_> = pair.into_inner().collect();
+
+    // Check if we have 3 arguments (full form) or 2 arguments (pipe form)
+    if inner.len() == 3 {
+        // Full form: map_row(table, output_col, mapper)
+        let table = parse_expr(inner[0].clone())?;
+        let output_col = parse_expr(inner[1].clone())?;
+        let mapper = parse_map_row_mapper(inner[2].clone())?;
+
+        Ok(Expr {
+            kind: ExprKind::MapRow {
+                table: Box::new(table),
+                output_col: Box::new(output_col),
+                mapper: Box::new(mapper),
+            },
+            span,
+        })
+    } else {
+        // Pipe form: map_row(output_col, mapper) - table will be provided by pipe
+        let output_col = parse_expr(inner[0].clone())?;
+        let mapper = parse_map_row_mapper(inner[1].clone())?;
+
+        // Use a placeholder Null expression for table - pipe will replace it
+        let placeholder_table = Expr {
+            kind: ExprKind::Literal(Literal::Null),
+            span,
+        };
+
+        Ok(Expr {
+            kind: ExprKind::MapRow {
+                table: Box::new(placeholder_table),
+                output_col: Box::new(output_col),
+                mapper: Box::new(mapper),
+            },
+            span,
+        })
+    }
+}
+
+/// Parse a map_row mapper (can be a lambda or an expression with $field)
+fn parse_map_row_mapper(pair: Pair<Rule>) -> Result<Expr> {
+    match pair.as_rule() {
+        Rule::map_row_mapper => {
+            let inner = pair.into_inner().next().unwrap();
+            parse_map_row_mapper(inner)
+        }
+        Rule::lambda_expr => parse_lambda_expr(pair),
+        _ => parse_expr(pair),
+    }
+}
+
+fn parse_explode_expr(pair: Pair<Rule>) -> Result<Expr> {
+    let span = make_span(&pair);
+    let inner: Vec<_> = pair.into_inner().collect();
+
+    match inner.len() {
+        // Pipe form: explode("column")
+        1 => {
+            let column = parse_expr(inner[0].clone())?;
+
+            // Use a placeholder Null expression for table - pipe will replace it
+            let placeholder_table = Expr {
+                kind: ExprKind::Literal(Literal::Null),
+                span,
+            };
+
+            Ok(Expr {
+                kind: ExprKind::Explode {
+                    table: Box::new(placeholder_table),
+                    column: Box::new(column),
+                    prefix: None,
+                },
+                span,
+            })
+        }
+        // Could be: explode(table, "column") OR explode("column", "prefix") in pipe
+        // We treat 2 args as: explode(table, column)
+        2 => {
+            let table = parse_expr(inner[0].clone())?;
+            let column = parse_expr(inner[1].clone())?;
+
+            Ok(Expr {
+                kind: ExprKind::Explode {
+                    table: Box::new(table),
+                    column: Box::new(column),
+                    prefix: None,
+                },
+                span,
+            })
+        }
+        // Full form: explode(table, "column", "prefix")
+        3 => {
+            let table = parse_expr(inner[0].clone())?;
+            let column = parse_expr(inner[1].clone())?;
+            let prefix = parse_expr(inner[2].clone())?;
+
+            Ok(Expr {
+                kind: ExprKind::Explode {
+                    table: Box::new(table),
+                    column: Box::new(column),
+                    prefix: Some(Box::new(prefix)),
+                },
+                span,
+            })
+        }
+        _ => Err(LatticeError::Parse(format!(
+            "explode expects 1-3 arguments, got {}",
+            inner.len()
+        ))),
+    }
+}
+
 fn parse_sql_expr(pair: Pair<Rule>) -> Result<Expr> {
     let span = make_span(&pair);
-    let mut inner = pair.into_inner();
+    let inner = pair.into_inner();
 
     let mut ty = None;
     let mut query = None;
@@ -1051,7 +1494,7 @@ fn parse_sql_expr(pair: Pair<Rule>) -> Result<Expr> {
 
 fn parse_lambda_expr(pair: Pair<Rule>) -> Result<Expr> {
     let span = make_span(&pair);
-    let mut inner = pair.into_inner();
+    let inner = pair.into_inner();
 
     let mut params = Vec::new();
     let mut body = None;
@@ -1171,10 +1614,14 @@ fn parse_fstring_expr(pair: Pair<Rule>) -> Result<Expr> {
 
     for p in pair.into_inner() {
         match p.as_rule() {
-            Rule::fstring_part => {
+            Rule::fstring_single_quote | Rule::fstring_triple_quote => {
+                // Delegate to the inner single or triple quote parsing
+                return parse_fstring_inner(p, span);
+            }
+            Rule::fstring_part | Rule::fstring_triple_part => {
                 let inner = p.into_inner().next().unwrap();
                 match inner.as_rule() {
-                    Rule::fstring_text => {
+                    Rule::fstring_text | Rule::fstring_triple_text => {
                         let text = parse_fstring_text(inner.as_str());
                         if !text.is_empty() {
                             parts.push(FStringPart::Text(text));
@@ -1188,7 +1635,7 @@ fn parse_fstring_expr(pair: Pair<Rule>) -> Result<Expr> {
                     _ => {}
                 }
             }
-            Rule::fstring_text => {
+            Rule::fstring_text | Rule::fstring_triple_text => {
                 let text = parse_fstring_text(p.as_str());
                 if !text.is_empty() {
                     parts.push(FStringPart::Text(text));
@@ -1202,6 +1649,58 @@ fn parse_fstring_expr(pair: Pair<Rule>) -> Result<Expr> {
             _ => {}
         }
     }
+
+    Ok(Expr {
+        kind: ExprKind::FString(parts),
+        span,
+    })
+}
+
+/// Parse the inner content of an f-string (single or triple quoted)
+fn parse_fstring_inner(pair: Pair<Rule>, span: Span) -> Result<Expr> {
+    let is_triple_quoted = pair.as_rule() == Rule::fstring_triple_quote;
+    let mut parts = Vec::new();
+
+    for p in pair.into_inner() {
+        match p.as_rule() {
+            Rule::fstring_part | Rule::fstring_triple_part => {
+                let inner = p.into_inner().next().unwrap();
+                match inner.as_rule() {
+                    Rule::fstring_text | Rule::fstring_triple_text => {
+                        let text = parse_fstring_text(inner.as_str());
+                        if !text.is_empty() {
+                            parts.push(FStringPart::Text(text));
+                        }
+                    }
+                    Rule::fstring_interpolation => {
+                        let expr_pair = inner.into_inner().next().unwrap();
+                        let expr = parse_expr(expr_pair)?;
+                        parts.push(FStringPart::Expr(expr));
+                    }
+                    _ => {}
+                }
+            }
+            Rule::fstring_text | Rule::fstring_triple_text => {
+                let text = parse_fstring_text(p.as_str());
+                if !text.is_empty() {
+                    parts.push(FStringPart::Text(text));
+                }
+            }
+            Rule::fstring_interpolation => {
+                let expr_pair = p.into_inner().next().unwrap();
+                let expr = parse_expr(expr_pair)?;
+                parts.push(FStringPart::Expr(expr));
+            }
+            _ => {}
+        }
+    }
+
+    // Apply dedent to triple-quoted f-strings
+    let parts = if is_triple_quoted {
+        dedent_fstring_parts(parts)
+    } else {
+        parts
+    };
 
     Ok(Expr {
         kind: ExprKind::FString(parts),
@@ -1267,6 +1766,115 @@ fn parse_fstring_text(s: &str) -> String {
             }
         } else {
             result.push(c);
+        }
+    }
+
+    result
+}
+
+/// Dedent f-string parts for triple-quoted strings.
+///
+/// This applies a dedent algorithm similar to Python's textwrap.dedent():
+/// 1. Skip the first line if it's empty/whitespace-only
+/// 2. Find the minimum indentation of all non-empty lines
+/// 3. Strip that common indentation from all lines
+/// 4. Remove trailing whitespace-only final line
+fn dedent_fstring_parts(parts: Vec<FStringPart>) -> Vec<FStringPart> {
+    if parts.is_empty() {
+        return parts;
+    }
+
+    // Concatenate text parts with placeholders to analyze line structure
+    let mut full_text = String::new();
+    for part in &parts {
+        match part {
+            FStringPart::Text(t) => full_text.push_str(t),
+            FStringPart::Expr(_) => full_text.push('\x00'), // placeholder for expression
+        }
+    }
+
+    // Find minimum indentation from the full text
+    let mut min_indent: Option<usize> = None;
+    let mut first_line = true;
+
+    for line in full_text.split('\n') {
+        if first_line {
+            // Skip first line (content immediately after opening """)
+            first_line = false;
+            continue;
+        }
+
+        // Check if line has any non-whitespace content
+        let trimmed = line.trim_start_matches([' ', '\t']);
+        if trimmed.is_empty() {
+            // Empty or whitespace-only line, skip for indent calculation
+            continue;
+        }
+
+        // Count leading whitespace
+        let indent = line.len() - trimmed.len();
+        min_indent = Some(match min_indent {
+            Some(current) => current.min(indent),
+            None => indent,
+        });
+    }
+
+    let min_indent = min_indent.unwrap_or(0);
+
+    // Second pass: strip the minimum indentation from each text part
+    let mut result = Vec::new();
+    let mut at_line_start = true;
+    let mut chars_to_skip = 0;
+
+    for part in parts {
+        match part {
+            FStringPart::Text(text) => {
+                let mut new_text = String::new();
+
+                for c in text.chars() {
+                    if c == '\n' {
+                        new_text.push(c);
+                        at_line_start = true;
+                        chars_to_skip = min_indent;
+                    } else if at_line_start && chars_to_skip > 0 && (c == ' ' || c == '\t') {
+                        // Skip indentation character
+                        chars_to_skip -= 1;
+                    } else {
+                        at_line_start = false;
+                        chars_to_skip = 0;
+                        new_text.push(c);
+                    }
+                }
+
+                if !new_text.is_empty() {
+                    result.push(FStringPart::Text(new_text));
+                }
+            }
+            FStringPart::Expr(expr) => {
+                at_line_start = false;
+                chars_to_skip = 0;
+                result.push(FStringPart::Expr(expr));
+            }
+        }
+    }
+
+    // Post-process: strip leading newline if first text part starts with one
+    if let Some(FStringPart::Text(first)) = result.first_mut() {
+        if first.starts_with('\n') {
+            *first = first[1..].to_string();
+        }
+        if first.is_empty() {
+            result.remove(0);
+        }
+    }
+
+    // Strip trailing whitespace-only text
+    if let Some(FStringPart::Text(last)) = result.last_mut() {
+        let trimmed = last.trim_end();
+        if trimmed.is_empty() {
+            result.pop();
+        } else {
+            *last = trimmed.to_string();
         }
     }
 
@@ -1701,6 +2309,274 @@ mod tests {
                 assert_eq!(parts.len(), 0);
             }
             _ => panic!("Expected f-string"),
+        }
+    }
+
+    #[test]
+    fn test_parse_triple_fstring_simple() {
+        let expr = parse_expression(r#"f"""hello world""""#).unwrap();
+        match expr.kind {
+            ExprKind::FString(parts) => {
+                assert_eq!(parts.len(), 1);
+                match &parts[0] {
+                    FStringPart::Text(s) => assert_eq!(s, "hello world"),
+                    _ => panic!("Expected text part"),
+                }
+            }
+            _ => panic!("Expected f-string"),
+        }
+    }
+
+    #[test]
+    fn test_parse_triple_fstring_with_interpolation() {
+        let expr = parse_expression(r#"f"""hello {name}""""#).unwrap();
+        match expr.kind {
+            ExprKind::FString(parts) => {
+                assert_eq!(parts.len(), 2);
+                match &parts[0] {
+                    FStringPart::Text(s) => assert_eq!(s, "hello "),
+                    _ => panic!("Expected text part"),
+                }
+                match &parts[1] {
+                    FStringPart::Expr(expr) => {
+                        assert!(matches!(expr.kind, ExprKind::Var(ref n) if n == "name"));
+                    }
+                    _ => panic!("Expected expression part"),
+                }
+            }
+            _ => panic!("Expected f-string"),
+        }
+    }
+
+    #[test]
+    fn test_parse_triple_fstring_multiline() {
+        let expr = parse_expression("f\"\"\"line1\nline2\nline3\"\"\"").unwrap();
+        match expr.kind {
+            ExprKind::FString(parts) => {
+                assert_eq!(parts.len(), 1);
+                match &parts[0] {
+                    FStringPart::Text(s) => assert_eq!(s, "line1\nline2\nline3"),
+                    _ => panic!("Expected text part"),
+                }
+            }
+            _ => panic!("Expected f-string"),
+        }
+    }
+
+    #[test]
+    fn test_parse_triple_fstring_with_quotes() {
+        // Test with embedded double quote (not adjacent to closing triple quote)
+        let expr = parse_expression(r#"f"""She said "hello" today""""#).unwrap();
+        match expr.kind {
+            ExprKind::FString(parts) => {
+                assert_eq!(parts.len(), 1);
+                match &parts[0] {
+                    FStringPart::Text(s) => assert_eq!(s, r#"She said "hello" today"#),
+                    _ => panic!("Expected text part"),
+                }
+            }
+            _ => panic!("Expected f-string"),
+        }
+    }
+
+    #[test]
+    fn test_parse_triple_fstring_empty() {
+        let expr = parse_expression(r#"f"""""""#).unwrap();
+        match expr.kind {
+            ExprKind::FString(parts) => {
+                assert_eq!(parts.len(), 0);
+            }
+            _ => panic!("Expected f-string"),
+        }
+    }
+
+    // ========================================================================
+    // Pipe Operator Tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_pipe_simple() {
+        // x |> f => f(x)
+        let expr = parse_expression("x |> f").unwrap();
+        match expr.kind {
+            ExprKind::Call { callee, args } => {
+                assert!(matches!(callee.kind, ExprKind::Var(ref n) if n == "f"));
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0].kind, ExprKind::Var(ref n) if n == "x"));
+            }
+            _ => panic!("Expected call expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_pipe_with_args() {
+        // x |> f(a, b) => f(x, a, b)
+        let expr = parse_expression("x |> f(a, b)").unwrap();
+        match expr.kind {
+            ExprKind::Call { callee, args } => {
+                assert!(matches!(callee.kind, ExprKind::Var(ref n) if n == "f"));
+                assert_eq!(args.len(), 3);
+                assert!(matches!(args[0].kind, ExprKind::Var(ref n) if n == "x"));
+                assert!(matches!(args[1].kind, ExprKind::Var(ref n) if n == "a"));
+                assert!(matches!(args[2].kind, ExprKind::Var(ref n) if n == "b"));
+            }
+            _ => panic!("Expected call expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_pipe_chain() {
+        // x |> f |> g => g(f(x))
+        let expr = parse_expression("x |> f |> g").unwrap();
+        match expr.kind {
+            ExprKind::Call { callee, args } => {
+                assert!(matches!(callee.kind, ExprKind::Var(ref n) if n == "g"));
+                assert_eq!(args.len(), 1);
+                // The arg should be f(x)
+                match &args[0].kind {
+                    ExprKind::Call { callee: inner_callee, args: inner_args } => {
+                        assert!(matches!(inner_callee.kind, ExprKind::Var(ref n) if n == "f"));
+                        assert_eq!(inner_args.len(), 1);
+                        assert!(matches!(inner_args[0].kind, ExprKind::Var(ref n) if n == "x"));
+                    }
+                    _ => panic!("Expected inner call"),
+                }
+            }
+            _ => panic!("Expected call expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_pipe_with_lambda() {
+        // x |> |y| y + 1 => (|y| y + 1)(x)
+        let expr = parse_expression("x |> |y| y + 1").unwrap();
+        match expr.kind {
+            ExprKind::Call { callee, args } => {
+                assert!(matches!(callee.kind, ExprKind::Lambda { .. }));
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0].kind, ExprKind::Var(ref n) if n == "x"));
+            }
+            _ => panic!("Expected call expression"),
+        }
+    }
+
+    // ========================================================================
+    // map_column Tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_map_column_full() {
+        let expr = parse_expression(r#"map_column(data, "input", "output", |x| x + 1)"#).unwrap();
+        match expr.kind {
+            ExprKind::MapColumn { table, input_col, output_col, mapper } => {
+                assert!(matches!(table.kind, ExprKind::Var(ref n) if n == "data"));
+                assert!(matches!(input_col.kind, ExprKind::Literal(Literal::String(ref s)) if s == "input"));
+                assert!(matches!(output_col.kind, ExprKind::Literal(Literal::String(ref s)) if s == "output"));
+                assert!(matches!(mapper.kind, ExprKind::Lambda { .. }));
+            }
+            _ => panic!("Expected MapColumn expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_map_column_pipe() {
+        // data |> map_column("input", "output", |x| x + 1)
+        let expr = parse_expression(r#"data |> map_column("input", "output", |x| x + 1)"#).unwrap();
+        match expr.kind {
+            ExprKind::MapColumn { table, input_col, output_col, mapper } => {
+                assert!(matches!(table.kind, ExprKind::Var(ref n) if n == "data"));
+                assert!(matches!(input_col.kind, ExprKind::Literal(Literal::String(ref s)) if s == "input"));
+                assert!(matches!(output_col.kind, ExprKind::Literal(Literal::String(ref s)) if s == "output"));
+                assert!(matches!(mapper.kind, ExprKind::Lambda { .. }));
+            }
+            _ => panic!("Expected MapColumn expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_map_column_with_function_call() {
+        let expr = parse_expression(r#"map_column(data, "col", "out", |x| process(x))"#).unwrap();
+        match expr.kind {
+            ExprKind::MapColumn { mapper, .. } => {
+                match mapper.kind {
+                    ExprKind::Lambda { params, body } => {
+                        assert_eq!(params.len(), 1);
+                        assert_eq!(params[0], "x");
+                        match body.as_ref() {
+                            LambdaBody::Expr(expr) => {
+                                assert!(matches!(expr.kind, ExprKind::Call { .. }));
+                            }
+                            _ => panic!("Expected expression body"),
+                        }
+                    }
+                    _ => panic!("Expected lambda"),
+                }
+            }
+            _ => panic!("Expected MapColumn expression"),
+        }
+    }
+
+    // ========================================================================
+    // map_row Tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_map_row_full() {
+        let expr = parse_expression(r#"map_row(data, "output", |row| row["a"] + row["b"])"#).unwrap();
+        match expr.kind {
+            ExprKind::MapRow { table, output_col, mapper } => {
+                assert!(matches!(table.kind, ExprKind::Var(ref n) if n == "data"));
+                assert!(matches!(output_col.kind, ExprKind::Literal(Literal::String(ref s)) if s == "output"));
+                assert!(matches!(mapper.kind, ExprKind::Lambda { .. }));
+            }
+            _ => panic!("Expected MapRow expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_map_row_pipe() {
+        // data |> map_row("output", |row| process(row))
+        let expr = parse_expression(r#"data |> map_row("output", |row| process(row))"#).unwrap();
+        match expr.kind {
+            ExprKind::MapRow { table, output_col, mapper } => {
+                assert!(matches!(table.kind, ExprKind::Var(ref n) if n == "data"));
+                assert!(matches!(output_col.kind, ExprKind::Literal(Literal::String(ref s)) if s == "output"));
+                match mapper.kind {
+                    ExprKind::Lambda { params, .. } => {
+                        assert_eq!(params.len(), 1);
+                        assert_eq!(params[0], "row");
+                    }
+                    _ => panic!("Expected lambda"),
+                }
+            }
+            _ => panic!("Expected MapRow expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_map_row_chain() {
+        // data |> map_row("a", |r| r["x"]) |> map_row("b", |r| r["y"])
+        let expr = parse_expression(r#"data |> map_row("a", |r| r["x"]) |> map_row("b", |r| r["y"])"#).unwrap();
+        match expr.kind {
+            ExprKind::MapRow { table, output_col, .. } => {
+                assert!(matches!(output_col.kind, ExprKind::Literal(Literal::String(ref s)) if s == "b"));
+                // The table should be another MapRow
+                assert!(matches!(table.kind, ExprKind::MapRow { .. }));
+            }
+            _ => panic!("Expected MapRow expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_map_column_and_row_chain() {
+        // data |> map_column("a", "b", |x| x) |> map_row("c", |r| r["b"])
+        let expr = parse_expression(r#"data |> map_column("a", "b", |x| x) |> map_row("c", |r| r["b"])"#).unwrap();
+        match expr.kind {
+            ExprKind::MapRow { table, .. } => {
+                // The table should be a MapColumn
+                assert!(matches!(table.kind, ExprKind::MapColumn { .. }));
+            }
+            _ => panic!("Expected MapRow expression"),
         }
     }
 }

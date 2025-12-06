@@ -1,0 +1,76 @@
+// map_column Basics
+// ==================
+// map_column applies a function to a single column and adds the result as a new column.
+// Syntax: map_column(table, "input_col", "output_col", |value| expression)
+// Or with pipe: table |> map_column("input_col", "output_col", |value| expression)
+
+// Sample data - a table of products
+let products = [
+    {"name": "Apple", "price": 100, "quantity": 5},
+    {"name": "Banana", "price": 50, "quantity": 10},
+    {"name": "Orange", "price": 75, "quantity": 8}
+]
+
+print("Original products:")
+for p in products {
+    print(p)
+}
+
+// Example 1: Apply a calculation to a column
+print("")
+print("Example 1: Double the price")
+let doubled = map_column(products, "price", "double_price", |p| p * 2)
+for row in doubled {
+    print(row)
+}
+
+// Example 2: Using pipe operator (more readable for chaining)
+print("")
+print("Example 2: Calculate total value (price * quantity) using pipe")
+let with_total = products |> map_column("price", "base_total", |p| p * 2)
+for row in with_total {
+    print(row)
+}
+
+// Example 3: String transformation
+print("")
+print("Example 3: Uppercase product names")
+def make_upper(s: String) -> String {
+    // Simple uppercase simulation - in real use you'd have a proper function
+    "[" + s + "]"
+}
+
+let formatted = products |> map_column("name", "display_name", |n| make_upper(n))
+for row in formatted {
+    print(row)
+}
+
+// Example 4: Chaining multiple map_column calls
+print("")
+print("Example 4: Chain multiple transformations")
+let result = products
+    |> map_column("price", "with_tax", |p| p + (p / 10))
+    |> map_column("quantity", "in_stock", |q| q > 0)
+
+for row in result {
+    print(row)
+}
+
+// Example 5: Using inline lambda with complex expression
+print("")
+print("Example 5: Inline lambda with conditional")
+let categorized = products |> map_column("price", "price_tier", |p| {
+    if p > 80 {
+        "expensive"
+    } else if p > 60 {
+        "medium"
+    } else {
+        "cheap"
+    }
+})
+for row in categorized {
+    print(row)
+}
+
+print("")
+print("All map_column examples completed!")

@@ -10,7 +10,16 @@
 program = { SOI ~ item* ~ EOI }
 
 /// An item is either a definition or a statement
-item = { type_def | enum_def | function_def | statement }
+item = { type_def | enum_def | llm_config_decl | function_def | statement }
+
+// ============================================================================
+// LLM Config Declarations
+// ============================================================================
+
+/// LLM config declaration: llm_config name { key: value, ... }
+llm_config_decl = {
+    "llm_config" ~ identifier ~ "{" ~ config_field+ ~ "}"
+}
 
 // ============================================================================
 // Type Definitions
@@ -79,15 +88,46 @@ param = { identifier ~ ":" ~ type_annotation }
 function_body = { "{" ~ (llm_config | block_contents) ~ "}" }
 
 /// LLM configuration (detected by key-value pairs with prompt:)
+/// Can either be inline config fields + prompt, or use: reference + optional overrides + prompt
 llm_config = {
-    config_field+ ~ prompt_field
+    use_config ~ config_field* ~ prompt_field
+    | config_field+ ~ prompt_field
+}
+
+/// Reference to an llm_config declaration: use: config_name
+use_config = {
+    "use" ~ ":" ~ identifier ~ NEWLINE?
 }
 
 config_field = {
-    config_key ~ ":" ~ expression ~ NEWLINE?
+    provider_field
+    | simple_config_field
 }
 
-config_key = { "base_url" | "model" | "api_key_env" | "temperature" | "max_tokens" }
+simple_config_field = {
+    simple_config_key ~ ":" ~ expression ~ NEWLINE?
+}
+
+simple_config_key = { "base_url" | "model" | "api_key_env" | "temperature" | "max_tokens" }
+
+/// Provider configuration field: provider: { order: [...], ... }
+provider_field = {
+    "provider" ~ ":" ~ provider_object ~ NEWLINE?
+}
+
+/// Provider object with nested fields
+provider_object = {
+    "{" ~ (provider_config_field ~ ("," ~ provider_config_field)* ~ ","?)? ~ "}"
+}
+
+provider_config_field = {
+    provider_config_key ~ ":" ~ expression
+}
+
+provider_config_key = {
+    "order" | "only" | "ignore" | "allow_fallbacks" | "require_parameters"
+    | "data_collection" | "zdr" | "sort" | "quantizations"
+}
 
 prompt_field = {
     "prompt" ~ ":" ~ (raw_string_literal | fstring_literal | string_literal)
@@ -158,7 +198,10 @@ expression_statement = {
 // ============================================================================
 
 /// Expression with proper precedence (lowest to highest)
-expression = { or_expr }
+expression = { pipe_expr }
+
+/// Pipe operator (lowest precedence): x |> f or x |> f(a, b)
+pipe_expr = { or_expr ~ ("|>" ~ or_expr)* }
 
 /// Logical OR
 or_expr = { and_expr ~ ("||" ~ and_expr)* }
@@ -212,6 +255,9 @@ primary_expr = {
     | match_expr
     | parallel_block
     | parallel_map_expr
+    | map_column_expr
+    | map_row_expr
+    | explode_expr
     | sql_expr
     | lambda_expr
     | list_literal
@@ -219,7 +265,15 @@ primary_expr = {
     | struct_literal
     | literal
     | enum_constructor
+    | dollar_field
     | identifier
+}
+
+/// Dollar field access: $field_name or $["field_name"]
+/// Creates an implicit row accessor lambda
+dollar_field = {
+    "$" ~ "[" ~ expression ~ "]"
+    | "$" ~ identifier
 }
 
 /// Enum constructor: EnumName::Variant
@@ -269,6 +323,33 @@ parallel_block = {
 /// Parallel map: parallel_map(collection, |x| expr)
 parallel_map_expr = {
     "parallel_map" ~ "(" ~ expression ~ "," ~ lambda_expr ~ ")"
+}
+
+/// Map column: map_column(table, "input_col", "output_col", |val| expr)
+/// Or for pipe: data |> map_column("input_col", "output_col", |val| expr)
+map_column_expr = {
+    "map_column" ~ "(" ~ expression ~ "," ~ expression ~ "," ~ expression ~ "," ~ lambda_expr ~ ")"
+    | "map_column" ~ "(" ~ expression ~ "," ~ expression ~ "," ~ lambda_expr ~ ")"
+}
+
+/// Map row: map_row(table, "output_col", |row| expr) - lambda receives entire row
+/// Or for pipe: data |> map_row("output_col", |row| expr)
+/// Also supports $field syntax: data |> map_row("output", $a + $b)
+map_row_expr = {
+    "map_row" ~ "(" ~ expression ~ "," ~ expression ~ "," ~ map_row_mapper ~ ")"
+    | "map_row" ~ "(" ~ expression ~ "," ~ map_row_mapper ~ ")"
+}
+
+/// Mapper for map_row: can be a lambda or an expression with $field
+map_row_mapper = { lambda_expr | expression }
+
+/// Explode: explode(table, "column") or explode(table, "column", "prefix")
+/// Expands nested map keys into separate columns
+/// Or for pipe: data |> explode("column") or data |> explode("column", "prefix")
+explode_expr = {
+    "explode" ~ "(" ~ expression ~ "," ~ expression ~ "," ~ expression ~ ")"
+    | "explode" ~ "(" ~ expression ~ "," ~ expression ~ ")"
+    | "explode" ~ "(" ~ expression ~ ")"
 }
 
 /// SQL expression: SQL("query") or SQL<Type>("query")
@@ -342,16 +423,30 @@ raw_string_content = {
     !("\"\"\"") ~ ANY
 }
 
-/// F-string (interpolated string): f"hello {name}"
+/// F-string (interpolated string): f"hello {name}" or f"""hello {name}"""
 /// Using ${ } to allow inner whitespace suppression
-fstring_literal = ${ "f\"" ~ fstring_part* ~ "\"" }
+fstring_literal = ${
+    fstring_triple_quote
+    | fstring_single_quote
+}
+
+/// Single-quoted f-string: f"..."
+fstring_single_quote = ${ "f\"" ~ fstring_part* ~ "\"" }
+
+/// Triple-quoted f-string: f"""..."""
+fstring_triple_quote = ${ "f\"\"\"" ~ fstring_triple_part* ~ "\"\"\"" }
 
 fstring_part = ${
     fstring_interpolation
     | fstring_text
 }
 
-/// Text portion of f-string (no braces or escapes them)
+fstring_triple_part = ${
+    fstring_interpolation
+    | fstring_triple_text
+}
+
+/// Text portion of single-quoted f-string (no braces or escapes them)
 fstring_text = @{ fstring_char+ }
 
 fstring_char = {
@@ -359,6 +454,15 @@ fstring_char = {
     | "{{" // escaped left brace
     | "}}" // escaped right brace
     | "\\" ~ ANY
+}
+
+/// Text portion of triple-quoted f-string (allows quotes but not triple quotes)
+fstring_triple_text = @{ fstring_triple_char+ }
+
+fstring_triple_char = {
+    !("\"\"\"" | "{" | "}") ~ ANY
+    | "{{" // escaped left brace
+    | "}}" // escaped right brace
 }
 
 /// Interpolation: {expression}
@@ -380,8 +484,8 @@ keyword_boundary = {
 keyword = {
     "type" | "enum" | "def" | "let" | "if" | "else" | "while" | "for" | "in"
     | "return" | "match" | "true" | "false" | "null" | "parallel" | "parallel_map"
-    | "SQL" | "Ok" | "Err" | "String" | "Int" | "Float" | "Bool" | "Null" | "Path"
-    | "Map" | "Result"
+    | "map_column" | "map_row" | "explode" | "SQL" | "Ok" | "Err" | "String" | "Int" | "Float" | "Bool" | "Null" | "Path"
+    | "Map" | "Result" | "llm_config" | "use"
 }
 
 // ============================================================================

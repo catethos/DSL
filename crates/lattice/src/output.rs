@@ -83,7 +83,7 @@ pub enum CellValue {
 impl From<&Value> for CellValue {
     fn from(value: &Value) -> Self {
         match value {
-            Value::String(s) => CellValue::String(s.clone()),
+            Value::String(s) => CellValue::String(s.to_string()),
             Value::Int(i) => CellValue::Int(*i),
             Value::Float(f) => CellValue::Float(*f),
             Value::Bool(b) => CellValue::Bool(*b),
@@ -144,7 +144,7 @@ pub fn value_to_json(value: &Value) -> serde_json::Value {
                 }
             }
             // Otherwise return as a string
-            serde_json::Value::String(s.clone())
+            serde_json::Value::String(s.to_string())
         }
         Value::Int(i) => serde_json::Value::Number((*i).into()),
         Value::Float(f) => {
@@ -192,7 +192,7 @@ pub fn value_to_output(value: &Value) -> CellOutput {
                 }
             }
             return CellOutput::Struct {
-                type_name: type_name.clone(),
+                type_name: type_name.to_string(),
                 fields,
             };
         }
@@ -237,7 +237,7 @@ fn value_to_table(value: &Value) -> CellOutput {
 
     // Collect all unique column names from all rows
     let mut column_names: Vec<String> = Vec::new();
-    for row in rows {
+    for row in rows.iter() {
         if let Value::Map(map) = row {
             for key in map.keys() {
                 if !column_names.contains(key) && key != "__type" {
@@ -261,7 +261,7 @@ fn value_to_table(value: &Value) -> CellOutput {
 
     // Build row data
     let mut table_rows = Vec::with_capacity(rows.len());
-    for row in rows {
+    for row in rows.iter() {
         if let Value::Map(map) = row {
             let mut row_values = Vec::with_capacity(column_names.len());
             for col_name in &column_names {
@@ -466,17 +466,17 @@ mod tests {
 
     #[test]
     fn test_value_to_table() {
-        let value = Value::List(vec![
-            Value::Map({
+        let value = Value::list(vec![
+            Value::map({
                 let mut m = HashMap::new();
                 m.insert("id".to_string(), Value::Int(1));
-                m.insert("name".to_string(), Value::String("Alice".to_string()));
+                m.insert("name".to_string(), Value::string("Alice"));
                 m
             }),
-            Value::Map({
+            Value::map({
                 let mut m = HashMap::new();
                 m.insert("id".to_string(), Value::Int(2));
-                m.insert("name".to_string(), Value::String("Bob".to_string()));
+                m.insert("name".to_string(), Value::string("Bob"));
                 m
             }),
         ]);
@@ -535,10 +535,10 @@ mod tests {
 
     #[test]
     fn test_struct_output() {
-        let value = Value::Map({
+        let value = Value::map({
             let mut m = HashMap::new();
-            m.insert("__type".to_string(), Value::String("Person".to_string()));
-            m.insert("name".to_string(), Value::String("Alice".to_string()));
+            m.insert("__type".to_string(), Value::string("Person"));
+            m.insert("name".to_string(), Value::string("Alice"));
             m.insert("age".to_string(), Value::Int(30));
             m
         });

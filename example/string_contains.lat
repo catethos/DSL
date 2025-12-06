@@ -1,0 +1,32 @@
+// Example: Using contains() for simple substring matching
+// contains(haystack, needle, case_insensitive?) returns true if needle is found in haystack
+
+// Basic usage
+let text = "Hello, World!"
+print("Text:", text)
+print("Contains 'World':", contains(text, "World"))
+print("Contains 'world' (case-sensitive):", contains(text, "world"))
+print("Contains 'world' (case-insensitive):", contains(text, "world", true))
+print("Contains 'Hello':", contains(text, "Hello"))
+print("Contains 'foo':", contains(text, "foo"))
+
+// Checking for multiple substrings
+let sentence = "The quick brown fox jumps over the lazy dog"
+let has_fox = contains(sentence, "fox")
+let has_cat = contains(sentence, "cat")
+print("\nSentence:", sentence)
+print("Has 'fox':", has_fox)
+print("Has 'cat':", has_cat)
+
+// Practical example: checking for keywords
+let email = "Subject: URGENT - Please review the quarterly report"
+let is_urgent = contains(email, "URGENT") || contains(email, "urgent")
+print("\nEmail:", email)
+print("Is urgent:", is_urgent)
+
+// Empty string always matches
+print("\nEmpty string check:")
+print("Contains empty string:", contains("hello", ""))
+
+// Final result
+contains(text, "World")

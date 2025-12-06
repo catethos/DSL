@@ -7,10 +7,30 @@
 //!
 //! - [`LatticeValue`]: FFI-safe value type for cross-language marshaling
 //! - [`providers`]: Injectable provider traits (LLM, SQL, etc.)
+//! - [`RuntimeBuilder`]: Builder pattern for constructing isolated runtime instances
+//!
+//! ## Example
+//!
+//! ```ignore
+//! use lattice::runtime::{RuntimeBuilder, LatticeValue};
+//!
+//! // Create a runtime with default providers
+//! let runtime = RuntimeBuilder::new()
+//!     .with_default_providers()?
+//!     .build()?;
+//!
+//! // Create a minimal runtime without LLM/SQL
+//! let minimal = RuntimeBuilder::new()
+//!     .without_llm()
+//!     .without_sql()
+//!     .build()?;
+//! ```
 
+mod builder;
 mod value;
 pub mod providers;
 
+pub use builder::{BuiltRuntime, RuntimeBuilder, RuntimeConfig};
 pub use value::{ConversionError, LatticeValue};
 pub use providers::{
     DefaultLlmProvider, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmUsage,

@@ -136,17 +136,17 @@ impl<'a> Parser<'a> {
 
     fn coerce_path(value: &JsonValue) -> Result<Value> {
         match value {
-            JsonValue::String(s) => Ok(Value::Path(std::path::PathBuf::from(s))),
+            JsonValue::String(s) => Ok(Value::path(std::path::PathBuf::from(s))),
             _ => anyhow::bail!("Cannot convert {:?} to Path", value),
         }
     }
 
     fn coerce_string(value: &JsonValue) -> Result<Value> {
         match value {
-            JsonValue::String(s) => Ok(Value::String(s.clone())),
-            JsonValue::Number(n) => Ok(Value::String(n.to_string())),
-            JsonValue::Bool(b) => Ok(Value::String(b.to_string())),
-            JsonValue::Null => Ok(Value::String("".to_string())),
+            JsonValue::String(s) => Ok(Value::string(s.as_str())),
+            JsonValue::Number(n) => Ok(Value::string(n.to_string())),
+            JsonValue::Bool(b) => Ok(Value::string(b.to_string())),
+            JsonValue::Null => Ok(Value::string("")),
             JsonValue::Object(obj) => {
                 // LLM may wrap the value in an object like { "value": "text" } or { "string": "text" }
                 // Try common field names
@@ -293,17 +293,13 @@ impl<'a> Parser<'a> {
             JsonValue::Object(obj) => {
                 // Try common field names first
                 for field_name in ["value", "Value", "result", "Result"] {
-                    if let Some(inner) = obj.get(field_name) {
-                        if let JsonValue::String(s) = inner {
-                            return self.coerce_enum(&JsonValue::String(s.clone()), enum_name);
-                        }
+                    if let Some(JsonValue::String(s)) = obj.get(field_name) {
+                        return self.coerce_enum(&JsonValue::String(s.clone()), enum_name);
                     }
                 }
                 // Try the enum name itself as a field (e.g., {"Sentiment": "Positive"})
-                if let Some(inner) = obj.get(enum_name) {
-                    if let JsonValue::String(s) = inner {
-                        return self.coerce_enum(&JsonValue::String(s.clone()), enum_name);
-                    }
+                if let Some(JsonValue::String(s)) = obj.get(enum_name) {
+                    return self.coerce_enum(&JsonValue::String(s.clone()), enum_name);
                 }
                 // Try case-insensitive enum name match
                 let enum_name_lower = enum_name.to_lowercase();
@@ -316,10 +312,8 @@ impl<'a> Parser<'a> {
                 }
                 // If object has only one field, use that
                 if obj.len() == 1 {
-                    if let Some((_, inner)) = obj.iter().next() {
-                        if let JsonValue::String(s) = inner {
-                            return self.coerce_enum(&JsonValue::String(s.clone()), enum_name);
-                        }
+                    if let Some((_, JsonValue::String(s))) = obj.iter().next() {
+                        return self.coerce_enum(&JsonValue::String(s.clone()), enum_name);
                     }
                 }
                 anyhow::bail!("Cannot coerce object {:?} to enum '{}'", value, enum_name)
@@ -329,13 +323,13 @@ impl<'a> Parser<'a> {
 
         // Check if the value is a valid enum variant
         if e.values.contains(&str_value) {
-            Ok(Value::String(str_value))
+            Ok(Value::string(str_value))
         } else {
             // Try case-insensitive match
             let lower = str_value.to_lowercase();
             for variant in &e.values {
                 if variant.to_lowercase() == lower {
-                    return Ok(Value::String(variant.clone()));
+                    return Ok(Value::string(variant.as_str()));
                 }
             }
             anyhow::bail!(
@@ -371,7 +365,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(Value::Map(result))
+        Ok(Value::map(result))
     }
 
     fn coerce_list(&self, value: &JsonValue, inner_type: &FieldType) -> Result<Value> {
@@ -384,7 +378,7 @@ impl<'a> Parser<'a> {
             .map(|item| self.coerce(item, inner_type))
             .collect();
 
-        Ok(Value::List(coerced?))
+        Ok(Value::list(coerced?))
     }
 
     fn coerce_map(
@@ -405,7 +399,7 @@ impl<'a> Parser<'a> {
             })
             .collect();
 
-        Ok(Value::Map(coerced?))
+        Ok(Value::map(coerced?))
     }
 
     fn coerce_union(&self, value: &JsonValue, types: &[FieldType]) -> Result<Value> {

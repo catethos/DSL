@@ -1,0 +1,37 @@
+// Test the new llm_config feature
+
+// Define a reusable LLM configuration
+llm_config openai {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.0
+}
+
+// Output type
+type GreetingOutput {
+    greeting: String,
+    language: String
+}
+
+// Function using the shared config
+def SayHello(name: String) -> GreetingOutput {
+    use: openai
+    prompt: f"""
+    Generate a greeting for {name}.
+    Return the greeting and the language used.
+    """
+}
+
+// Another function using the same config with an override
+def TranslateText(text: String, target_language: String) -> String {
+    use: openai
+    temperature: 0.3  // Override for more creative output
+    prompt: f"""
+    Translate the following text to {target_language}:
+    {text}
+    """
+}
+
+// Test it
+print("Config test passed - syntax is valid!")

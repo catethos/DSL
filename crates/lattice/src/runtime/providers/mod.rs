@@ -11,11 +11,11 @@ pub mod llm;
 pub mod sql;
 
 pub use llm::{
-    DefaultLlmProvider, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmUsage,
-    NoLlmProvider,
+    BoxedLlmProvider, DefaultLlmProvider, LlmError, LlmMessage, LlmProvider, LlmRequest,
+    LlmResponse, LlmUsage, NoLlmProvider,
 };
 
-pub use sql::{NoSqlProvider, SqlError, SqlProvider, SqlResult, SqlRow};
+pub use sql::{BoxedSqlProvider, NoSqlProvider, SqlError, SqlProvider, SqlResult, SqlRow};
 
 #[cfg(feature = "sql")]
 pub use sql::DuckDbProvider;

@@ -5,16 +5,19 @@
 use crate::error::Result;
 use crate::syntax::ast::{
     Accessor, AssignTarget, BinaryOp, Block, ElseClause, EnumDef, Expr, ExprKind, FStringPart,
-    FunctionBody, FunctionDef, IfExprElse, Item, LambdaBody, Literal, MapKey, MatchArm,
-    MatchArmBody, Pattern, PatternKind, PrimitiveType, Program, Stmt, StmtKind, TypeAnnotation,
-    TypeDef, TypeExpr, UnaryOp,
+    FunctionBody, FunctionDef, IfExprElse, Item, LambdaBody, LlmConfigDecl, Literal, MapKey,
+    MatchArm, MatchArmBody, Pattern, PatternKind, PrimitiveType, Program, Stmt, StmtKind,
+    TypeAnnotation, TypeDef, TypeExpr, UnaryOp,
 };
+use crate::syntax::desugar::{contains_dollar_field, wrap_dollar_expr_in_lambda};
 use crate::types::{Class, Enum, Field, FieldType, TypeChecker, Value};
 use crate::vm::bytecode::{Chunk, CompiledFunction, LlmFunction, OpCode};
 
 /// Native functions built into the VM
 const NATIVE_FUNCTIONS: &[&str] = &[
     "len", "type", "str", "int", "float", "bool", "push", "pop", "keys", "values", "print", "sqrt",
+    // String functions
+    "contains", "regex_match", "word_count",
     // Path functions
     "path", "path_join", "path_parent", "path_file_name", "path_extension", "path_exists",
     "path_is_file", "path_is_dir", "path_to_str",
@@ -63,6 +66,8 @@ pub struct Compiler {
     functions: Vec<CompiledFunction>,
     /// Collected LLM functions
     llm_functions: Vec<LlmFunction>,
+    /// LLM config declarations (reusable config blocks)
+    llm_configs: std::collections::HashMap<String, LlmConfigDecl>,
     /// Counter for generating unique names (for hidden variables)
     unique_counter: usize,
     /// Known function names (for forward/recursive calls)
@@ -88,6 +93,7 @@ impl Compiler {
             enums: Vec::new(),
             functions: Vec::new(),
             llm_functions: Vec::new(),
+            llm_configs: std::collections::HashMap::new(),
             unique_counter: 0,
             known_functions: Vec::new(),
             known_llm_functions: Vec::new(),
@@ -152,6 +158,15 @@ impl Compiler {
 
     /// Compile an entire program
     fn compile_program(&mut self, program: &Program) -> Result<()> {
+        // First pass: collect all LLM config declarations
+        for item in &program.items {
+            if let Item::LlmConfigDecl(config_decl) = item {
+                self.llm_configs
+                    .insert(config_decl.name.node.clone(), config_decl.clone());
+            }
+        }
+
+        // Second pass: compile all items
         let len = program.items.len();
         for (i, item) in program.items.iter().enumerate() {
             let is_last = i == len - 1;
@@ -165,6 +180,11 @@ impl Compiler {
         match item {
             Item::TypeDef(type_def) => self.compile_type_def(type_def),
             Item::EnumDef(enum_def) => self.compile_enum_def(enum_def),
+            Item::LlmConfigDecl(_) => {
+                // LLM config declarations are already collected in compile_program
+                // They don't generate any bytecode themselves
+                Ok(())
+            }
             Item::FunctionDef(func_def) => self.compile_function_def(func_def),
             Item::Statement(stmt) => {
                 // For the last item, if it's an expression statement, don't pop
@@ -277,6 +297,45 @@ impl Compiler {
         func_def: &FunctionDef,
         config: &crate::syntax::ast::LlmConfig,
     ) -> Result<()> {
+        // Resolve base config from use: reference if present
+        let (base_url, model, api_key_env, mut temperature, mut max_tokens, mut provider) =
+            if let Some(ref config_name) = config.use_config {
+                if let Some(base_config) = self.llm_configs.get(config_name) {
+                    (
+                        base_config.base_url.clone(),
+                        base_config.model.clone(),
+                        base_config.api_key_env.clone(),
+                        base_config.temperature,
+                        base_config.max_tokens,
+                        base_config.provider.as_ref().map(convert_provider_config),
+                    )
+                } else {
+                    return Err(crate::error::LatticeError::Compile(format!(
+                        "Unknown llm_config '{}' referenced in function '{}'",
+                        config_name, func_def.name.node
+                    )));
+                }
+            } else {
+                (None, None, None, None, None, None)
+            };
+
+        // Override with inline config values (inline values take precedence)
+        let final_base_url = config.base_url.clone().or(base_url).unwrap_or_default();
+        let final_model = config.model.clone().or(model).unwrap_or_default();
+        let final_api_key_env = config.api_key_env.clone().or(api_key_env).unwrap_or_default();
+
+        // For temperature and max_tokens, inline values override base config
+        if config.temperature.is_some() {
+            temperature = config.temperature;
+        }
+        if config.max_tokens.is_some() {
+            max_tokens = config.max_tokens;
+        }
+        // For provider, inline config overrides base config
+        if config.provider.is_some() {
+            provider = config.provider.as_ref().map(convert_provider_config);
+        }
+
         // Determine return type
         let return_type = func_def
             .return_type
@@ -284,14 +343,17 @@ impl Compiler {
             .map(convert_type_annotation)
             .unwrap_or(FieldType::String);
 
-        // Convert the prompt expression to a template string
+        // Check if prompt contains complex expressions that need runtime evaluation
+        let needs_runtime_eval = prompt_has_complex_expressions(&config.prompt);
+
+        // Convert the prompt expression to a template string (for simple cases or fallback)
         let prompt_template = prompt_expr_to_template(&config.prompt);
 
-        let llm_func = LlmFunction::new(
+        let mut llm_func = LlmFunction::new(
             func_def.name.node.clone(),
-            config.base_url.clone().unwrap_or_default(),
-            config.model.clone().unwrap_or_default(),
-            config.api_key_env.clone().unwrap_or_default(),
+            final_base_url,
+            final_model,
+            final_api_key_env,
             prompt_template,
             return_type,
             func_def
@@ -301,21 +363,58 @@ impl Compiler {
                 .collect(),
         );
 
+        // If the prompt has complex expressions, compile it to bytecode
+        if needs_runtime_eval {
+            let prompt_chunk = self.compile_prompt_to_bytecode(func_def, &config.prompt)?;
+            llm_func = llm_func.with_prompt_chunk(prompt_chunk);
+        }
+
         // Apply optional settings
-        let llm_func = if let Some(temp) = config.temperature {
+        let llm_func = if let Some(temp) = temperature {
             llm_func.with_temperature(temp)
         } else {
             llm_func
         };
 
-        let llm_func = if let Some(max_tokens) = config.max_tokens {
-            llm_func.with_max_tokens(max_tokens)
+        let llm_func = if let Some(max_tok) = max_tokens {
+            llm_func.with_max_tokens(max_tok)
+        } else {
+            llm_func
+        };
+
+        let llm_func = if let Some(prov) = provider {
+            llm_func.with_provider(prov)
         } else {
             llm_func
         };
 
         self.llm_functions.push(llm_func);
         Ok(())
+    }
+
+    /// Compile a prompt expression to bytecode for runtime evaluation.
+    /// The resulting chunk expects parameters to be on the stack and produces a String.
+    fn compile_prompt_to_bytecode(
+        &mut self,
+        func_def: &FunctionDef,
+        prompt: &Expr,
+    ) -> Result<Chunk> {
+        // Create a new compiler for the prompt expression
+        let mut prompt_compiler = Compiler::new();
+        prompt_compiler.scope_depth = 1; // Function scope
+
+        // Add function parameters as locals (in order)
+        for param in &func_def.params {
+            prompt_compiler.add_local(param.name.node.clone());
+        }
+
+        // Compile the prompt expression - this should leave a String on the stack
+        prompt_compiler.compile_expr(prompt)?;
+
+        // The result should be a String; we don't emit Return here because
+        // the VM will just read the top of stack after executing the chunk
+
+        Ok(prompt_compiler.chunk)
     }
 
     // ========================================================================
@@ -330,7 +429,8 @@ impl Compiler {
                 self.compile_expr(value)?;
                 if self.scope_depth == 0 {
                     // Global variable
-                    self.emit(OpCode::SetGlobal(name.node.clone()), line);
+                    let name_idx = self.intern_string(&name.node);
+                    self.emit(OpCode::SetGlobal(name_idx), line);
                     self.emit(OpCode::Pop, line);
                 } else {
                     // Local variable - value is already on stack
@@ -377,7 +477,8 @@ impl Compiler {
             if let Some(slot) = self.resolve_local(&target.base.node) {
                 self.emit(OpCode::SetLocal(slot), line);
             } else {
-                self.emit(OpCode::SetGlobal(target.base.node.clone()), line);
+                let name_idx = self.intern_string(&target.base.node);
+                self.emit(OpCode::SetGlobal(name_idx), line);
             }
             self.emit(OpCode::Pop, line);
         } else {
@@ -402,14 +503,16 @@ impl Compiler {
         if let Some(slot) = self.resolve_local(&target.base.node) {
             self.emit(OpCode::GetLocal(slot), line);
         } else {
-            self.emit(OpCode::GetGlobal(target.base.node.clone()), line);
+            let name_idx = self.intern_string(&target.base.node);
+            self.emit(OpCode::GetGlobal(name_idx), line);
         }
 
         // Apply all accessors except the last one
         for accessor in &accessors[..last_idx] {
             match accessor {
                 Accessor::Field(name) => {
-                    self.emit(OpCode::GetField(name.clone()), line);
+                    let field_idx = self.intern_string(name);
+                    self.emit(OpCode::GetField(field_idx), line);
                 }
                 Accessor::Index(index_expr) => {
                     self.compile_expr(index_expr)?;
@@ -422,7 +525,8 @@ impl Compiler {
         match &accessors[last_idx] {
             Accessor::Field(name) => {
                 self.compile_expr(value)?;
-                self.emit(OpCode::SetField(name.clone()), line);
+                let field_idx = self.intern_string(name);
+                self.emit(OpCode::SetField(field_idx), line);
             }
             Accessor::Index(index_expr) => {
                 self.compile_expr(index_expr)?;
@@ -435,7 +539,8 @@ impl Compiler {
         if let Some(slot) = self.resolve_local(&target.base.node) {
             self.emit(OpCode::SetLocal(slot), line);
         } else {
-            self.emit(OpCode::SetGlobal(target.base.node.clone()), line);
+            let name_idx = self.intern_string(&target.base.node);
+            self.emit(OpCode::SetGlobal(name_idx), line);
         }
         self.emit(OpCode::Pop, line);
 
@@ -539,7 +644,8 @@ impl Compiler {
         // Check: idx < len(iter)
         self.emit(OpCode::GetLocal(idx_slot), line);
         self.emit(OpCode::GetLocal(iter_slot), line);
-        self.emit(OpCode::CallNative("len".to_string(), 1), line);
+        let len_idx = self.intern_string("len");
+        self.emit(OpCode::CallNative(len_idx, 1), line);
         self.emit(OpCode::Lt, line);
 
         // Exit if false
@@ -605,11 +711,46 @@ impl Compiler {
             ExprKind::ParallelMap { collection, mapper } => {
                 self.compile_parallel_map(collection, mapper, line)
             }
+            ExprKind::MapColumn { table, input_col, output_col, mapper } => {
+                self.compile_map_column(table, input_col, output_col, mapper, line)
+            }
+            ExprKind::MapRow { table, output_col, mapper } => {
+                self.compile_map_row(table, output_col, mapper, line)
+            }
+            ExprKind::Explode { table, column, prefix } => {
+                self.compile_explode(table, column, prefix, line)
+            }
             ExprKind::Sql { ty, query } => self.compile_sql(ty, query, line),
             ExprKind::Grouped(inner) => self.compile_expr(inner),
             ExprKind::Block(block) => self.compile_block(block),
             ExprKind::FString(parts) => self.compile_fstring(parts, line),
+            ExprKind::DollarField(field_expr) => {
+                // DollarField should be desugared before reaching the compiler.
+                // If we get here, it means $field was used in a context that doesn't
+                // support implicit lambdas. We compile it as: |__row__| __row__[field]
+                self.compile_dollar_field_as_lambda(field_expr, line)
+            }
         }
+    }
+
+    /// Compile a DollarField as an implicit lambda: $field -> |__row__| __row__["field"]
+    fn compile_dollar_field_as_lambda(&mut self, field_expr: &Expr, line: usize) -> Result<()> {
+        // Create the lambda body: __row__[field_expr]
+        let row_var = Expr {
+            kind: ExprKind::Var("__row__".to_string()),
+            span: field_expr.span,
+        };
+
+        let index_expr = Expr {
+            kind: ExprKind::Index {
+                object: Box::new(row_var),
+                index: Box::new(field_expr.clone()),
+            },
+            span: field_expr.span,
+        };
+
+        // Compile as lambda |__row__| __row__[field]
+        self.compile_lambda(&["__row__".to_string()], &LambdaBody::Expr(index_expr), line)
     }
 
     /// Compile a literal value
@@ -617,7 +758,7 @@ impl Compiler {
         let value = match lit {
             Literal::Int(n) => Value::Int(*n),
             Literal::Float(f) => Value::Float(*f),
-            Literal::String(s) => Value::String(s.clone()),
+            Literal::String(s) => Value::string(s.as_str()),
             Literal::Bool(b) => Value::Bool(*b),
             Literal::Null => Value::Null,
         };
@@ -630,7 +771,8 @@ impl Compiler {
         if let Some(slot) = self.resolve_local(name) {
             self.emit(OpCode::GetLocal(slot), line);
         } else {
-            self.emit(OpCode::GetGlobal(name.to_string()), line);
+            let name_idx = self.intern_string(name);
+            self.emit(OpCode::GetGlobal(name_idx), line);
         }
         Ok(())
     }
@@ -639,7 +781,7 @@ impl Compiler {
     fn compile_enum_variant(&mut self, enum_name: &str, variant: &str, line: usize) -> Result<()> {
         // Enum variants are represented as strings "EnumName::Variant"
         let value = format!("{}::{}", enum_name, variant);
-        self.emit_const(Value::String(value), line);
+        self.emit_const(Value::string(value), line);
         Ok(())
     }
 
@@ -731,7 +873,8 @@ impl Compiler {
     /// Compile a field access
     fn compile_field(&mut self, object: &Expr, field: &str, line: usize) -> Result<()> {
         self.compile_expr(object)?;
-        self.emit(OpCode::GetField(field.to_string()), line);
+        let field_idx = self.intern_string(field);
+        self.emit(OpCode::GetField(field_idx), line);
         Ok(())
     }
 
@@ -752,7 +895,8 @@ impl Compiler {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                self.emit(OpCode::CallNative(name.clone(), args.len()), line);
+                let name_idx = self.intern_string(name);
+                self.emit(OpCode::CallNative(name_idx, args.len()), line);
                 return Ok(());
             }
 
@@ -764,7 +908,8 @@ impl Compiler {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                self.emit(OpCode::LlmCall(name.clone()), line);
+                let name_idx = self.intern_string(name);
+                self.emit(OpCode::LlmCall(name_idx), line);
                 return Ok(());
             }
 
@@ -776,7 +921,8 @@ impl Compiler {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                self.emit(OpCode::CallUser(name.clone(), args.len()), line);
+                let name_idx = self.intern_string(name);
+                self.emit(OpCode::CallUser(name_idx, args.len()), line);
                 return Ok(());
             }
         }
@@ -811,7 +957,7 @@ impl Compiler {
                 MapKey::String(s) => s.clone(),
                 MapKey::Ident(s) => s.clone(),
             };
-            self.emit_const(Value::String(key_str), line);
+            self.emit_const(Value::string(key_str), line);
             self.compile_expr(value)?;
         }
         self.emit(OpCode::MakeMap(pairs.len()), line);
@@ -822,10 +968,11 @@ impl Compiler {
     fn compile_struct(&mut self, name: &str, fields: &[(String, Expr)], line: usize) -> Result<()> {
         // Push field name/value pairs
         for (field_name, field_value) in fields {
-            self.emit_const(Value::String(field_name.clone()), line);
+            self.emit_const(Value::string(field_name.as_str()), line);
             self.compile_expr(field_value)?;
         }
-        self.emit(OpCode::MakeStruct(name.to_string(), fields.len()), line);
+        let name_idx = self.intern_string(name);
+        self.emit(OpCode::MakeStruct(name_idx, fields.len()), line);
         Ok(())
     }
 
@@ -944,7 +1091,7 @@ impl Compiler {
             PatternKind::Enum { enum_name, variant } => {
                 // Compare as string "EnumName::Variant"
                 let full_name = format!("{}::{}", enum_name, variant);
-                self.emit_const(Value::String(full_name), line);
+                self.emit_const(Value::string(full_name), line);
                 self.emit(OpCode::Eq, line);
                 let jump = self.emit_jump(OpCode::JumpIfFalse(0), line);
                 Ok(Some(jump))
@@ -952,15 +1099,17 @@ impl Compiler {
             PatternKind::Result { is_ok, binding } => {
                 // Check __type field
                 self.emit(OpCode::Dup, line);
-                self.emit(OpCode::GetField("__type".to_string()), line);
+                let type_idx = self.intern_string("__type");
+                self.emit(OpCode::GetField(type_idx), line);
                 let expected = if *is_ok { "Ok" } else { "Err" };
-                self.emit_const(Value::String(expected.to_string()), line);
+                self.emit_const(Value::string(expected), line);
                 self.emit(OpCode::Eq, line);
                 let jump = self.emit_jump(OpCode::JumpIfFalse(0), line);
 
                 // Extract and bind the inner value
                 self.emit(OpCode::Dup, line);
-                self.emit(OpCode::GetField("value".to_string()), line);
+                let value_idx = self.intern_string("value");
+                self.emit(OpCode::GetField(value_idx), line);
                 self.add_local(binding.clone());
 
                 Ok(Some(jump))
@@ -976,6 +1125,9 @@ impl Compiler {
         // Create a new compiler for the lambda body
         let mut lambda_compiler = Compiler::new();
         lambda_compiler.scope_depth = 1;
+        // Copy known functions so lambdas can call user-defined functions
+        lambda_compiler.known_functions = self.known_functions.clone();
+        lambda_compiler.known_llm_functions = self.known_llm_functions.clone();
 
         // Add parameters as locals
         for param in params {
@@ -1001,7 +1153,7 @@ impl Compiler {
 
         // For now, push the function name as a string reference
         // The VM will need to look it up
-        self.emit_const(Value::String(name), line);
+        self.emit_const(Value::string(name), line);
 
         Ok(())
     }
@@ -1016,10 +1168,226 @@ impl Compiler {
     }
 
     /// Compile a parallel map
+    ///
+    /// Detects if the mapper is a simple `|x| llm_fn(x)` pattern and emits
+    /// the specialized `ParallelLlmMap` opcode for parallel HTTP calls.
+    /// Otherwise falls back to the general `ParallelMap` opcode.
     fn compile_parallel_map(&mut self, collection: &Expr, mapper: &Expr, line: usize) -> Result<()> {
+        // Try to detect the `|x| llm_fn(x)` pattern for LLM functions
+        if let ExprKind::Lambda { params, body } = &mapper.kind {
+            if params.len() == 1 {
+                if let LambdaBody::Expr(body_expr) = body.as_ref() {
+                    if let ExprKind::Call { callee, args } = &body_expr.kind {
+                        // Check if it's a simple call with the lambda param as the only arg
+                        if args.len() == 1 {
+                            if let ExprKind::Var(arg_name) = &args[0].kind {
+                                if arg_name == &params[0] {
+                                    // Check if callee is an LLM function
+                                    if let ExprKind::Var(func_name) = &callee.kind {
+                                        let is_llm_fn = self.known_llm_functions.contains(func_name)
+                                            || self.llm_functions.iter().any(|f| f.name == *func_name);
+
+                                        if is_llm_fn {
+                                            // Emit specialized parallel LLM map
+                                            self.compile_expr(collection)?;
+                                            let func_name_idx = self.intern_string(func_name);
+                                            self.emit(OpCode::ParallelLlmMap(func_name_idx), line);
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: general parallel map (sequential for now)
         self.compile_expr(collection)?;
         self.compile_expr(mapper)?;
         self.emit(OpCode::ParallelMap, line);
+        Ok(())
+    }
+
+    /// Compile a map_column expression
+    ///
+    /// Detects if the mapper is a simple `|x| llm_fn(x)` pattern and emits
+    /// the specialized `MapColumnLlm` opcode for parallel LLM column mapping.
+    /// Otherwise falls back to the general `MapColumn` opcode.
+    fn compile_map_column(
+        &mut self,
+        table: &Expr,
+        input_col: &Expr,
+        output_col: &Expr,
+        mapper: &Expr,
+        line: usize,
+    ) -> Result<()> {
+        // Try to detect the `|x| llm_fn(x)` pattern for LLM functions
+        if let ExprKind::Lambda { params, body } = &mapper.kind {
+            if params.len() == 1 {
+                if let LambdaBody::Expr(body_expr) = body.as_ref() {
+                    if let ExprKind::Call { callee, args } = &body_expr.kind {
+                        // Check if it's a simple call with the lambda param as the only arg
+                        if args.len() == 1 {
+                            if let ExprKind::Var(arg_name) = &args[0].kind {
+                                if arg_name == &params[0] {
+                                    // Check if callee is an LLM function
+                                    if let ExprKind::Var(func_name) = &callee.kind {
+                                        let is_llm_fn = self.known_llm_functions.contains(func_name)
+                                            || self.llm_functions.iter().any(|f| f.name == *func_name);
+
+                                        if is_llm_fn {
+                                            // Emit specialized parallel LLM map column
+                                            self.compile_expr(table)?;
+                                            self.compile_expr(input_col)?;
+                                            self.compile_expr(output_col)?;
+                                            let func_name_idx = self.intern_string(func_name);
+                                            self.emit(OpCode::MapColumnLlm(func_name_idx), line);
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: general map column (sequential for now)
+        self.compile_expr(table)?;
+        self.compile_expr(input_col)?;
+        self.compile_expr(output_col)?;
+        self.compile_expr(mapper)?;
+        self.emit(OpCode::MapColumn, line);
+        Ok(())
+    }
+
+    /// Compile a map_row expression
+    ///
+    /// map_row applies a lambda to each entire row, adding the result as a new column.
+    /// Unlike map_column which extracts a single column value, map_row passes the
+    /// entire row map to the lambda, allowing access to multiple columns.
+    ///
+    /// This function also supports the `$field` syntax. If the mapper expression contains
+    /// `$field` references, it will be automatically wrapped in a lambda:
+    ///   `$a + $b` becomes `|__row__| __row__["a"] + __row__["b"]`
+    fn compile_map_row(
+        &mut self,
+        table: &Expr,
+        output_col: &Expr,
+        mapper: &Expr,
+        line: usize,
+    ) -> Result<()> {
+        // Check if mapper contains $field and needs desugaring
+        let mapper = if contains_dollar_field(mapper) {
+            wrap_dollar_expr_in_lambda(mapper)
+        } else {
+            mapper.clone()
+        };
+        let mapper = &mapper;
+
+        // Try to detect the `|row| llm_fn(row["col1"], row["col2"])` pattern for LLM functions
+        if let ExprKind::Lambda { params, body } = &mapper.kind {
+            if params.len() == 1 {
+                let row_param = &params[0];
+                if let LambdaBody::Expr(body_expr) = body.as_ref() {
+                    if let ExprKind::Call { callee, args } = &body_expr.kind {
+                        // Check if callee is an LLM function
+                        if let ExprKind::Var(func_name) = &callee.kind {
+                            let is_llm_fn = self.known_llm_functions.contains(func_name)
+                                || self.llm_functions.iter().any(|f| f.name == *func_name);
+
+                            if is_llm_fn {
+                                // Extract column names from the lambda call arguments
+                                // Each arg should be row["col_name"] or row.col_name
+                                let column_names: Vec<String> = args.iter().map(|arg| {
+                                    Self::extract_column_name(arg, row_param)
+                                }).collect();
+
+                                // Join column names with comma separator
+                                let mappings_str = column_names.join(",");
+                                let mappings_idx = self.intern_string(&mappings_str);
+
+                                // Emit specialized parallel LLM map row
+                                self.compile_expr(table)?;
+                                self.compile_expr(output_col)?;
+                                self.compile_expr(mapper)?;
+                                let func_name_idx = self.intern_string(func_name);
+                                self.emit(OpCode::MapRowLlm(func_name_idx, mappings_idx), line);
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: general map row (sequential for now)
+        self.compile_expr(table)?;
+        self.compile_expr(output_col)?;
+        self.compile_expr(mapper)?;
+        self.emit(OpCode::MapRow, line);
+        Ok(())
+    }
+
+    /// Extract column name from a lambda argument expression.
+    ///
+    /// Handles patterns like:
+    /// - `row["column_name"]` -> "column_name"
+    /// - `row.column_name` -> "column_name"
+    ///
+    /// Returns empty string if the pattern is not recognized.
+    fn extract_column_name(expr: &Expr, row_param: &str) -> String {
+        match &expr.kind {
+            // row["column_name"] - Index access with string literal
+            ExprKind::Index { object, index } => {
+                if let ExprKind::Var(var_name) = &object.kind {
+                    if var_name == row_param {
+                        if let ExprKind::Literal(Literal::String(col_name)) = &index.kind {
+                            return col_name.clone();
+                        }
+                    }
+                }
+            }
+            // row.column_name - Field access
+            ExprKind::Field { object, field } => {
+                if let ExprKind::Var(var_name) = &object.kind {
+                    if var_name == row_param {
+                        return field.clone();
+                    }
+                }
+            }
+            _ => {}
+        }
+        // Return empty string for unrecognized patterns
+        // The VM will handle this by using Value::Null
+        String::new()
+    }
+
+    /// Compile an explode expression
+    fn compile_explode(
+        &mut self,
+        table: &Expr,
+        column: &Expr,
+        prefix: &Option<Box<Expr>>,
+        line: usize,
+    ) -> Result<()> {
+        // Compile table expression
+        self.compile_expr(table)?;
+
+        // Compile column name
+        self.compile_expr(column)?;
+
+        // Compile prefix (or push null if not provided)
+        if let Some(prefix_expr) = prefix {
+            self.compile_expr(prefix_expr)?;
+        } else {
+            self.emit_const(Value::Null, line);
+        }
+
+        self.emit(OpCode::Explode, line);
         Ok(())
     }
 
@@ -1028,7 +1396,8 @@ impl Compiler {
         self.compile_expr(query)?;
         if let Some(type_ann) = ty {
             let type_name = get_type_name(&type_ann.ty);
-            self.emit(OpCode::SqlQueryTyped(type_name), line);
+            let type_name_idx = self.intern_string(&type_name);
+            self.emit(OpCode::SqlQueryTyped(type_name_idx), line);
         } else {
             self.emit(OpCode::SqlQuery, line);
         }
@@ -1043,14 +1412,14 @@ impl Compiler {
     fn compile_fstring(&mut self, parts: &[FStringPart], line: usize) -> Result<()> {
         if parts.is_empty() {
             // Empty f-string: f""
-            self.emit_const(Value::String(String::new()), line);
+            self.emit_const(Value::string(""), line);
             return Ok(());
         }
 
         // Compile the first part
         match &parts[0] {
             FStringPart::Text(s) => {
-                self.emit_const(Value::String(s.clone()), line);
+                self.emit_const(Value::string(s.as_str()), line);
             }
             FStringPart::Expr(expr) => {
                 self.compile_expr(expr)?;
@@ -1063,7 +1432,7 @@ impl Compiler {
         for part in &parts[1..] {
             match part {
                 FStringPart::Text(s) => {
-                    self.emit_const(Value::String(s.clone()), line);
+                    self.emit_const(Value::string(s.as_str()), line);
                 }
                 FStringPart::Expr(expr) => {
                     self.compile_expr(expr)?;
@@ -1089,14 +1458,16 @@ impl Compiler {
         }
 
         // If there's a trailing expression, compile it (leaving value on stack)
+        // and use PopBelow to preserve it while cleaning up locals
         if let Some(expr) = &block.expr {
             self.compile_expr(expr)?;
+            self.end_scope_preserve_top(line);
         } else {
-            // No trailing expression - push null
+            // No trailing expression - push null, then pop normally
             self.emit_const(Value::Null, line);
+            self.end_scope(line);
         }
 
-        self.end_scope(line);
         Ok(())
     }
 
@@ -1113,6 +1484,11 @@ impl Compiler {
     fn emit_const(&mut self, value: Value, line: usize) {
         let idx = self.chunk.add_constant(value);
         self.emit(OpCode::Const(idx), line);
+    }
+
+    /// Intern a string in the chunk's string table and return its index
+    fn intern_string(&mut self, s: &str) -> usize {
+        self.chunk.intern_string(s)
     }
 
     /// Emit a jump instruction and return its offset for patching
@@ -1139,6 +1515,23 @@ impl Compiler {
         while !self.locals.is_empty() && self.locals.last().unwrap().depth > self.scope_depth {
             self.emit(OpCode::Pop, line);
             self.locals.pop();
+        }
+    }
+
+    /// End the current scope while preserving the top of stack (return value)
+    fn end_scope_preserve_top(&mut self, line: usize) {
+        self.scope_depth -= 1;
+
+        // Count how many locals need to be popped
+        let mut pop_count = 0;
+        while !self.locals.is_empty() && self.locals.last().unwrap().depth > self.scope_depth {
+            pop_count += 1;
+            self.locals.pop();
+        }
+
+        // Use PopBelow to pop locals while preserving the top value
+        if pop_count > 0 {
+            self.emit(OpCode::PopBelow(pop_count), line);
         }
     }
 
@@ -1197,6 +1590,61 @@ fn convert_type_expr(ty: &TypeExpr) -> FieldType {
             // A proper implementation would use Union or a Result type
             convert_type_annotation(ok)
         }
+    }
+}
+
+/// Convert an AST ProviderConfig to bytecode ProviderConfig
+fn convert_provider_config(
+    ast_provider: &crate::syntax::ast::ProviderConfig,
+) -> crate::vm::bytecode::ProviderConfig {
+    crate::vm::bytecode::ProviderConfig {
+        order: ast_provider.order.clone(),
+        only: ast_provider.only.clone(),
+        ignore: ast_provider.ignore.clone(),
+        allow_fallbacks: ast_provider.allow_fallbacks,
+        require_parameters: ast_provider.require_parameters,
+        data_collection: ast_provider.data_collection.clone(),
+        zdr: ast_provider.zdr,
+        sort: ast_provider.sort.clone(),
+        quantizations: ast_provider.quantizations.clone(),
+    }
+}
+
+/// Check if a prompt expression contains complex expressions that need runtime evaluation.
+///
+/// Complex expressions are anything other than:
+/// - Simple variable references: {x}
+/// - Field accesses: {x.field}
+///
+/// Examples of complex expressions:
+/// - If expressions: {if x > 10 { "big" } else { "small" }}
+/// - Binary operations: {x + y}
+/// - Function calls: {format(x)}
+fn prompt_has_complex_expressions(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Literal(Literal::String(_)) => false,
+        ExprKind::FString(parts) => {
+            for part in parts {
+                if let FStringPart::Expr(e) = part {
+                    if !is_simple_template_expr(e) {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        // Non-string prompt expressions are complex
+        _ => true,
+    }
+}
+
+/// Check if an expression is simple enough for template substitution.
+/// Simple expressions are variables and field accesses.
+fn is_simple_template_expr(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Var(_) => true,
+        ExprKind::Field { object, .. } => is_simple_template_expr(object),
+        _ => false,
     }
 }
 
@@ -1323,7 +1771,7 @@ mod tests {
     fn test_string_literal() {
         let result = compile_and_run("\"hello\"").unwrap();
         match result {
-            Value::String(s) => assert_eq!(s, "hello"),
+            Value::String(s) => assert_eq!(&*s, "hello"),
             _ => panic!("Expected String"),
         }
     }
@@ -1647,7 +2095,7 @@ sum",
     fn test_fstring_simple() {
         let result = compile_and_run(r#"f"hello world""#).unwrap();
         match result {
-            Value::String(s) => assert_eq!(s, "hello world"),
+            Value::String(s) => assert_eq!(&*s, "hello world"),
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -1657,7 +2105,7 @@ sum",
         let result = compile_and_run(r#"let name = "Alice"
 f"Hello, {name}!""#).unwrap();
         match result {
-            Value::String(s) => assert_eq!(s, "Hello, Alice!"),
+            Value::String(s) => assert_eq!(&*s, "Hello, Alice!"),
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -1666,7 +2114,7 @@ f"Hello, {name}!""#).unwrap();
     fn test_fstring_with_expression() {
         let result = compile_and_run(r#"f"The answer is {40 + 2}""#).unwrap();
         match result {
-            Value::String(s) => assert_eq!(s, "The answer is 42"),
+            Value::String(s) => assert_eq!(&*s, "The answer is 42"),
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -1677,7 +2125,7 @@ f"Hello, {name}!""#).unwrap();
 let y = 20
 f"{x} + {y} = {x + y}""#).unwrap();
         match result {
-            Value::String(s) => assert_eq!(s, "10 + 20 = 30"),
+            Value::String(s) => assert_eq!(&*s, "10 + 20 = 30"),
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -1686,7 +2134,7 @@ f"{x} + {y} = {x + y}""#).unwrap();
     fn test_fstring_empty() {
         let result = compile_and_run(r#"f"""#).unwrap();
         match result {
-            Value::String(s) => assert_eq!(s, ""),
+            Value::String(s) => assert_eq!(&*s, ""),
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -1697,8 +2145,214 @@ f"{x} + {y} = {x + y}""#).unwrap();
         let result = compile_and_run(r#"let table = "users"
 f"SELECT * FROM {table}""#).unwrap();
         match result {
-            Value::String(s) => assert_eq!(s, "SELECT * FROM users"),
+            Value::String(s) => assert_eq!(&*s, "SELECT * FROM users"),
             _ => panic!("Expected String, got {:?}", result),
         }
+    }
+
+    // ========================================================================
+    // Parallel LLM Map Tests
+    // ========================================================================
+
+    /// Helper to check if compiled code contains ParallelLlmMap opcode
+    fn has_parallel_llm_map(source: &str) -> bool {
+        use crate::vm::bytecode::OpCode;
+
+        let program = parser::parse(source).expect("parse failed");
+        let result = Compiler::compile(&program).expect("compile failed");
+
+        result.chunk.code.iter().any(|op| matches!(op, OpCode::ParallelLlmMap(_)))
+    }
+
+    /// Helper to check if compiled code contains ParallelMap opcode
+    fn has_parallel_map(source: &str) -> bool {
+        use crate::vm::bytecode::OpCode;
+
+        let program = parser::parse(source).expect("parse failed");
+        let result = Compiler::compile(&program).expect("compile failed");
+
+        result.chunk.code.iter().any(|op| matches!(op, OpCode::ParallelMap))
+    }
+
+    #[test]
+    fn test_parallel_map_llm_detection() {
+        // When parallel_map is called with a lambda that calls an LLM function,
+        // the compiler should emit ParallelLlmMap instead of ParallelMap
+        let source = r#"def summarize(text: String) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    prompt: "Summarize: ${text}"
+}
+
+let docs = ["doc1", "doc2", "doc3"]
+parallel_map(docs, |d| summarize(d))"#;
+
+        assert!(has_parallel_llm_map(source), "Expected ParallelLlmMap opcode for LLM function pattern");
+        assert!(!has_parallel_map(source), "Should not have ParallelMap when ParallelLlmMap is used");
+    }
+
+    #[test]
+    fn test_parallel_map_regular_function_fallback() {
+        // When parallel_map is called with a lambda that calls a regular function,
+        // the compiler should emit ParallelMap (fallback)
+        let source = r#"def double(x: Int) -> Int {
+    x * 2
+}
+
+let nums = [1, 2, 3]
+parallel_map(nums, |n| double(n))"#;
+
+        assert!(has_parallel_map(source), "Expected ParallelMap opcode for regular function");
+        assert!(!has_parallel_llm_map(source), "Should not have ParallelLlmMap for regular function");
+    }
+
+    #[test]
+    fn test_parallel_map_complex_lambda_fallback() {
+        // When the lambda body is more complex than just a function call,
+        // fall back to ParallelMap
+        let source = r#"def summarize(text: String) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    prompt: "Summarize: ${text}"
+}
+
+let docs = ["doc1", "doc2", "doc3"]
+parallel_map(docs, |d| summarize(d + " suffix"))"#;
+
+        // The lambda body is `summarize(d + " suffix")` which is more complex
+        // than just `summarize(d)`, so it should fall back to ParallelMap
+        assert!(has_parallel_map(source), "Expected ParallelMap for complex lambda");
+    }
+
+    // ========================================================================
+    // map_column Compiler Tests
+    // ========================================================================
+
+    /// Helper to check if compiled code contains MapColumn opcode
+    fn has_map_column(source: &str) -> bool {
+        use crate::vm::bytecode::OpCode;
+
+        let program = parser::parse(source).expect("parse failed");
+        let result = Compiler::compile(&program).expect("compile failed");
+
+        result.chunk.code.iter().any(|op| matches!(op, OpCode::MapColumn))
+    }
+
+    /// Helper to check if compiled code contains MapColumnLlm opcode
+    fn has_map_column_llm(source: &str) -> bool {
+        use crate::vm::bytecode::OpCode;
+
+        let program = parser::parse(source).expect("parse failed");
+        let result = Compiler::compile(&program).expect("compile failed");
+
+        result.chunk.code.iter().any(|op| matches!(op, OpCode::MapColumnLlm(_)))
+    }
+
+    #[test]
+    fn test_map_column_regular_function() {
+        let source = r#"def double(x: Int) -> Int {
+    x * 2
+}
+
+let data = [{"val": 1}, {"val": 2}]
+map_column(data, "val", "doubled", |x| double(x))"#;
+
+        assert!(has_map_column(source), "Expected MapColumn opcode for regular function");
+        assert!(!has_map_column_llm(source), "Should not have MapColumnLlm for regular function");
+    }
+
+    #[test]
+    fn test_map_column_llm_detection() {
+        let source = r#"def summarize(text: String) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    prompt: "Summarize: ${text}"
+}
+
+let docs = [{"content": "doc1"}, {"content": "doc2"}]
+map_column(docs, "content", "summary", |t| summarize(t))"#;
+
+        assert!(has_map_column_llm(source), "Expected MapColumnLlm opcode for LLM function");
+        assert!(!has_map_column(source), "Should not have MapColumn when LLM path is taken");
+    }
+
+    #[test]
+    fn test_map_column_pipe_syntax() {
+        let source = r#"def process(x: String) -> String {
+    x + "!"
+}
+
+let data = [{"msg": "hello"}]
+data |> map_column("msg", "processed", |m| process(m))"#;
+
+        assert!(has_map_column(source), "Expected MapColumn opcode for pipe syntax");
+    }
+
+    // ========================================================================
+    // map_row Compiler Tests
+    // ========================================================================
+
+    /// Helper to check if compiled code contains MapRow opcode
+    fn has_map_row(source: &str) -> bool {
+        use crate::vm::bytecode::OpCode;
+
+        let program = parser::parse(source).expect("parse failed");
+        let result = Compiler::compile(&program).expect("compile failed");
+
+        result.chunk.code.iter().any(|op| matches!(op, OpCode::MapRow))
+    }
+
+    /// Helper to check if compiled code contains MapRowLlm opcode
+    fn has_map_row_llm(source: &str) -> bool {
+        use crate::vm::bytecode::OpCode;
+
+        let program = parser::parse(source).expect("parse failed");
+        let result = Compiler::compile(&program).expect("compile failed");
+
+        result.chunk.code.iter().any(|op| matches!(op, OpCode::MapRowLlm(_, _)))
+    }
+
+    #[test]
+    fn test_map_row_regular_function() {
+        let source = r#"def combine(row: Map<String, String>) -> String {
+    row["a"] + row["b"]
+}
+
+let data = [{"a": "hello", "b": "world"}]
+map_row(data, "combined", |r| combine(r))"#;
+
+        assert!(has_map_row(source), "Expected MapRow opcode for regular function");
+        assert!(!has_map_row_llm(source), "Should not have MapRowLlm for regular function");
+    }
+
+    #[test]
+    fn test_map_row_llm_detection() {
+        let source = r#"def analyze(title: String, content: String) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    prompt: "Analyze: ${title} - ${content}"
+}
+
+let docs = [{"title": "t1", "content": "c1"}]
+map_row(docs, "analysis", |r| analyze(r["title"], r["content"]))"#;
+
+        assert!(has_map_row_llm(source), "Expected MapRowLlm opcode for LLM function");
+        assert!(!has_map_row(source), "Should not have MapRow when LLM path is taken");
+    }
+
+    #[test]
+    fn test_map_row_pipe_syntax() {
+        let source = r#"def format(row: Map<String, String>) -> String {
+    "Result: " + row["x"]
+}
+
+let data = [{"x": "test"}]
+data |> map_row("formatted", |r| format(r))"#;
+
+        assert!(has_map_row(source), "Expected MapRow opcode for pipe syntax");
     }
 }

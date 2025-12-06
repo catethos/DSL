@@ -1,0 +1,36 @@
+// Test the explode function
+
+// Basic explode test
+let data = [
+    {"name": "Alice", "info": {"age": 30, "city": "NYC"}},
+    {"name": "Bob", "info": {"age": 25, "city": "LA"}}
+]
+
+print("Original data:")
+print(data)
+
+print("\nExploded (no prefix):")
+let exploded = explode(data, "info")
+print(exploded)
+
+print("\nExploded (with prefix 'user_'):")
+let with_prefix = explode(data, "info", "user_")
+print(with_prefix)
+
+print("\nUsing pipe syntax:")
+let piped = data |> explode("info")
+print(piped)
+
+// Test with missing keys in some rows
+print("\nTest with missing keys:")
+let sparse_data = [
+    {"name": "Charlie", "meta": {"score": 100, "level": "A"}},
+    {"name": "Diana", "meta": {"score": 85}},
+    {"name": "Eve", "meta": {"level": "B", "rank": 3}}
+]
+print(sparse_data |> explode("meta"))
+
+// Test that original column is kept
+print("\nVerify original column is preserved:")
+let result = explode(data, "info")
+print(result)

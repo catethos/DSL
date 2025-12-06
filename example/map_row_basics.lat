@@ -1,0 +1,96 @@
+// map_row Basics
+// ===============
+// map_row applies a function to each entire row, allowing access to multiple columns.
+// Syntax: map_row(table, "output_col", |row| expression)
+// Or with pipe: table |> map_row("output_col", |row| expression)
+
+// Sample data - employee records
+let employees = [
+    {"first_name": "John", "last_name": "Doe", "salary": 50000, "bonus": 5000},
+    {"first_name": "Jane", "last_name": "Smith", "salary": 60000, "bonus": 8000},
+    {"first_name": "Bob", "last_name": "Johnson", "salary": 55000, "bonus": 4000}
+]
+
+print("Original employee data:")
+for e in employees {
+    print(e)
+}
+
+// Example 1: Combine multiple columns
+print("")
+print("Example 1: Create full name from first and last name")
+def make_full_name(row: Map<String, String>) -> String {
+    row["first_name"] + " " + row["last_name"]
+}
+
+let with_names = map_row(employees, "full_name", |r| make_full_name(r))
+for row in with_names {
+    print(row)
+}
+
+// Example 2: Calculate from multiple numeric columns
+print("")
+print("Example 2: Calculate total compensation (salary + bonus)")
+def calc_total_comp(row: Map<String, Int>) -> Int {
+    row["salary"] + row["bonus"]
+}
+
+let with_total = employees |> map_row("total_comp", |r| calc_total_comp(r))
+for row in with_total {
+    print(row)
+}
+
+// Example 3: Inline lambda accessing multiple columns
+print("")
+print("Example 3: Inline lambda - bonus percentage")
+let with_pct = employees |> map_row("bonus_pct", |r| (r["bonus"] * 100) / r["salary"])
+for row in with_pct {
+    print(row)
+}
+
+// Example 4: Create a summary string from multiple columns
+print("")
+print("Example 4: Create employee summary")
+def summarize(row: Map<String, String>) -> String {
+    let name = row["first_name"]
+    let salary = row["salary"]
+    f"{name} earns ${salary}"
+}
+
+let summaries = employees |> map_row("summary", |r| summarize(r))
+for row in summaries {
+    print(row)
+}
+
+// Example 5: Chain map_column and map_row
+print("")
+print("Example 5: Chain map_column then map_row")
+let processed = employees
+    |> map_column("salary", "annual", |s| s * 12)
+    |> map_row("annual_with_bonus", |r| r["annual"] + r["bonus"])
+
+for row in processed {
+    print(row)
+}
+
+// Example 6: Conditional logic based on multiple columns
+print("")
+print("Example 6: Determine employee tier based on salary and bonus")
+def get_tier(row: Map<String, Int>) -> String {
+    let total = row["salary"] + row["bonus"]
+    if total > 65000 {
+        "Senior"
+    } else if total > 55000 {
+        "Mid"
+    } else {
+        "Junior"
+    }
+}
+
+let with_tier = employees |> map_row("tier", |r| get_tier(r))
+for row in with_tier {
+    print(row)
+}
+
+print("")
+print("All map_row examples completed!")

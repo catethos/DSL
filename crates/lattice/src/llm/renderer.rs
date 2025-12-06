@@ -6,7 +6,7 @@
 use anyhow::Result;
 use minijinja::Environment;
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::llm::schema::SchemaFormatter;
 use crate::types::ir::{FieldType, Value, IR};
@@ -107,6 +107,63 @@ fn convert_dollar_syntax(template: &str) -> String {
     result
 }
 
+/// Extract variable names referenced in a template.
+///
+/// Supports both `${var}` and `{{ var }}` syntax.
+/// Returns a set of all variable names found in the template.
+///
+/// This is useful for optimizing parameter passing - only clone/pass
+/// the variables that are actually referenced in the template.
+pub fn extract_template_variables(template: &str) -> HashSet<String> {
+    let mut variables = HashSet::new();
+    let mut chars = template.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        // Handle ${var} syntax
+        if c == '$' && chars.peek() == Some(&'{') {
+            chars.next(); // consume '{'
+            let mut var_name = String::new();
+            while let Some(&ch) = chars.peek() {
+                if ch == '}' {
+                    chars.next();
+                    break;
+                }
+                var_name.push(chars.next().unwrap());
+            }
+            let var_name = var_name.trim().to_string();
+            if !var_name.is_empty() {
+                // Handle dotted access like "foo.bar" - we only need "foo"
+                let base_var = var_name.split('.').next().unwrap_or(&var_name);
+                variables.insert(base_var.to_string());
+            }
+        }
+        // Handle {{ var }} syntax
+        else if c == '{' && chars.peek() == Some(&'{') {
+            chars.next(); // consume second '{'
+            let mut var_name = String::new();
+            let mut found_close = false;
+            while let Some(ch) = chars.next() {
+                if ch == '}' && chars.peek() == Some(&'}') {
+                    chars.next(); // consume second '}'
+                    found_close = true;
+                    break;
+                }
+                var_name.push(ch);
+            }
+            if found_close {
+                let var_name = var_name.trim().to_string();
+                if !var_name.is_empty() {
+                    // Handle dotted access like "foo.bar" - we only need "foo"
+                    let base_var = var_name.split('.').next().unwrap_or(&var_name);
+                    variables.insert(base_var.to_string());
+                }
+            }
+        }
+    }
+
+    variables
+}
+
 /// Convert Value HashMap to JSON Value for minijinja
 fn params_to_json(params: &HashMap<String, Value>) -> HashMap<String, JsonValue> {
     params
@@ -118,7 +175,7 @@ fn params_to_json(params: &HashMap<String, Value>) -> HashMap<String, JsonValue>
 /// Convert a single Value to JSON Value
 fn value_to_json(value: &Value) -> JsonValue {
     match value {
-        Value::String(s) => JsonValue::String(s.clone()),
+        Value::String(s) => JsonValue::String(s.to_string()),
         Value::Int(i) => JsonValue::Number((*i).into()),
         Value::Float(f) => JsonValue::Number(serde_json::Number::from_f64(*f).unwrap_or(0.into())),
         Value::Bool(b) => JsonValue::Bool(*b),
@@ -164,7 +221,7 @@ mod tests {
         let mut params = HashMap::new();
         params.insert(
             "text".to_string(),
-            Value::String("John is 30 years old".to_string()),
+            Value::string("John is 30 years old"),
         );
 
         let result = renderer
@@ -225,7 +282,7 @@ mod tests {
 
         let template = "explain this like i am 5: {{ x }}";
         let mut params = HashMap::new();
-        params.insert("x".to_string(), Value::String("love".to_string()));
+        params.insert("x".to_string(), Value::string("love"));
 
         let result = renderer
             .render(template, &params, &FieldType::Class("Explanation".to_string()))
@@ -235,5 +292,59 @@ mod tests {
         assert!(result.contains("Answer in JSON using this schema:"));
         assert!(result.contains("entity: string"));
         assert!(result.contains("explanation: string"));
+    }
+
+    #[test]
+    fn test_extract_template_variables_dollar_syntax() {
+        let template = "Hello ${name}, your age is ${age}";
+        let vars = extract_template_variables(template);
+        assert_eq!(vars.len(), 2);
+        assert!(vars.contains("name"));
+        assert!(vars.contains("age"));
+    }
+
+    #[test]
+    fn test_extract_template_variables_jinja_syntax() {
+        let template = "Hello {{ name }}, your age is {{ age }}";
+        let vars = extract_template_variables(template);
+        assert_eq!(vars.len(), 2);
+        assert!(vars.contains("name"));
+        assert!(vars.contains("age"));
+    }
+
+    #[test]
+    fn test_extract_template_variables_mixed_syntax() {
+        let template = "Hello ${name}, you live in {{ city }} and work at ${company}";
+        let vars = extract_template_variables(template);
+        assert_eq!(vars.len(), 3);
+        assert!(vars.contains("name"));
+        assert!(vars.contains("city"));
+        assert!(vars.contains("company"));
+    }
+
+    #[test]
+    fn test_extract_template_variables_dotted_access() {
+        // Should extract only the base variable name for dotted access
+        let template = "Name: {{ person.name }}, Age: ${user.age}";
+        let vars = extract_template_variables(template);
+        assert_eq!(vars.len(), 2);
+        assert!(vars.contains("person"));
+        assert!(vars.contains("user"));
+    }
+
+    #[test]
+    fn test_extract_template_variables_empty_template() {
+        let template = "No variables here!";
+        let vars = extract_template_variables(template);
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_extract_template_variables_duplicates() {
+        // Same variable used multiple times should only appear once
+        let template = "Hello ${name}, goodbye ${name}, see you {{ name }}";
+        let vars = extract_template_variables(template);
+        assert_eq!(vars.len(), 1);
+        assert!(vars.contains("name"));
     }
 }

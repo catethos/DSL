@@ -1,0 +1,23 @@
+let products = [
+    {"name": "Wireless Earbuds", "category": "Electronics", "price": 79, "rating": 4},
+    {"name": "Yoga Mat", "category": "Fitness", "price": 35, "rating": 5},
+    {"name": "Coffee Maker", "category": "Kitchen", "price": 149, "rating": 3},
+    {"name": "Running Shoes", "category": "Sports", "price": 120, "rating": 4}
+]
+
+def GenerateProductDescription(name: String, category: String, price: Int) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.7
+    prompt: f"""Write a short, compelling product description (2-3 sentences) for:
+
+    Product: {name}
+    Category: {category}
+    Price: ${price}
+    """
+}
+
+products |> map_row("description", |row|
+    GenerateProductDescription(row["name"], row["category"], row["price"])
+)

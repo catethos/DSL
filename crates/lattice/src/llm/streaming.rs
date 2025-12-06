@@ -84,9 +84,9 @@ fn create_skeleton_value(ir: &IR, field_type: &FieldType) -> Value {
             }
         }
 
-        FieldType::List(_) => Value::List(vec![]),
+        FieldType::List(_) => Value::list(vec![]),
 
-        FieldType::Map(_, _) => Value::Map(HashMap::new()),
+        FieldType::Map(_, _) => Value::map(HashMap::new()),
 
         FieldType::Union(types) => {
             // For unions, create skeleton of the first type
@@ -114,7 +114,7 @@ fn create_skeleton_class(ir: &IR, class: &Class) -> Value {
         fields.insert(field.name.clone(), field_value);
     }
 
-    Value::Map(fields)
+    Value::map(fields)
 }
 
 /// Merge partial data into existing skeleton, keeping structure intact
@@ -137,13 +137,14 @@ fn merge_values(target: &mut Value, source: Value, ir: &IR, field_type: &FieldTy
             // Get the class definition to know field types
             if let FieldType::Class(class_name) = field_type {
                 if let Some(class) = ir.find_class(class_name) {
-                    for (key, source_value) in source_map {
-                        if let Some(field) = class.fields.iter().find(|f| f.name == key) {
-                            if let Some(target_value) = target_map.get_mut(&key) {
-                                merge_values(target_value, source_value, ir, &field.field_type);
+                    for (key, source_value) in source_map.iter() {
+                        if let Some(field) = class.fields.iter().find(|f| &f.name == key) {
+                            let target_map_mut = std::sync::Arc::make_mut(target_map);
+                            if let Some(target_value) = target_map_mut.get_mut(key) {
+                                merge_values(target_value, source_value.clone(), ir, &field.field_type);
                             } else {
                                 // Field doesn't exist in target, add it
-                                target_map.insert(key, source_value);
+                                target_map_mut.insert(key.clone(), source_value.clone());
                             }
                         }
                     }
@@ -152,8 +153,9 @@ fn merge_values(target: &mut Value, source: Value, ir: &IR, field_type: &FieldTy
             }
 
             // Fallback: just merge keys
-            for (key, value) in source_map {
-                target_map.insert(key, value);
+            let target_map_mut = std::sync::Arc::make_mut(target_map);
+            for (key, value) in source_map.iter() {
+                target_map_mut.insert(key.clone(), value.clone());
             }
         }
 
@@ -258,11 +260,11 @@ mod tests {
 
         // First update: partial data with just name
         let mut partial1 = HashMap::new();
-        partial1.insert("name".to_string(), Value::String("John".to_string()));
+        partial1.insert("name".to_string(), Value::string("John"));
 
         skeleton.update_from_partial(
             &ir,
-            Value::Map(partial1),
+            Value::map(partial1),
             &FieldType::Class("Person".to_string()),
         );
 
@@ -277,12 +279,12 @@ mod tests {
 
         // Second update: add age
         let mut partial2 = HashMap::new();
-        partial2.insert("name".to_string(), Value::String("John".to_string()));
+        partial2.insert("name".to_string(), Value::string("John"));
         partial2.insert("age".to_string(), Value::Int(30));
 
         skeleton.update_from_partial(
             &ir,
-            Value::Map(partial2),
+            Value::map(partial2),
             &FieldType::Class("Person".to_string()),
         );
 
@@ -301,7 +303,7 @@ mod tests {
     #[test]
     fn test_serialization() {
         let value = StreamingValue::new(
-            Value::String("test".to_string()),
+            Value::string("test"),
             CompletionState::Partial,
         );
 

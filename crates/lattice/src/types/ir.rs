@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 // ============================================================================
 // Type Definitions (inlined from dsl-types)
@@ -119,20 +120,48 @@ pub struct Function {
 // ============================================================================
 
 /// Runtime value that can be passed to functions or returned from LLM
+///
+/// Uses Arc for heap-allocated variants to make cloning O(1) instead of O(n).
+/// This significantly improves VM performance for stack operations.
+/// Arc is used instead of Rc to ensure thread safety (Send + Sync).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Value {
-    String(String),
+    String(Arc<str>),
     Int(i64),
     Float(f64),
     Bool(bool),
-    Path(PathBuf),
-    List(Vec<Value>),
-    Map(HashMap<String, Value>),
+    Path(Arc<PathBuf>),
+    List(Arc<Vec<Value>>),
+    Map(Arc<HashMap<String, Value>>),
     Null,
 }
 
 impl Value {
+    // Constructors for convenient Value creation
+
+    /// Create a String value from anything that can be converted to a string
+    pub fn string(s: impl Into<Arc<str>>) -> Self {
+        Value::String(s.into())
+    }
+
+    /// Create a List value from a Vec
+    pub fn list(v: Vec<Value>) -> Self {
+        Value::List(Arc::new(v))
+    }
+
+    /// Create a Map value from a HashMap
+    pub fn map(m: HashMap<String, Value>) -> Self {
+        Value::Map(Arc::new(m))
+    }
+
+    /// Create a Path value from a PathBuf
+    pub fn path(p: PathBuf) -> Self {
+        Value::Path(Arc::new(p))
+    }
+
+    // Accessors
+
     pub fn as_string(&self) -> Option<&str> {
         match self {
             Value::String(s) => Some(s),
@@ -217,5 +246,55 @@ impl std::fmt::Display for Value {
             }
             Value::Null => write!(f, "null"),
         }
+    }
+}
+
+// From implementations for convenient Value construction
+
+impl From<String> for Value {
+    fn from(s: String) -> Self {
+        Value::String(s.into())
+    }
+}
+
+impl From<&str> for Value {
+    fn from(s: &str) -> Self {
+        Value::String(s.into())
+    }
+}
+
+impl From<i64> for Value {
+    fn from(i: i64) -> Self {
+        Value::Int(i)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(f: f64) -> Self {
+        Value::Float(f)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(b: bool) -> Self {
+        Value::Bool(b)
+    }
+}
+
+impl From<PathBuf> for Value {
+    fn from(p: PathBuf) -> Self {
+        Value::Path(Arc::new(p))
+    }
+}
+
+impl From<Vec<Value>> for Value {
+    fn from(v: Vec<Value>) -> Self {
+        Value::List(Arc::new(v))
+    }
+}
+
+impl From<HashMap<String, Value>> for Value {
+    fn from(m: HashMap<String, Value>) -> Self {
+        Value::Map(Arc::new(m))
     }
 }

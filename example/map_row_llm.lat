@@ -1,0 +1,85 @@
+// map_row with LLM Functions (Parallel Multi-Column Access)
+// ==========================================================
+// map_row is useful when your LLM function needs data from multiple columns.
+// Like map_column, LLM calls are executed in parallel automatically.
+
+// Define an LLM function that takes multiple inputs
+def GenerateProductDescription(name: String, category: String, price: Int) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.7
+    prompt: f"""Write a short, compelling product description (2-3 sentences) for:
+
+Product: {name}
+Category: {category}
+Price: ${price}
+
+Description:"""
+}
+
+// Define another multi-input LLM function
+def ComparePriceValue(name: String, price: Int, rating: Int) -> String {
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.3
+    prompt: f"""Given this product info, provide a brief value assessment (good value, fair price, or overpriced):
+
+Product: {name}
+Price: ${price}
+Rating: {rating}/5
+
+Assessment (one line):"""
+}
+
+// Sample product data with multiple columns
+let products = [
+    {"name": "Wireless Earbuds", "category": "Electronics", "price": 79, "rating": 4},
+    {"name": "Yoga Mat", "category": "Fitness", "price": 35, "rating": 5},
+    {"name": "Coffee Maker", "category": "Kitchen", "price": 149, "rating": 3},
+    {"name": "Running Shoes", "category": "Sports", "price": 120, "rating": 4}
+]
+
+print("Original products:")
+for p in products {
+    print(p)
+}
+
+print("")
+print("Generating descriptions using multiple columns (parallel LLM calls)...")
+
+// map_row passes the entire row to the lambda
+// The LLM function receives values from multiple columns
+let with_descriptions = products |> map_row("description", |row|
+    GenerateProductDescription(row["name"], row["category"], row["price"])
+)
+
+print("")
+print("Products with AI-generated descriptions:")
+for p in with_descriptions {
+    print("---")
+    print("Name: " + p["name"])
+    print("Price: $" + p["price"])
+    print("Description: " + p["description"])
+}
+
+print("")
+print("Adding value assessment...")
+
+// Chain another map_row operation
+let with_assessment = with_descriptions |> map_row("value", |row|
+    ComparePriceValue(row["name"], row["price"], row["rating"])
+)
+
+print("")
+print("Final results:")
+for p in with_assessment {
+    print("---")
+    print(p["name"] + " ($" + p["price"] + ") - Rating: " + p["rating"] + "/5")
+    print("Value: " + p["value"])
+    print("Description: " + p["description"])
+}
+
+print("")
+print("Done! All multi-column LLM operations executed in parallel.")

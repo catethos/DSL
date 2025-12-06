@@ -1,0 +1,49 @@
+// Pipe Operator Examples
+// ======================
+// The pipe operator |> allows chaining function calls in a readable way.
+// x |> f(a) is equivalent to f(x, a)
+
+// Basic function
+def double(x: Int) -> Int {
+    x * 2
+}
+
+def add(x: Int, y: Int) -> Int {
+    x + y
+}
+
+def square(x: Int) -> Int {
+    x * x
+}
+
+// Simple pipe: value |> function
+let result1 = 5 |> double
+print(f"5 |> double = {result1}")  // 10
+
+// Pipe with additional arguments: value |> function(arg)
+let result2 = 10 |> add(5)
+print(f"10 |> add(5) = {result2}")  // 15
+
+// Chained pipes: value |> f |> g |> h
+let result3 = 3 |> double |> square |> double
+print(f"3 |> double |> square |> double = {result3}")  // 72 (3*2=6, 6*6=36, 36*2=72)
+
+// Pipe with lambda
+let result4 = 7 |> |x| x + 3
+print(f"7 |> |x| x + 3 = {result4}")  // 10
+
+// Pipe with list operations
+def sum_list(nums: [Int]) -> Int {
+    let total = 0
+    for n in nums {
+        total = total + n
+    }
+    total
+}
+
+let numbers = [1, 2, 3, 4, 5]
+let total = numbers |> sum_list
+print(f"[1,2,3,4,5] |> sum_list = {total}")  // 15
+
+print("")
+print("All pipe operator examples completed!")

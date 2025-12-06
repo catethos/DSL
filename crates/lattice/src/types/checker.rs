@@ -332,6 +332,10 @@ impl TypeChecker {
                 Item::FunctionDef(fd) => {
                     self.register_function(fd);
                 }
+                Item::LlmConfigDecl(_) => {
+                    // LLM config declarations don't need type checking
+                    // They are validated at compile time when referenced
+                }
                 Item::Statement(_) => {}
             }
         }
@@ -444,8 +448,8 @@ impl TypeChecker {
 
                 if let Some(var_type) = self.ctx.get_var(&target.base.node).cloned() {
                     // For simple assignment, check type compatibility
-                    if target.accessors.is_empty() {
-                        if !self.types_compatible(&value_type, &var_type) {
+                    if target.accessors.is_empty()
+                        && !self.types_compatible(&value_type, &var_type) {
                             self.errors.push(TypeError::new(
                                 format!(
                                     "Cannot assign {} to variable '{}' of type {}",
@@ -455,7 +459,6 @@ impl TypeChecker {
                                 stmt.span.column,
                             ));
                         }
-                    }
                     // TODO: Check field/index access types
                 } else {
                     self.errors.push(TypeError::new(
@@ -662,8 +665,8 @@ impl TypeChecker {
                 if let Some(class) = self.ctx.get_class(name).cloned() {
                     // Check all required fields are present
                     for class_field in &class.fields {
-                        if !class_field.optional {
-                            if !fields.iter().any(|(n, _)| n == &class_field.name) {
+                        if !class_field.optional
+                            && !fields.iter().any(|(n, _)| n == &class_field.name) {
                                 self.errors.push(TypeError::new(
                                     format!(
                                         "Missing required field '{}' in struct '{}'",
@@ -673,7 +676,6 @@ impl TypeChecker {
                                     expr.span.column,
                                 ));
                             }
-                        }
                     }
                     // Check field types
                     for (field_name, field_val) in fields {
@@ -831,6 +833,63 @@ impl TypeChecker {
                     Ok(Type::Unknown)
                 }
             }
+            ExprKind::MapColumn { table, input_col, output_col, mapper } => {
+                // Type-check all arguments
+                let table_type = self.infer_expr(table)?;
+                let _input_col_type = self.infer_expr(input_col)?;
+                let _output_col_type = self.infer_expr(output_col)?;
+                let _mapper_type = self.infer_expr(mapper)?;
+
+                // map_column returns a list (the modified table)
+                if let Type::List(_) = &table_type {
+                    Ok(table_type)
+                } else {
+                    self.errors.push(TypeError::new(
+                        format!("map_column requires a table (list), got {}", table_type),
+                        expr.span.line,
+                        expr.span.column,
+                    ));
+                    Ok(Type::Unknown)
+                }
+            }
+            ExprKind::MapRow { table, output_col, mapper } => {
+                // Type-check all arguments
+                let table_type = self.infer_expr(table)?;
+                let _output_col_type = self.infer_expr(output_col)?;
+                let _mapper_type = self.infer_expr(mapper)?;
+
+                // map_row returns a list (the modified table)
+                if let Type::List(_) = &table_type {
+                    Ok(table_type)
+                } else {
+                    self.errors.push(TypeError::new(
+                        format!("map_row requires a table (list), got {}", table_type),
+                        expr.span.line,
+                        expr.span.column,
+                    ));
+                    Ok(Type::Unknown)
+                }
+            }
+            ExprKind::Explode { table, column, prefix } => {
+                // Type-check all arguments
+                let table_type = self.infer_expr(table)?;
+                let _column_type = self.infer_expr(column)?;
+                if let Some(prefix_expr) = prefix {
+                    self.infer_expr(prefix_expr)?;
+                }
+
+                // explode returns a list (the modified table)
+                if let Type::List(_) = &table_type {
+                    Ok(table_type)
+                } else {
+                    self.errors.push(TypeError::new(
+                        "explode requires a list as first argument".to_string(),
+                        expr.span.line,
+                        expr.span.column,
+                    ));
+                    Ok(Type::Unknown)
+                }
+            }
             ExprKind::Sql { ty, query: _ } => {
                 // SQL returns the specified type or a generic list
                 if let Some(type_ann) = ty {
@@ -850,6 +909,15 @@ impl TypeChecker {
                 }
                 // F-strings always produce a String
                 Ok(Type::String)
+            }
+            ExprKind::DollarField(field_expr) => {
+                // $field represents an implicit lambda: |row| row[field]
+                // Type-check the field expression (should be a string key)
+                self.infer_expr(field_expr)?;
+                // The result type is a function from Row to Value
+                // For now, we return Unknown since this is dynamic
+                // The actual type depends on context (will be desugared in map_row)
+                Ok(Type::Unknown)
             }
         }
     }
@@ -875,9 +943,25 @@ impl TypeChecker {
     ) -> Result<Type> {
         match op {
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
-                // Arithmetic: both operands must be numeric
+                // Arithmetic: both operands must be numeric (Bool is allowed for Add, treated as 0/1)
                 let is_numeric = |t: &Type| matches!(t, Type::Int | Type::Float | Type::Any);
-                if !is_numeric(left) || !is_numeric(right) {
+                let is_numeric_or_bool = |t: &Type| matches!(t, Type::Int | Type::Float | Type::Bool | Type::Any);
+
+                // For Add, allow Bool (true=1, false=0)
+                if op == BinaryOp::Add {
+                    if !is_numeric_or_bool(left) || !is_numeric_or_bool(right) {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "Arithmetic operation requires numeric types, got {} {} {}",
+                                left,
+                                op.as_str(),
+                                right
+                            ),
+                            expr.span.line,
+                            expr.span.column,
+                        ));
+                    }
+                } else if !is_numeric(left) || !is_numeric(right) {
                     self.errors.push(TypeError::new(
                         format!(
                             "Arithmetic operation requires numeric types, got {} {} {}",
@@ -1187,7 +1271,7 @@ impl TypeChecker {
                         expr.span.column,
                     ));
                 }
-                if args.len() >= 1 {
+                if !args.is_empty() {
                     let list_type = self.infer_expr(&args[0])?;
                     if !matches!(list_type, Type::List(_) | Type::Any) {
                         self.errors.push(TypeError::new(
@@ -1348,7 +1432,7 @@ impl TypeChecker {
                         expr.span.column,
                     ));
                 }
-                if args.len() >= 1 {
+                if !args.is_empty() {
                     let list_type = self.infer_expr(&args[0])?;
                     if !matches!(list_type, Type::List(_) | Type::Any) {
                         self.errors.push(TypeError::new(
@@ -1477,75 +1561,7 @@ impl TypeChecker {
 
     /// Check if two types are compatible
     fn types_compatible(&self, actual: &Type, expected: &Type) -> bool {
-        // Any is compatible with everything
-        if matches!(actual, Type::Any) || matches!(expected, Type::Any) {
-            return true;
-        }
-
-        // Unknown is compatible with everything (for inference)
-        if matches!(actual, Type::Unknown) || matches!(expected, Type::Unknown) {
-            return true;
-        }
-
-        // Null is compatible with optional types
-        if matches!(actual, Type::Null) && expected.is_optional() {
-            return true;
-        }
-
-        match (actual, expected) {
-            // Same types
-            (Type::String, Type::String)
-            | (Type::Int, Type::Int)
-            | (Type::Float, Type::Float)
-            | (Type::Bool, Type::Bool)
-            | (Type::Null, Type::Null)
-            | (Type::Path, Type::Path) => true,
-
-            // Int is compatible with Float (numeric widening)
-            (Type::Int, Type::Float) => true,
-
-            // Named types must match
-            (Type::Class(a), Type::Class(b)) => a == b,
-            (Type::Enum(a), Type::Enum(b)) => a == b,
-
-            // List types
-            (Type::List(a), Type::List(b)) => self.types_compatible(a, b),
-
-            // Map types
-            (Type::Map(ak, av), Type::Map(bk, bv)) => {
-                self.types_compatible(ak, bk) && self.types_compatible(av, bv)
-            }
-
-            // Result types
-            (Type::Result(ao, ae), Type::Result(bo, be)) => {
-                self.types_compatible(ao, bo) && self.types_compatible(ae, be)
-            }
-
-            // Function types
-            (
-                Type::Function {
-                    params: ap,
-                    ret: ar,
-                },
-                Type::Function {
-                    params: bp,
-                    ret: br,
-                },
-            ) => {
-                ap.len() == bp.len()
-                    && ap
-                        .iter()
-                        .zip(bp.iter())
-                        .all(|(a, b)| self.types_compatible(b, a)) // contravariant params
-                    && self.types_compatible(ar, br)
-            }
-
-            // Union types
-            (_, Type::Union(types)) => types.iter().any(|t| self.types_compatible(actual, t)),
-            (Type::Union(types), _) => types.iter().all(|t| self.types_compatible(t, expected)),
-
-            _ => false,
-        }
+        types_compatible(actual, expected)
     }
 
     /// Convert a type annotation to a Type
@@ -1634,6 +1650,79 @@ impl TypeChecker {
     /// Get collected errors
     pub fn errors(&self) -> &[TypeError] {
         &self.errors
+    }
+}
+
+/// Check if two types are compatible (standalone function to avoid only_used_in_recursion warning)
+fn types_compatible(actual: &Type, expected: &Type) -> bool {
+    // Any is compatible with everything
+    if matches!(actual, Type::Any) || matches!(expected, Type::Any) {
+        return true;
+    }
+
+    // Unknown is compatible with everything (for inference)
+    if matches!(actual, Type::Unknown) || matches!(expected, Type::Unknown) {
+        return true;
+    }
+
+    // Null is compatible with optional types
+    if matches!(actual, Type::Null) && expected.is_optional() {
+        return true;
+    }
+
+    match (actual, expected) {
+        // Same types
+        (Type::String, Type::String)
+        | (Type::Int, Type::Int)
+        | (Type::Float, Type::Float)
+        | (Type::Bool, Type::Bool)
+        | (Type::Null, Type::Null)
+        | (Type::Path, Type::Path) => true,
+
+        // Int is compatible with Float (numeric widening)
+        (Type::Int, Type::Float) => true,
+
+        // Named types must match
+        (Type::Class(a), Type::Class(b)) => a == b,
+        (Type::Enum(a), Type::Enum(b)) => a == b,
+
+        // List types
+        (Type::List(a), Type::List(b)) => types_compatible(a, b),
+
+        // Map types
+        (Type::Map(ak, av), Type::Map(bk, bv)) => {
+            types_compatible(ak, bk) && types_compatible(av, bv)
+        }
+
+        // Result types
+        (Type::Result(ao, ae), Type::Result(bo, be)) => {
+            types_compatible(ao, bo) && types_compatible(ae, be)
+        }
+
+        // Function types
+        (
+            Type::Function {
+                params: ap,
+                ret: ar,
+            },
+            Type::Function {
+                params: bp,
+                ret: br,
+            },
+        ) => {
+            ap.len() == bp.len()
+                && ap
+                    .iter()
+                    .zip(bp.iter())
+                    .all(|(a, b)| types_compatible(b, a)) // contravariant params
+                && types_compatible(ar, br)
+        }
+
+        // Union types
+        (_, Type::Union(types)) => types.iter().any(|t| types_compatible(actual, t)),
+        (Type::Union(types), _) => types.iter().all(|t| types_compatible(t, expected)),
+
+        _ => false,
     }
 }
 
