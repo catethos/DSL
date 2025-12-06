@@ -2603,6 +2603,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lattice-nif"
+version = "0.1.0"
+dependencies = [
+ "lattice",
+ "rustler",
+]
+
+[[package]]
 name = "lattice-notebook"
 version = "0.1.0"
 dependencies = [

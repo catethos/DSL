@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/lattice",
     "crates/lattice-cli",
+    "crates/lattice-nif",
     "crates/lattice-notebook/src-tauri",
 ]
 

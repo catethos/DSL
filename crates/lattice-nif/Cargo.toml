@@ -1,0 +1,17 @@
+[package]
+name = "lattice-nif"
+version.workspace = true
+edition.workspace = true
+description = "Rustler NIF bindings for embedding Lattice in Elixir"
+
+[lib]
+name = "lattice_nif"
+crate-type = ["cdylib"]
+
+[dependencies]
+lattice = { path = "../lattice", default-features = false }
+rustler = "0.34"
+
+[features]
+default = []
+sql = ["lattice/sql"]
