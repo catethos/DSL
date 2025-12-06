@@ -12,7 +12,7 @@ pub mod sql;
 
 pub use llm::{
     BoxedLlmProvider, DefaultLlmProvider, LlmError, LlmMessage, LlmProvider, LlmRequest,
-    LlmResponse, LlmUsage, NoLlmProvider,
+    LlmResponse, LlmUsage, NoLlmProvider, ProviderRouting,
 };
 
 pub use sql::{BoxedSqlProvider, NoSqlProvider, SqlError, SqlProvider, SqlResult, SqlRow};

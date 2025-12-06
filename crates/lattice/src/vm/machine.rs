@@ -10,6 +10,13 @@ use tokio::runtime::Runtime;
 use tokio::sync::Semaphore;
 
 use crate::error::{LatticeError, Result};
+use crate::runtime::providers::{
+    BoxedLlmProvider, BoxedSqlProvider, DefaultLlmProvider, LlmRequest, ProviderRouting,
+};
+#[cfg(not(feature = "sql"))]
+use crate::runtime::providers::NoSqlProvider;
+#[cfg(feature = "sql")]
+use crate::runtime::providers::DuckDbProvider;
 #[cfg(feature = "sql")]
 use crate::sql::SqlContext;
 use crate::types::{Value, IR};
@@ -65,7 +72,7 @@ pub struct LlmDebugInfo {
 /// - Global state that persists across cell executions
 /// - Type registry (IR) for user-defined types
 /// - LLM function registry for LLM calls
-/// - SQL context for DuckDB queries
+/// - Injectable providers for LLM and SQL operations
 pub struct VM {
     /// The value stack
     stack: Vec<Value>,
@@ -79,7 +86,11 @@ pub struct VM {
     llm_functions: Vec<LlmFunction>,
     /// Compiled user functions (bytecode functions)
     user_functions: HashMap<String, CompiledFunction>,
-    /// SQL execution context (DuckDB connection)
+    /// Injectable LLM provider for LLM calls
+    llm_provider: BoxedLlmProvider,
+    /// Injectable SQL provider for database queries
+    sql_provider: BoxedSqlProvider,
+    /// SQL execution context (DuckDB connection) - kept for backward compatibility
     #[cfg(feature = "sql")]
     sql_context: SqlContext,
     /// Debug info from the last LLM call (if any)
@@ -99,8 +110,26 @@ impl Default for VM {
 }
 
 impl VM {
-    /// Create a new VM instance
+    /// Create a new VM instance with default providers
+    ///
+    /// This creates a VM with:
+    /// - DefaultLlmProvider for LLM calls (uses HTTP)
+    /// - DuckDbProvider for SQL queries (if sql feature enabled)
+    /// - NoSqlProvider if sql feature disabled
     pub fn new() -> Self {
+        // Create default LLM provider
+        let llm_provider: BoxedLlmProvider = Arc::new(
+            DefaultLlmProvider::new().expect("Failed to create default LLM provider"),
+        );
+
+        // Create default SQL provider
+        #[cfg(feature = "sql")]
+        let sql_provider: BoxedSqlProvider = Arc::new(
+            DuckDbProvider::new().expect("Failed to create default SQL provider"),
+        );
+        #[cfg(not(feature = "sql"))]
+        let sql_provider: BoxedSqlProvider = Arc::new(NoSqlProvider);
+
         Self {
             stack: Vec::with_capacity(256),
             frames: Vec::with_capacity(64),
@@ -108,6 +137,37 @@ impl VM {
             ir: IR::new(),
             llm_functions: Vec::new(),
             user_functions: HashMap::new(),
+            llm_provider,
+            sql_provider,
+            #[cfg(feature = "sql")]
+            sql_context: SqlContext::default(),
+            last_llm_debug: None,
+            runtime: Runtime::new().expect("Failed to create tokio runtime"),
+            http_client: reqwest::Client::builder()
+                .pool_max_idle_per_host(10)
+                .build()
+                .expect("Failed to create HTTP client"),
+            max_concurrent_llm_calls: None,
+        }
+    }
+
+    /// Create a new VM instance with custom providers
+    ///
+    /// This is the preferred constructor when embedding Lattice, as it allows
+    /// injecting custom LLM and SQL providers.
+    pub fn with_providers(
+        llm_provider: BoxedLlmProvider,
+        sql_provider: BoxedSqlProvider,
+    ) -> Self {
+        Self {
+            stack: Vec::with_capacity(256),
+            frames: Vec::with_capacity(64),
+            globals: HashMap::new(),
+            ir: IR::new(),
+            llm_functions: Vec::new(),
+            user_functions: HashMap::new(),
+            llm_provider,
+            sql_provider,
             #[cfg(feature = "sql")]
             sql_context: SqlContext::default(),
             last_llm_debug: None,
@@ -126,6 +186,21 @@ impl VM {
         let sql_context = SqlContext::open(path).map_err(|e| {
             LatticeError::Runtime(format!("Failed to open database: {}", e))
         })?;
+
+        // Create default LLM provider
+        let llm_provider: BoxedLlmProvider = Arc::new(
+            DefaultLlmProvider::new().map_err(|e| {
+                LatticeError::Runtime(format!("Failed to create LLM provider: {}", e))
+            })?,
+        );
+
+        // Create SQL provider from the file-based connection
+        let sql_provider: BoxedSqlProvider = Arc::new(
+            DuckDbProvider::with_path(path).map_err(|e| {
+                LatticeError::Runtime(format!("Failed to create SQL provider: {}", e))
+            })?,
+        );
+
         Ok(Self {
             stack: Vec::with_capacity(256),
             frames: Vec::with_capacity(64),
@@ -133,6 +208,8 @@ impl VM {
             ir: IR::new(),
             llm_functions: Vec::new(),
             user_functions: HashMap::new(),
+            llm_provider,
+            sql_provider,
             sql_context,
             last_llm_debug: None,
             runtime: Runtime::new().map_err(|e| {
@@ -179,6 +256,30 @@ impl VM {
     #[cfg(feature = "sql")]
     pub fn sql_context_mut(&mut self) -> &mut SqlContext {
         &mut self.sql_context
+    }
+
+    // ========================================================================
+    // Provider Operations
+    // ========================================================================
+
+    /// Get a reference to the LLM provider
+    pub fn llm_provider(&self) -> &BoxedLlmProvider {
+        &self.llm_provider
+    }
+
+    /// Get a reference to the SQL provider
+    pub fn sql_provider(&self) -> &BoxedSqlProvider {
+        &self.sql_provider
+    }
+
+    /// Set a new LLM provider
+    pub fn set_llm_provider(&mut self, provider: BoxedLlmProvider) {
+        self.llm_provider = provider;
+    }
+
+    /// Set a new SQL provider
+    pub fn set_sql_provider(&mut self, provider: BoxedSqlProvider) {
+        self.sql_provider = provider;
     }
 
     // ========================================================================
@@ -1221,13 +1322,13 @@ impl VM {
 
     /// Call an LLM function by name
     ///
-    /// Pops arguments from the stack, calls the LLM, parses the response,
-    /// and pushes the result (or error) onto the stack.
+    /// Pops arguments from the stack, calls the LLM via the injected provider,
+    /// parses the response, and pushes the result (or error) onto the stack.
     ///
-    /// Note: This is a synchronous wrapper around async LLM calls.
-    /// It uses tokio's Runtime to block on the async operation.
+    /// The LLM call is delegated to `self.llm_provider.call()`, which allows
+    /// for injectable implementations (HTTP, host callbacks, mock, etc.).
     fn op_llm_call(&mut self, func_name: &str) -> Result<()> {
-        use crate::llm::{extract_template_variables, generate_prompt_from_ir, parse_llm_response_with_ir, LLMClient, generate_schema_from_ir};
+        use crate::llm::{extract_template_variables, generate_prompt_from_ir, parse_llm_response_with_ir, generate_schema_from_ir};
 
         // Get function info first (clone what we need to avoid borrow issues)
         let func = self.get_llm_function_by_name(func_name).ok_or_else(|| {
@@ -1296,28 +1397,37 @@ impl VM {
             ))
         })?;
 
-        // Create the LLM client with the function's configuration
-        let mut client = LLMClient::custom(api_key, func.base_url.clone(), func.model.clone());
+        // Build LlmRequest for the provider
+        let mut request = LlmRequest::new(
+            func.base_url.clone(),
+            func.model.clone(),
+            api_key,
+            prompt.clone(),
+        );
 
         if let Some(temp) = func.temperature {
-            client = client.with_temperature(temp as f32);
+            request = request.with_temperature(temp as f32);
         }
         if let Some(max_tok) = func.max_tokens {
-            client = client.with_max_tokens(max_tok as u32);
+            request = request.with_max_tokens(max_tok as u32);
         }
-        if let Some(ref provider) = func.provider {
-            client = client.with_provider(provider.clone());
+        if let Some(ref provider_config) = func.provider {
+            // Convert ProviderConfig to ProviderRouting
+            request = request.with_provider(ProviderRouting {
+                order: provider_config.order.clone(),
+                allow_fallbacks: provider_config.allow_fallbacks,
+                require: provider_config.only.clone(),
+            });
         }
 
-        // Call the LLM (blocking on async) using shared runtime and HTTP client
-        let http_client = &self.http_client;
-        let raw_response = self.runtime
-            .block_on(client.call_with_client(&prompt, http_client))
-            .map_err(|e| {
-                // Store debug info even on error
-                self.last_llm_debug = Some(debug_info.clone());
-                LatticeError::Runtime(format!("LLM call failed: {}", e))
-            })?;
+        // Call the LLM via the injected provider
+        let response = self.llm_provider.call(request).map_err(|e| {
+            // Store debug info even on error
+            self.last_llm_debug = Some(debug_info.clone());
+            LatticeError::Runtime(format!("LLM call failed: {}", e))
+        })?;
+
+        let raw_response = response.content;
 
         // Store the raw response in debug info
         debug_info.raw_response = raw_response.clone();
@@ -1407,11 +1517,13 @@ impl VM {
         }
     }
 
-    /// Execute a SQL query via DuckDB
+    /// Execute a SQL query via the injected SQL provider
     ///
-    /// Pops query string from stack, executes via DuckDB,
+    /// Pops query string from stack, executes via the SQL provider,
     /// pushes List<Map<String, Value>> (rows) onto stack.
-    #[cfg(feature = "sql")]
+    ///
+    /// The SQL call is delegated to `self.sql_provider.query()`, which allows
+    /// for injectable implementations (DuckDB, host callbacks, mock, etc.).
     fn op_sql_query(&mut self) -> Result<()> {
         let query = self.pop()?;
         let query_str = match query {
@@ -1423,30 +1535,26 @@ impl VM {
             }
         };
 
-        // Execute query via DuckDB
-        let result = self.sql_context.execute_query(&query_str)?;
+        // Execute query via the injected SQL provider
+        let sql_result = self.sql_provider.query(&query_str).map_err(|e| {
+            LatticeError::Runtime(format!("SQL query failed: {}", e))
+        })?;
+
+        // Convert SqlResult to internal Value (List of Maps)
+        let result = sql_result.to_lattice_value().to_internal();
 
         // Push result onto stack
         self.push(result)
     }
 
-    /// Execute a SQL query (no-sql feature: returns error)
-    #[cfg(not(feature = "sql"))]
-    fn op_sql_query(&mut self) -> Result<()> {
-        Err(LatticeError::Runtime(
-            "SQL support not enabled. Compile with 'sql' feature.".to_string(),
-        ))
-    }
-
     /// Execute a SQL query with typed results
     ///
-    /// Pops query string from stack, executes via DuckDB,
+    /// Pops query string from stack, executes via the SQL provider,
     /// pushes List<T> where T is the specified type.
     ///
     /// The typed form `SQL<Person>("SELECT * FROM people")` validates
     /// that the result columns match the type definition and adds
     /// a `__type` field to each row.
-    #[cfg(feature = "sql")]
     fn op_sql_query_typed(&mut self, type_name: &str) -> Result<()> {
         let query = self.pop()?;
         let query_str = match query {
@@ -1464,8 +1572,13 @@ impl VM {
             LatticeError::Runtime(format!("Unknown type for SQL query: {}", type_name))
         })?;
 
-        // Execute query via DuckDB
-        let result = self.sql_context.execute_query(&query_str)?;
+        // Execute query via the injected SQL provider
+        let sql_result = self.sql_provider.query(&query_str).map_err(|e| {
+            LatticeError::Runtime(format!("SQL query failed: {}", e))
+        })?;
+
+        // Convert SqlResult to internal Value
+        let result = sql_result.to_lattice_value().to_internal();
 
         // Convert result rows to typed structs
         let typed_result = match result {
@@ -1503,14 +1616,6 @@ impl VM {
 
         // Push result onto stack
         self.push(typed_result)
-    }
-
-    /// Execute a SQL query with typed results (no-sql feature: returns error)
-    #[cfg(not(feature = "sql"))]
-    fn op_sql_query_typed(&mut self, _type_name: &str) -> Result<()> {
-        Err(LatticeError::Runtime(
-            "SQL support not enabled. Compile with 'sql' feature.".to_string(),
-        ))
     }
 
     /// Execute N expressions in parallel

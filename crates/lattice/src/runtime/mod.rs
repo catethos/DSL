@@ -117,8 +117,12 @@ impl LatticeRuntime {
     ///
     /// This is called by `RuntimeBuilder::build()` or can be used directly
     /// if you have a `BuiltRuntime` instance.
+    ///
+    /// The providers from the BuiltRuntime are injected into the VM,
+    /// enabling injectable LLM and SQL capabilities.
     pub fn from_built(built: BuiltRuntime) -> Self {
-        let mut vm = VM::new();
+        // Create VM with the configured providers
+        let mut vm = VM::with_providers(built.llm_provider, built.sql_provider);
 
         // Apply configuration
         if let Some(limit) = built.config.max_concurrent_llm_calls {
