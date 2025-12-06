@@ -484,10 +484,10 @@ function App() {
     }
   }, [currentTab, runCell])
 
-  const resetVM = useCallback(async () => {
+  const resetRuntime = useCallback(async () => {
     if (!currentTab) return
     try {
-      await invoke('reset_vm', { sessionId: currentTab.sessionId })
+      await invoke('reset_runtime', { sessionId: currentTab.sessionId })
       // Clear all cell outputs after resetting
       updateCells(currentTab.id, (cells) =>
         cells.map((cell) => ({
@@ -498,7 +498,7 @@ function App() {
         }))
       )
     } catch (e) {
-      console.error('Failed to reset VM:', e)
+      console.error('Failed to reset runtime:', e)
     }
   }, [currentTab, updateCells])
 
@@ -627,8 +627,8 @@ function App() {
       // Create a new tab for the loaded notebook
       const newTab = await createNewTab()
 
-      // Reset the new VM
-      await invoke('reset_vm', { sessionId: newTab.sessionId })
+      // Reset the new runtime
+      await invoke('reset_runtime', { sessionId: newTab.sessionId })
 
       // Convert notebook cells to CellData format
       const loadedCells: CellData[] = notebook.cells.map((cell) => {
@@ -731,8 +731,8 @@ function App() {
       // Create a new tab for the imported file
       const newTab = await createNewTab()
 
-      // Reset the new VM
-      await invoke('reset_vm', { sessionId: newTab.sessionId })
+      // Reset the new runtime
+      await invoke('reset_runtime', { sessionId: newTab.sessionId })
 
       // Convert to CellData format
       const loadedCells: CellData[] = importedCells.map((cell) => ({
@@ -866,7 +866,7 @@ function App() {
               Run All
             </MenuItem>
             <MenuDivider />
-            <MenuItem onClick={resetVM}>Restart VM</MenuItem>
+            <MenuItem onClick={resetRuntime}>Restart Runtime</MenuItem>
           </DropdownMenu>
         </nav>
       </header>

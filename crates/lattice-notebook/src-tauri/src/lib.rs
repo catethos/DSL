@@ -1,16 +1,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use lattice::compiler::Compiler;
-use lattice::syntax::parser;
-use lattice::types::Value;
-use lattice::vm::VM;
+use lattice::runtime::{LatticeRuntime, LatticeValue, RuntimeBuilder};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use chrono::Utc;
 
 struct AppState {
-    /// Map from session_id to VM instance - each tab gets its own VM
-    vms: Arc<Mutex<HashMap<String, VM>>>,
+    /// Map from session_id to LatticeRuntime instance - each tab gets its own runtime
+    runtimes: Arc<Mutex<HashMap<String, LatticeRuntime>>>,
 }
 
 /// Debug info from an LLM call (serializable for UI)
@@ -104,11 +101,11 @@ pub struct Notebook {
 }
 
 impl CellOutput {
-    /// Convert a Value to CellOutput, detecting table-like structures
-    fn from_value(value: Value) -> Self {
+    /// Convert a LatticeValue to CellOutput, detecting table-like structures
+    fn from_value(value: LatticeValue) -> Self {
         match &value {
-            Value::Null => CellOutput::Empty,
-            Value::List(items) if !items.is_empty() => {
+            LatticeValue::Null => CellOutput::Empty,
+            LatticeValue::List(items) if !items.is_empty() => {
                 // Check if all items are maps with the same keys (table-like)
                 if let Some(table) = Self::try_as_table(items) {
                     return table;
@@ -120,8 +117,8 @@ impl CellOutput {
         }
     }
 
-    /// Try to interpret a list of values as a table
-    fn try_as_table(items: &[Value]) -> Option<CellOutput> {
+    /// Try to interpret a list of LatticeValues as a table
+    fn try_as_table(items: &[LatticeValue]) -> Option<CellOutput> {
         // All items must be maps
         let maps: Vec<_> = items
             .iter()
@@ -132,14 +129,14 @@ impl CellOutput {
             return None;
         }
 
-        // Get headers from the first map
+        // Get headers from the first map (LatticeValue::Map is Vec<(String, LatticeValue)>)
         let first_map = maps[0];
-        let mut headers: Vec<String> = first_map.keys().cloned().collect();
+        let mut headers: Vec<String> = first_map.iter().map(|(k, _)| k.clone()).collect();
         headers.sort(); // Consistent ordering
 
         // Check all maps have the same keys
         for map in &maps {
-            let mut keys: Vec<String> = map.keys().cloned().collect();
+            let mut keys: Vec<String> = map.iter().map(|(k, _)| k.clone()).collect();
             keys.sort();
             if keys != headers {
                 return None;
@@ -153,8 +150,9 @@ impl CellOutput {
                 headers
                     .iter()
                     .map(|h| {
-                        map.get(h)
-                            .map(Self::value_to_cell_string)
+                        map.iter()
+                            .find(|(k, _)| k == h)
+                            .map(|(_, v)| Self::value_to_cell_string(v))
                             .unwrap_or_default()
                     })
                     .collect()
@@ -164,37 +162,43 @@ impl CellOutput {
         Some(CellOutput::Table { headers, rows })
     }
 
-    /// Convert a Value to a string suitable for a table cell
-    fn value_to_cell_string(value: &Value) -> String {
+    /// Convert a LatticeValue to a string suitable for a table cell
+    fn value_to_cell_string(value: &LatticeValue) -> String {
         match value {
-            Value::String(s) => s.to_string(),
-            Value::Null => "".to_string(),
+            LatticeValue::String(s) => s.clone(),
+            LatticeValue::Null => "".to_string(),
             other => other.to_string(),
         }
     }
 }
 
-/// Create a new VM session and return its session_id
+/// Create a new runtime session and return its session_id
 #[tauri::command]
 async fn create_session(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let vms = Arc::clone(&state.vms);
+    let runtimes = Arc::clone(&state.runtimes);
     tokio::task::spawn_blocking(move || {
-        let mut vms = vms.lock().map_err(|e| e.to_string())?;
+        let mut runtimes = runtimes.lock().map_err(|e| e.to_string())?;
         let session_id = generate_id();
-        vms.insert(session_id.clone(), VM::new());
+        let runtime = RuntimeBuilder::new()
+            .with_default_providers()
+            .map_err(|e| e.to_string())?
+            .build()
+            .map(LatticeRuntime::from_built)
+            .map_err(|e| e.to_string())?;
+        runtimes.insert(session_id.clone(), runtime);
         Ok(session_id)
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
-/// Destroy a VM session
+/// Destroy a runtime session
 #[tauri::command]
 async fn destroy_session(state: tauri::State<'_, AppState>, session_id: String) -> Result<(), String> {
-    let vms = Arc::clone(&state.vms);
+    let runtimes = Arc::clone(&state.runtimes);
     tokio::task::spawn_blocking(move || {
-        let mut vms = vms.lock().map_err(|e| e.to_string())?;
-        vms.remove(&session_id);
+        let mut runtimes = runtimes.lock().map_err(|e| e.to_string())?;
+        runtimes.remove(&session_id);
         Ok(())
     })
     .await
@@ -202,12 +206,12 @@ async fn destroy_session(state: tauri::State<'_, AppState>, session_id: String) 
 }
 
 #[tauri::command]
-async fn reset_vm(state: tauri::State<'_, AppState>, session_id: String) -> Result<(), String> {
-    let vms = Arc::clone(&state.vms);
+async fn reset_runtime(state: tauri::State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let runtimes = Arc::clone(&state.runtimes);
     tokio::task::spawn_blocking(move || {
-        let mut vms = vms.lock().map_err(|e| e.to_string())?;
-        if let Some(vm) = vms.get_mut(&session_id) {
-            *vm = VM::new();
+        let mut runtimes = runtimes.lock().map_err(|e| e.to_string())?;
+        if let Some(runtime) = runtimes.get_mut(&session_id) {
+            runtime.reset();
         } else {
             return Err(format!("Session {} not found", session_id));
         }
@@ -220,63 +224,28 @@ async fn reset_vm(state: tauri::State<'_, AppState>, session_id: String) -> Resu
 #[tauri::command]
 async fn eval_cell(state: tauri::State<'_, AppState>, session_id: String, code: String) -> Result<EvalResponse, String> {
     // Clone the Arc so we can move it into the blocking task
-    let vms = Arc::clone(&state.vms);
+    let runtimes = Arc::clone(&state.runtimes);
 
-    // Run the VM execution on a blocking thread pool to avoid nested runtime issues
+    // Run the runtime execution on a blocking thread pool to avoid nested runtime issues
     tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
 
-        let mut vms = vms.lock().map_err(|e| e.to_string())?;
-        let vm = vms.get_mut(&session_id)
+        let mut runtimes = runtimes.lock().map_err(|e| e.to_string())?;
+        let runtime = runtimes.get_mut(&session_id)
             .ok_or_else(|| format!("Session {} not found", session_id))?;
 
-        // Parse source to AST
-        let program = parser::parse(&code).map_err(|e| format!("Parse error: {}", e))?;
-
-        // Get known function names from previously executed cells
-        let known_functions = vm.function_names();
-        let known_llm_functions = vm.llm_function_names();
-
-        // Compile AST to bytecode with knowledge of existing functions
-        let compile_result =
-            Compiler::compile_with_known_functions_full(&program, known_functions, known_llm_functions)
-                .map_err(|e| format!("Compile error: {}", e))?;
-
-        // Register types (classes and enums)
-        for class in compile_result.classes {
-            vm.ir_mut().classes.push(class);
-        }
-        for enum_def in compile_result.enums {
-            vm.ir_mut().enums.push(enum_def);
-        }
-
-        // Register functions
-        for func in compile_result.functions {
-            vm.register_function(func);
-        }
-        for llm_func in compile_result.llm_functions {
-            vm.register_llm_function(llm_func);
-        }
-
-        // Execute the bytecode
-        let result = vm
-            .run(&compile_result.chunk)
-            .map_err(|e| format!("Runtime error: {}", e))?;
-
-        // Get LLM debug info if available
-        let llm_debug = vm.take_llm_debug().map(|debug| LlmDebugOutput {
-            function_name: debug.function_name,
-            return_type: debug.return_type,
-            prompt: debug.prompt,
-            raw_response: debug.raw_response,
-        });
+        // Evaluate the code using LatticeRuntime
+        let result = runtime
+            .eval(&code)
+            .map_err(|e| format!("{}", e))?;
 
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
 
         // Convert result to structured CellOutput
+        // Note: LLM debug info is not currently exposed through the runtime API
         Ok(EvalResponse {
             output: CellOutput::from_value(result),
-            llm_debug,
+            llm_debug: None,
             execution_time_ms,
         })
     })
@@ -440,13 +409,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
-            vms: Arc::new(Mutex::new(HashMap::new())),
+            runtimes: Arc::new(Mutex::new(HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![
             create_session,
             destroy_session,
             eval_cell,
-            reset_vm,
+            reset_runtime,
             save_notebook,
             load_notebook,
             export_lat,
