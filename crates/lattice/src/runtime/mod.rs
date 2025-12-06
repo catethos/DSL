@@ -50,6 +50,9 @@ pub use builder::{BuiltRuntime, RuntimeBuilder, RuntimeConfig};
 pub use schema::{EnumSchema, FieldSchema, StructSchema, TypeSchema};
 pub use signature::{FunctionSignature, ParameterSchema};
 pub use value::{ConversionError, LatticeValue};
+
+// Re-export LlmDebugInfo from VM for FFI access
+pub use crate::vm::LlmDebugInfo;
 pub use providers::{
     DefaultLlmProvider, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmUsage,
     NoLlmProvider, NoSqlProvider, SqlError, SqlProvider, SqlResult, SqlRow,
@@ -364,6 +367,32 @@ impl LatticeRuntime {
     /// Get the list of registered LLM function names.
     pub fn llm_function_names(&self) -> &[String] {
         &self.known_llm_functions
+    }
+
+    /// Get debug info from the last LLM call, if any.
+    ///
+    /// This returns a reference to the debug info without consuming it.
+    /// Use `take_llm_debug()` if you want to take ownership and clear the info.
+    pub fn last_llm_debug(&self) -> Option<&crate::vm::LlmDebugInfo> {
+        self.vm.last_llm_debug()
+    }
+
+    /// Take debug info from the last LLM call, clearing it from the runtime.
+    ///
+    /// This is useful for the notebook UI to display LLM debug information
+    /// (prompt, raw response, function name, return type) after evaluating code.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let result = runtime.eval("summarize(\"hello world\")")?;
+    /// if let Some(debug) = runtime.take_llm_debug() {
+    ///     println!("Prompt: {}", debug.prompt);
+    ///     println!("Response: {}", debug.raw_response);
+    /// }
+    /// ```
+    pub fn take_llm_debug(&mut self) -> Option<crate::vm::LlmDebugInfo> {
+        self.vm.take_llm_debug()
     }
 
     /// Get all function signatures (both regular and LLM functions).
@@ -728,6 +757,17 @@ impl SharedRuntime {
             .lock()
             .map_err(|e| LatticeError::Runtime(format!("Lock poisoned: {}", e)))?
             .call_with_named_args(name, args)
+    }
+
+    /// Take debug info from the last LLM call, clearing it from the runtime.
+    ///
+    /// Acquires a lock on the runtime for the duration of the operation.
+    pub fn take_llm_debug(&self) -> Result<Option<crate::vm::LlmDebugInfo>, LatticeError> {
+        Ok(self
+            .0
+            .lock()
+            .map_err(|e| LatticeError::Runtime(format!("Lock poisoned: {}", e)))?
+            .take_llm_debug())
     }
 }
 

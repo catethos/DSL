@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use lattice::runtime::{LatticeRuntime, LatticeValue, RuntimeBuilder};
+use lattice::runtime::{LatticeRuntime, LatticeValue, LlmDebugInfo, RuntimeBuilder};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use chrono::Utc;
@@ -21,6 +21,17 @@ pub struct LlmDebugOutput {
     pub prompt: String,
     /// The raw response from the LLM
     pub raw_response: String,
+}
+
+impl From<LlmDebugInfo> for LlmDebugOutput {
+    fn from(info: LlmDebugInfo) -> Self {
+        Self {
+            function_name: info.function_name,
+            return_type: info.return_type,
+            prompt: info.prompt,
+            raw_response: info.raw_response,
+        }
+    }
 }
 
 /// Structured output from cell evaluation
@@ -239,13 +250,15 @@ async fn eval_cell(state: tauri::State<'_, AppState>, session_id: String, code: 
             .eval(&code)
             .map_err(|e| format!("{}", e))?;
 
+        // Extract LLM debug info if any LLM call was made
+        let llm_debug = runtime.take_llm_debug().map(LlmDebugOutput::from);
+
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
 
         // Convert result to structured CellOutput
-        // Note: LLM debug info is not currently exposed through the runtime API
         Ok(EvalResponse {
             output: CellOutput::from_value(result),
-            llm_debug: None,
+            llm_debug,
             execution_time_ms,
         })
     })
