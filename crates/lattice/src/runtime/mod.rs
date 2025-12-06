@@ -8,6 +8,7 @@
 //! - [`LatticeRuntime`]: The main embedding API for evaluating Lattice code
 //! - [`LatticeValue`]: FFI-safe value type for cross-language marshaling
 //! - [`TypeSchema`]: FFI-safe type schema for host language codegen
+//! - [`FunctionSignature`]: FFI-safe function signatures for discovering callable functions
 //! - [`providers`]: Injectable provider traits (LLM, SQL, etc.)
 //! - [`RuntimeBuilder`]: Builder pattern for constructing isolated runtime instances
 //!
@@ -34,6 +35,7 @@
 
 mod builder;
 mod schema;
+mod signature;
 mod value;
 pub mod providers;
 
@@ -46,6 +48,7 @@ use crate::vm::VM;
 
 pub use builder::{BuiltRuntime, RuntimeBuilder, RuntimeConfig};
 pub use schema::{EnumSchema, FieldSchema, StructSchema, TypeSchema};
+pub use signature::{FunctionSignature, ParameterSchema};
 pub use value::{ConversionError, LatticeValue};
 pub use providers::{
     DefaultLlmProvider, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmUsage,
@@ -362,6 +365,68 @@ impl LatticeRuntime {
     pub fn llm_function_names(&self) -> &[String] {
         &self.known_llm_functions
     }
+
+    /// Get all function signatures (both regular and LLM functions).
+    ///
+    /// This provides host languages with the information needed to:
+    /// - Discover available functions
+    /// - Generate typed bindings
+    /// - Validate arguments before calling
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// runtime.eval(r#"
+    ///     def add(a: Int, b: Int) -> Int { a + b }
+    /// "#)?;
+    ///
+    /// let signatures = runtime.get_function_signatures();
+    /// for sig in signatures {
+    ///     println!("{}", sig); // "fn add(a: Int, b: Int) -> Int"
+    /// }
+    /// ```
+    pub fn get_function_signatures(&self) -> Vec<FunctionSignature> {
+        let mut signatures = Vec::new();
+
+        // Get signatures from regular functions
+        for name in &self.known_functions {
+            if let Some(func) = self.vm.get_function(name) {
+                signatures.push(FunctionSignature::from_compiled_function(func));
+            }
+        }
+
+        // Get signatures from LLM functions
+        for name in &self.known_llm_functions {
+            if let Some(func) = self.vm.get_llm_function_by_name(name) {
+                signatures.push(FunctionSignature::from_llm_function(func));
+            }
+        }
+
+        signatures
+    }
+
+    /// Get a specific function signature by name.
+    ///
+    /// Returns None if the function is not found.
+    pub fn get_function_signature(&self, name: &str) -> Option<FunctionSignature> {
+        // Check regular functions first
+        if let Some(func) = self.vm.get_function(name) {
+            return Some(FunctionSignature::from_compiled_function(func));
+        }
+
+        // Then check LLM functions
+        if let Some(func) = self.vm.get_llm_function_by_name(name) {
+            return Some(FunctionSignature::from_llm_function(func));
+        }
+
+        None
+    }
+
+    /// Check if a function exists by name.
+    pub fn has_function(&self, name: &str) -> bool {
+        self.known_functions.contains(&name.to_string())
+            || self.known_llm_functions.contains(&name.to_string())
+    }
 }
 
 /// Thread-safe wrapper for LatticeRuntime.
@@ -451,6 +516,33 @@ impl SharedRuntime {
             .map_err(|e| LatticeError::Runtime(format!("Lock poisoned: {}", e)))?
             .reset();
         Ok(())
+    }
+
+    /// Get all function signatures.
+    pub fn get_function_signatures(&self) -> Result<Vec<FunctionSignature>, LatticeError> {
+        Ok(self
+            .0
+            .lock()
+            .map_err(|e| LatticeError::Runtime(format!("Lock poisoned: {}", e)))?
+            .get_function_signatures())
+    }
+
+    /// Get a specific function signature by name.
+    pub fn get_function_signature(&self, name: &str) -> Result<Option<FunctionSignature>, LatticeError> {
+        Ok(self
+            .0
+            .lock()
+            .map_err(|e| LatticeError::Runtime(format!("Lock poisoned: {}", e)))?
+            .get_function_signature(name))
+    }
+
+    /// Check if a function exists by name.
+    pub fn has_function(&self, name: &str) -> Result<bool, LatticeError> {
+        Ok(self
+            .0
+            .lock()
+            .map_err(|e| LatticeError::Runtime(format!("Lock poisoned: {}", e)))?
+            .has_function(name))
     }
 }
 
@@ -792,5 +884,114 @@ mod tests {
         let names = runtime.global_names();
         assert!(names.contains(&"foo".to_string()));
         assert!(names.contains(&"bar".to_string()));
+    }
+
+    #[test]
+    fn test_get_function_signatures_regular() {
+        let mut runtime = create_test_runtime();
+
+        // Define a function
+        runtime
+            .eval(
+                r#"
+            def add(a: Int, b: Int) -> Int {
+                a + b
+            }
+        "#,
+            )
+            .unwrap();
+
+        let signatures = runtime.get_function_signatures();
+        assert_eq!(signatures.len(), 1);
+
+        let sig = &signatures[0];
+        assert_eq!(sig.name, "add");
+        assert_eq!(sig.arity(), 2);
+        assert!(!sig.is_llm);
+        assert!(!sig.is_async);
+    }
+
+    #[test]
+    fn test_get_function_signature_by_name() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def greet(name: String) -> String {
+                "Hello, " + name
+            }
+
+            def square(n: Int) -> Int {
+                n * n
+            }
+        "#,
+            )
+            .unwrap();
+
+        // Get specific signature
+        let sig = runtime.get_function_signature("greet");
+        assert!(sig.is_some());
+        assert_eq!(sig.unwrap().name, "greet");
+
+        // Get non-existent
+        let sig = runtime.get_function_signature("nonexistent");
+        assert!(sig.is_none());
+    }
+
+    #[test]
+    fn test_has_function() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval("def my_func() -> Int { 42 }")
+            .unwrap();
+
+        assert!(runtime.has_function("my_func"));
+        assert!(!runtime.has_function("other_func"));
+    }
+
+    #[test]
+    fn test_function_signatures_multiple() {
+        let mut runtime = create_test_runtime();
+
+        runtime
+            .eval(
+                r#"
+            def add(a: Int, b: Int) -> Int { a + b }
+            def sub(a: Int, b: Int) -> Int { a - b }
+            def mul(a: Int, b: Int) -> Int { a * b }
+        "#,
+            )
+            .unwrap();
+
+        let signatures = runtime.get_function_signatures();
+        assert_eq!(signatures.len(), 3);
+
+        let names: Vec<&str> = signatures.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"add"));
+        assert!(names.contains(&"sub"));
+        assert!(names.contains(&"mul"));
+    }
+
+    #[test]
+    fn test_function_signature_display() {
+        let sig = FunctionSignature::new(
+            "calculate".to_string(),
+            vec![
+                ParameterSchema {
+                    name: "x".to_string(),
+                    type_schema: TypeSchema::Int,
+                },
+                ParameterSchema {
+                    name: "y".to_string(),
+                    type_schema: TypeSchema::Int,
+                },
+            ],
+            TypeSchema::Int,
+            false,
+        );
+
+        assert_eq!(sig.to_string(), "fn calculate(x: Int, y: Int) -> Int");
     }
 }
