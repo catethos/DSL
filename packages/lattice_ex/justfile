@@ -23,7 +23,8 @@ bump NEW_VERSION:
     sed -i '' 's/@version ".*"/@version "{{NEW_VERSION}}"/' mix.exs
 
     # Update build script (only the first VERSION line, not NIF_VERSION)
-    sed -i '' '0,/^VERSION=".*"/{s/^VERSION=".*"/VERSION="{{NEW_VERSION}}"/}' build_precompiled.sh
+    # Note: ^VERSION= only matches line 17, not NIF_VERSION on line 18
+    sed -i '' 's/^VERSION=".*"/VERSION="{{NEW_VERSION}}"/' build_precompiled.sh
 
     # Update Cargo.toml (workspace root)
     sed -i '' 's/^version = ".*"/version = "{{NEW_VERSION}}"/' ../../Cargo.toml
