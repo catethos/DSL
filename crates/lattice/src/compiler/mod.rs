@@ -267,6 +267,7 @@ impl Compiler {
         func_compiler.scope_depth = 1; // Function scope
         // Copy known functions to allow recursive/mutual calls
         func_compiler.known_functions = self.known_functions.clone();
+        func_compiler.known_llm_functions = self.known_llm_functions.clone();
 
         // Add parameters as locals (in order)
         for param in &func_def.params {
@@ -288,6 +289,10 @@ impl Compiler {
         };
 
         self.functions.push(compiled);
+
+        // Collect any nested lambdas compiled inside the function body
+        self.functions.extend(func_compiler.functions);
+
         Ok(())
     }
 
@@ -1150,6 +1155,9 @@ impl Compiler {
         };
 
         self.functions.push(compiled);
+
+        // Collect any nested lambdas compiled inside the lambda body
+        self.functions.extend(lambda_compiler.functions);
 
         // For now, push the function name as a string reference
         // The VM will need to look it up
