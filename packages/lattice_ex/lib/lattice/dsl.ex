@@ -38,6 +38,8 @@ defmodule Lattice.DSL do
   - `:file` - Path to the `.lat` file (required). Can be absolute or relative to the project root.
   - `:unwrap` - If `true`, functions will return values directly instead of `{:ok, value}` tuples,
     and raise on errors. Default: `false`.
+  - `:sql` - If `true`, enables SQL support (DuckDB) in the runtime. Default: `false`.
+  - `:llm` - If `true`, enables LLM support in the runtime. Default: `false`.
 
   ## With unwrap option
 
@@ -52,10 +54,14 @@ defmodule Lattice.DSL do
   defmacro __using__(opts) do
     file = Keyword.fetch!(opts, :file)
     unwrap = Keyword.get(opts, :unwrap, false)
+    sql = Keyword.get(opts, :sql, false)
+    llm = Keyword.get(opts, :llm, false)
 
     quote do
       @lattice_file unquote(file)
       @lattice_unwrap unquote(unwrap)
+      @lattice_sql unquote(sql)
+      @lattice_llm unquote(llm)
       @before_compile Lattice.DSL
     end
   end
@@ -63,12 +69,14 @@ defmodule Lattice.DSL do
   defmacro __before_compile__(env) do
     file = Module.get_attribute(env.module, :lattice_file)
     unwrap = Module.get_attribute(env.module, :lattice_unwrap)
+    sql = Module.get_attribute(env.module, :lattice_sql)
+    llm = Module.get_attribute(env.module, :lattice_llm)
 
     # Resolve the file path relative to the project
     resolved_file = resolve_file_path(file, env)
 
     # Load at compile time to get signatures
-    {:ok, rt} = Lattice.Native.new_runtime()
+    {:ok, rt} = create_runtime(sql, llm)
 
     case Lattice.Native.eval_file(rt, resolved_file) do
       {:ok, _} -> :ok
@@ -129,7 +137,7 @@ defmodule Lattice.DSL do
       def __lattice_runtime__ do
         case Process.get(:lattice_dsl_runtime) do
           nil ->
-            {:ok, rt} = Lattice.Native.new_runtime()
+            {:ok, rt} = Lattice.DSL.create_runtime(unquote(sql), unquote(llm))
             {:ok, _} = Lattice.Native.eval_file(rt, unquote(resolved_file))
             Process.put(:lattice_dsl_runtime, rt)
             rt
@@ -176,6 +184,16 @@ defmodule Lattice.DSL do
       true ->
         project_root = File.cwd!()
         Path.join(project_root, file)
+    end
+  end
+
+  @doc false
+  def create_runtime(sql, llm) do
+    case {sql, llm} do
+      {true, true} -> Lattice.Native.new_runtime_with_all()
+      {true, false} -> Lattice.Native.new_runtime_with_sql()
+      {false, true} -> Lattice.Native.new_runtime_with_llm()
+      {false, false} -> Lattice.Native.new_runtime()
     end
   end
 end

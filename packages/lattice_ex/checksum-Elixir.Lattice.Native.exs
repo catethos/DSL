@@ -1,4 +1,4 @@
 %{
-  "liblattice_nif-v0.1.3-nif-2.17-aarch64-apple-darwin.so" => "sha256:c02d9038b7d777223bea5867ed30aad18659fa40e615bb18a4de2c6d1d640742",
-  "liblattice_nif-v0.1.3-nif-2.17-aarch64-apple-darwin.so.tar.gz" => "sha256:6b1aa2d7446fe3dcbb45dc742eab48535a1511baa027d38f60302e02f264f93f"
+  "liblattice_nif-v0.1.4-nif-2.17-aarch64-apple-darwin.so" => "sha256:37efa02f292634984669f970d56d0e81ac2796ea9aae79e2b5de3c2378193ede",
+  "liblattice_nif-v0.1.4-nif-2.17-aarch64-apple-darwin.so.tar.gz" => "sha256:4a3fd82d4afa8ec49d531102e32d90569c2ac70d047640e34d9bb7ed68173314"
 }
