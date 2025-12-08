@@ -61,6 +61,24 @@ defmodule Lattice do
   end
 
   @doc """
+  Create a new Lattice runtime with SQL support (DuckDB).
+
+  Enables the SQL() function for querying CSV files and in-memory data.
+  """
+  def new_with_sql do
+    Native.new_runtime_with_sql()
+  end
+
+  @doc """
+  Create a new Lattice runtime with both LLM and SQL support.
+
+  Requires OPENROUTER_API_KEY environment variable to be set.
+  """
+  def new_with_all do
+    Native.new_runtime_with_all()
+  end
+
+  @doc """
   Evaluate Lattice source code.
 
   Returns `{:ok, value}` on success or `{:error, reason}` on failure.

@@ -124,6 +124,45 @@ fn new_runtime_with_llm<'a>(env: Env<'a>) -> NifResult<Term<'a>> {
     Ok((atoms::ok(), resource).encode(env))
 }
 
+/// Create a new Lattice runtime with SQL support (DuckDB).
+///
+/// Returns `{:ok, runtime}` on success or `{:error, reason}` on failure.
+#[cfg(feature = "sql")]
+#[rustler::nif]
+fn new_runtime_with_sql<'a>(env: Env<'a>) -> NifResult<Term<'a>> {
+    let built = RuntimeBuilder::new()
+        .without_llm()
+        .with_default_sql_provider()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("{}", e))))?
+        .build()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("{}", e))))?;
+
+    let runtime = LatticeRuntime::from_built(built);
+    let resource = ResourceArc::new(RuntimeResource(Mutex::new(runtime)));
+
+    Ok((atoms::ok(), resource).encode(env))
+}
+
+/// Create a new Lattice runtime with both LLM and SQL support.
+///
+/// Returns `{:ok, runtime}` on success or `{:error, reason}` on failure.
+#[cfg(feature = "sql")]
+#[rustler::nif]
+fn new_runtime_with_all<'a>(env: Env<'a>) -> NifResult<Term<'a>> {
+    let built = RuntimeBuilder::new()
+        .with_default_llm_provider()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("{}", e))))?
+        .with_default_sql_provider()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("{}", e))))?
+        .build()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("{}", e))))?;
+
+    let runtime = LatticeRuntime::from_built(built);
+    let resource = ResourceArc::new(RuntimeResource(Mutex::new(runtime)));
+
+    Ok((atoms::ok(), resource).encode(env))
+}
+
 /// Evaluate Lattice source code.
 ///
 /// Returns `{:ok, value}` on success or `{:error, reason}` on failure.

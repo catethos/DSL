@@ -1,0 +1,18 @@
+def ProcessJobApplications(csv_data: String) {
+  SQL(f"""
+  SELECT job_application_id,
+  CASE
+    WHEN ROUND(trait_score * 100) >= 80 THEN 'strong potential'
+    WHEN ROUND(trait_score * 100) >= 60 THEN 'good potential'
+    WHEN ROUND(trait_score * 100) >= 40 THEN 'some foundation'
+    WHEN ROUND(trait_score * 100) >= 20 THEN 'developing capability'
+    ELSE 'limited demonstrated ability'
+  END as label,
+  CASE
+    WHEN processed_job_description IS NULL THEN ''
+    ELSE processed_job_description
+  END as job_description
+  FROM '{csv_data}'
+  WHERE trait_framework = 'reasoning_verbal'
+  """)
+}

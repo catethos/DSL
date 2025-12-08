@@ -1,10 +1,8 @@
 {application,lattice,
              [{modules,['Elixir.Lattice','Elixir.Lattice.Native']},
-              {compile_env,[{rustler_precompiled,[force_build,lattice],error},
-                            {rustler_precompiled,[force_build_all],error}]},
               {optional_applications,[rustler]},
               {applications,[kernel,stdlib,elixir,logger,rustler_precompiled,
                              rustler]},
               {description,"Lattice DSL runtime for Elixir - a domain-specific language with LLM integration"},
               {registered,[]},
-              {vsn,"0.1.0"}]}.
+              {vsn,"0.1.2"}]}.

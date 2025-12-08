@@ -2570,7 +2570,7 @@ dependencies = [
 
 [[package]]
 name = "lattice"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2594,7 +2594,7 @@ dependencies = [
 
 [[package]]
 name = "lattice-cli"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2606,7 +2606,7 @@ dependencies = [
 
 [[package]]
 name = "lattice-nif"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "lattice",
  "rustler",

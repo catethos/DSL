@@ -1,0 +1,223 @@
+# Lattice Elixir Package Release Automation
+# Usage: just release 0.1.2
+
+set shell := ["bash", "-uc"]
+
+# Default recipe - show help
+default:
+    @just --list
+
+# Show current version
+version:
+    @grep '@version' mix.exs | head -1 | sed 's/.*"\(.*\)"/\1/'
+
+# Bump version in all files
+bump NEW_VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    OLD_VERSION=$(just version)
+    echo "Bumping version: $OLD_VERSION -> {{NEW_VERSION}}"
+
+    # Update mix.exs
+    sed -i '' 's/@version ".*"/@version "{{NEW_VERSION}}"/' mix.exs
+
+    # Update build script (only the first VERSION line, not NIF_VERSION)
+    sed -i '' '0,/^VERSION=".*"/{s/^VERSION=".*"/VERSION="{{NEW_VERSION}}"/}' build_precompiled.sh
+
+    # Update Cargo.toml (workspace root)
+    sed -i '' 's/^version = ".*"/version = "{{NEW_VERSION}}"/' ../../Cargo.toml
+
+    echo "Updated files:"
+    echo "  - mix.exs"
+    echo "  - build_precompiled.sh"
+    echo "  - ../../Cargo.toml"
+
+# Build the NIF with SQL support
+build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building NIF..."
+    ./build_precompiled.sh
+    echo "Build complete!"
+
+# Run tests
+test:
+    mix test
+
+# Clean build artifacts
+clean:
+    mix clean
+    rm -f liblattice_nif-*.tar.gz
+    rm -rf _build
+
+# Git commit and tag
+tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(just version)
+
+    echo "Committing and tagging v$VERSION..."
+    git add -A
+    git commit -m "Release v$VERSION" || echo "Nothing to commit"
+    git tag -a "v$VERSION" -m "Release v$VERSION"
+    echo "Created tag v$VERSION"
+
+# Push to remote with tags
+push:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BRANCH=$(git branch --show-current)
+    echo "Pushing to origin/$BRANCH with tags..."
+    git push origin $BRANCH --tags
+
+# Create GitHub release and upload artifact
+github-release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(just version)
+    TARBALL="liblattice_nif-v${VERSION}-nif-2.17-aarch64-apple-darwin.so.tar.gz"
+
+    if [ ! -f "$TARBALL" ]; then
+        echo "Error: $TARBALL not found. Run 'just build' first."
+        exit 1
+    fi
+
+    echo "Creating GitHub release v$VERSION..."
+    gh release create "v$VERSION" \
+        --title "v$VERSION" \
+        --notes "Release v$VERSION" \
+        "$TARBALL"
+
+    echo "GitHub release created!"
+
+# Publish to Hex.pm
+hex-publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Publishing to Hex.pm..."
+    mix hex.publish
+    echo "Published to Hex!"
+
+# Full release process (interactive)
+release NEW_VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    echo "=== Lattice Release Process ==="
+    echo "New version: {{NEW_VERSION}}"
+    echo ""
+
+    # Step 1: Bump version
+    echo "Step 1/7: Bumping version..."
+    just bump {{NEW_VERSION}}
+    echo ""
+
+    # Step 2: Clean and build
+    echo "Step 2/7: Building NIF..."
+    just clean
+    just build
+    echo ""
+
+    # Step 3: Run tests
+    echo "Step 3/7: Running tests..."
+    just test || echo "Warning: Tests failed or skipped"
+    echo ""
+
+    # Step 4: Git commit and tag
+    echo "Step 4/7: Creating git commit and tag..."
+    just tag
+    echo ""
+
+    # Step 5: Push to remote
+    echo "Step 5/7: Pushing to remote..."
+    just push
+    echo ""
+
+    # Step 6: Create GitHub release
+    echo "Step 6/7: Creating GitHub release..."
+    just github-release
+    echo ""
+
+    # Step 7: Publish to Hex
+    echo "Step 7/7: Publishing to Hex.pm..."
+    read -p "Publish to Hex.pm? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        just hex-publish
+    else
+        echo "Skipped Hex publish. Run 'just hex-publish' manually."
+    fi
+
+    echo ""
+    echo "=== Release Complete! ==="
+    echo "Version {{NEW_VERSION}} has been released."
+
+# Quick release (non-interactive, skips Hex)
+release-quick NEW_VERSION:
+    just bump {{NEW_VERSION}}
+    just clean
+    just build
+    just tag
+    just push
+    just github-release
+    @echo "Done! Run 'just hex-publish' to publish to Hex.pm"
+
+# Development: rebuild and test locally
+dev:
+    just build
+    mix clean
+    mix compile
+    @echo "Ready for local testing: iex -S mix"
+
+# Check release readiness
+check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(just version)
+    TARBALL="liblattice_nif-v${VERSION}-nif-2.17-aarch64-apple-darwin.so.tar.gz"
+
+    echo "Release Checklist for v$VERSION"
+    echo "================================"
+
+    # Check tarball exists
+    if [ -f "$TARBALL" ]; then
+        echo "[x] Tarball exists: $TARBALL"
+    else
+        echo "[ ] Tarball missing: $TARBALL (run 'just build')"
+    fi
+
+    # Check checksum file
+    if [ -f "checksum-Elixir.Lattice.Native.exs" ]; then
+        echo "[x] Checksum file exists"
+    else
+        echo "[ ] Checksum file missing"
+    fi
+
+    # Check git status
+    if git diff --quiet && git diff --staged --quiet; then
+        echo "[x] Working directory clean"
+    else
+        echo "[ ] Uncommitted changes exist"
+    fi
+
+    # Check if tag exists
+    if git tag -l "v$VERSION" | grep -q "v$VERSION"; then
+        echo "[x] Git tag v$VERSION exists"
+    else
+        echo "[ ] Git tag v$VERSION not created"
+    fi
+
+    # Check gh CLI
+    if command -v gh &> /dev/null; then
+        echo "[x] GitHub CLI (gh) available"
+    else
+        echo "[ ] GitHub CLI (gh) not installed"
+    fi
+
+    # Check hex auth
+    if mix hex.user whoami &> /dev/null; then
+        echo "[x] Hex.pm authenticated"
+    else
+        echo "[ ] Hex.pm not authenticated (run 'mix hex.user auth')"
+    fi

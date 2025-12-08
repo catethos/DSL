@@ -1,7 +1,7 @@
 defmodule Lattice.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.2"
   @source_url "https://github.com/catethos/DSL"
 
   def project do
@@ -41,7 +41,8 @@ defmodule Lattice.MixProject do
   defp package do
     [
       name: "lattice",
-      files: ~w(lib priv .formatter.exs mix.exs README.md LICENSE checksum-*.exs),
+      # Note: priv/native/*.so files are NOT included - they're downloaded from GitHub releases
+      files: ~w(lib .formatter.exs mix.exs README.md LICENSE checksum-*.exs),
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url}
     ]

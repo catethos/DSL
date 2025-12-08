@@ -5,14 +5,14 @@
     <meta http-equiv="x-ua-compatible" content="ie=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="generator" content="ExDoc v0.39.2">
-    <meta name="project" content="Lattice v0.1.0">
+    <meta name="project" content="Lattice v0.1.1">
 
 
-    <title>Lattice — Lattice v0.1.0</title>
+    <title>Lattice — Lattice v0.1.1</title>
 
     <link rel="stylesheet" href="dist/html-elixir-VYWJUHZE.css" />
 
-    <script defer src="dist/sidebar_items-D38C7AAC.js"></script>
+    <script defer src="dist/sidebar_items-3B4A32A3.js"></script>
     <script defer src="docs_config.js"></script>
     <script defer src="dist/html-XBCM4BHM.js"></script>
 
@@ -37,7 +37,7 @@
 Lattice
         </a>
         <div class="sidebar-projectVersion" translate="no">
-          v0.1.0
+          v0.1.1
         </div>
       </div>
     </div>
@@ -103,32 +103,32 @@ Lattice
   </div>
 
 
-<p>Elixir bindings for the Lattice DSL runtime - a domain-specific language with LLM integration.</p><h2 id="installation" class="section-heading"><a href="#installation" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Installation</span></h2><p>Add <code class="inline">lattice</code> to your list of dependencies in <code class="inline">mix.exs</code>:</p><pre><code class="makeup elixir" translate="no"><span class="kd">def</span><span class="w"> </span><span class="nf">deps</span><span class="w"> </span><span class="k" data-group-id="1288633144-1">do</span><span class="w">
-  </span><span class="p" data-group-id="1288633144-2">[</span><span class="w">
-    </span><span class="p" data-group-id="1288633144-3">{</span><span class="ss">:lattice</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;~&gt; 0.1.0&quot;</span><span class="p" data-group-id="1288633144-3">}</span><span class="w">
-  </span><span class="p" data-group-id="1288633144-2">]</span><span class="w">
-</span><span class="k" data-group-id="1288633144-1">end</span></code></pre><p><strong>Note</strong>: This package currently only supports macOS Apple Silicon (aarch64-apple-darwin).</p><h2 id="usage" class="section-heading"><a href="#usage" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Usage</span></h2><pre><code class="makeup elixir" translate="no"><span class="c1"># Create a runtime</span><span class="w">
-</span><span class="p" data-group-id="3812046766-1">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="n">rt</span><span class="p" data-group-id="3812046766-1">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">new</span><span class="p" data-group-id="3812046766-2">(</span><span class="p" data-group-id="3812046766-2">)</span><span class="w">
+<p>Elixir bindings for the Lattice DSL runtime - a domain-specific language with LLM integration.</p><h2 id="installation" class="section-heading"><a href="#installation" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Installation</span></h2><p>Add <code class="inline">lattice</code> to your list of dependencies in <code class="inline">mix.exs</code>:</p><pre><code class="makeup elixir" translate="no"><span class="kd">def</span><span class="w"> </span><span class="nf">deps</span><span class="w"> </span><span class="k" data-group-id="4804534977-1">do</span><span class="w">
+  </span><span class="p" data-group-id="4804534977-2">[</span><span class="w">
+    </span><span class="p" data-group-id="4804534977-3">{</span><span class="ss">:lattice</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;~&gt; 0.1.0&quot;</span><span class="p" data-group-id="4804534977-3">}</span><span class="w">
+  </span><span class="p" data-group-id="4804534977-2">]</span><span class="w">
+</span><span class="k" data-group-id="4804534977-1">end</span></code></pre><p><strong>Note</strong>: This package currently only supports macOS Apple Silicon (aarch64-apple-darwin).</p><h2 id="usage" class="section-heading"><a href="#usage" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Usage</span></h2><pre><code class="makeup elixir" translate="no"><span class="c1"># Create a runtime</span><span class="w">
+</span><span class="p" data-group-id="8072831544-1">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="n">rt</span><span class="p" data-group-id="8072831544-1">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">new</span><span class="p" data-group-id="8072831544-2">(</span><span class="p" data-group-id="8072831544-2">)</span><span class="w">
 
 </span><span class="c1"># Evaluate expressions</span><span class="w">
-</span><span class="p" data-group-id="3812046766-3">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p" data-group-id="3812046766-3">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="3812046766-4">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;1 + 2 + 3&quot;</span><span class="p" data-group-id="3812046766-4">)</span><span class="w">
-</span><span class="p" data-group-id="3812046766-5">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;hello world&quot;</span><span class="p" data-group-id="3812046766-5">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="3812046766-6">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">~s(&quot;hello&quot; + &quot; &quot; + &quot;world&quot;)</span><span class="p" data-group-id="3812046766-6">)</span><span class="w">
+</span><span class="p" data-group-id="8072831544-3">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p" data-group-id="8072831544-3">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="8072831544-4">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;1 + 2 + 3&quot;</span><span class="p" data-group-id="8072831544-4">)</span><span class="w">
+</span><span class="p" data-group-id="8072831544-5">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;hello world&quot;</span><span class="p" data-group-id="8072831544-5">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="8072831544-6">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">~s(&quot;hello&quot; + &quot; &quot; + &quot;world&quot;)</span><span class="p" data-group-id="8072831544-6">)</span><span class="w">
 
 </span><span class="c1"># Define and call functions</span><span class="w">
-</span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="3812046766-7">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;&quot;
+</span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="8072831544-7">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;&quot;
   def add(a: Int, b: Int) -&gt; Int {
     a + b
   }
-&quot;&quot;&quot;</span><span class="p" data-group-id="3812046766-7">)</span><span class="w">
-</span><span class="p" data-group-id="3812046766-8">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="mi">7</span><span class="p" data-group-id="3812046766-8">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">call</span><span class="p" data-group-id="3812046766-9">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;add&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="3812046766-10">[</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p" data-group-id="3812046766-10">]</span><span class="p" data-group-id="3812046766-9">)</span><span class="w">
+&quot;&quot;&quot;</span><span class="p" data-group-id="8072831544-7">)</span><span class="w">
+</span><span class="p" data-group-id="8072831544-8">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="mi">7</span><span class="p" data-group-id="8072831544-8">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">call</span><span class="p" data-group-id="8072831544-9">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;add&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="8072831544-10">[</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p" data-group-id="8072831544-10">]</span><span class="p" data-group-id="8072831544-9">)</span><span class="w">
 
 </span><span class="c1"># Define types</span><span class="w">
-</span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="3812046766-11">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;type Person { name: String, age: Int }&quot;</span><span class="p" data-group-id="3812046766-11">)</span><span class="w">
-</span><span class="p" data-group-id="3812046766-12">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="n">person</span><span class="p" data-group-id="3812046766-12">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="3812046766-13">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">~s(Person { name: &quot;Alice&quot;, age: 30 })</span><span class="p" data-group-id="3812046766-13">)</span><span class="w">
+</span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="8072831544-11">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;type Person { name: String, age: Int }&quot;</span><span class="p" data-group-id="8072831544-11">)</span><span class="w">
+</span><span class="p" data-group-id="8072831544-12">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="n">person</span><span class="p" data-group-id="8072831544-12">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval</span><span class="p" data-group-id="8072831544-13">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">~s(Person { name: &quot;Alice&quot;, age: 30 })</span><span class="p" data-group-id="8072831544-13">)</span><span class="w">
 </span><span class="c1"># =&gt; %{&quot;name&quot; =&gt; &quot;Alice&quot;, &quot;age&quot; =&gt; 30}</span><span class="w">
 
 </span><span class="c1"># Use with bindings</span><span class="w">
-</span><span class="p" data-group-id="3812046766-14">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="p" data-group-id="3812046766-14">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval_with_bindings</span><span class="p" data-group-id="3812046766-15">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;x + y&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="3812046766-16">[</span><span class="p" data-group-id="3812046766-17">{</span><span class="s">&quot;x&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p" data-group-id="3812046766-17">}</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="3812046766-18">{</span><span class="s">&quot;y&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p" data-group-id="3812046766-18">}</span><span class="p" data-group-id="3812046766-16">]</span><span class="p" data-group-id="3812046766-15">)</span></code></pre><h2 id="building-from-source" class="section-heading"><a href="#building-from-source" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Building from source</span></h2><p>If you need to compile the NIF locally (requires Rust toolchain):</p><pre><code class="makeup bash" translate="no"><span class="">LATTICE_BUILD=true mix deps.compile lattice --force
+</span><span class="p" data-group-id="8072831544-14">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="p" data-group-id="8072831544-14">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Lattice</span><span class="o">.</span><span class="n">eval_with_bindings</span><span class="p" data-group-id="8072831544-15">(</span><span class="n">rt</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;x + y&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="8072831544-16">[</span><span class="p" data-group-id="8072831544-17">{</span><span class="s">&quot;x&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p" data-group-id="8072831544-17">}</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="8072831544-18">{</span><span class="s">&quot;y&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p" data-group-id="8072831544-18">}</span><span class="p" data-group-id="8072831544-16">]</span><span class="p" data-group-id="8072831544-15">)</span></code></pre><h2 id="building-from-source" class="section-heading"><a href="#building-from-source" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Building from source</span></h2><p>If you need to compile the NIF locally (requires Rust toolchain):</p><pre><code class="makeup bash" translate="no"><span class="">LATTICE_BUILD=true mix deps.compile lattice --force
 </span></code></pre><h2 id="license" class="section-heading"><a href="#license" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">License</span></h2><p>MIT</p>
 
 </div>
@@ -145,11 +145,11 @@ Lattice
       <p>
 
           <span class="line">
-            <a href="https://hex.pm/packages/lattice/0.1.0" class="footer-hex-package">Hex Package</a>
+            <a href="https://hex.pm/packages/lattice/0.1.1" class="footer-hex-package">Hex Package</a>
 
-            <a href="https://preview.hex.pm/preview/lattice/0.1.0">Hex Preview</a>
+            <a href="https://preview.hex.pm/preview/lattice/0.1.1">Hex Preview</a>
 
-              (<a href="https://preview.hex.pm/preview/lattice/0.1.0/show/README.md">current file</a>)
+              (<a href="https://preview.hex.pm/preview/lattice/0.1.1/show/README.md">current file</a>)
 
           </span>
 

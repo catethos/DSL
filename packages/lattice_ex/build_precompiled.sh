@@ -14,8 +14,8 @@
 
 set -e
 
-VERSION="0.1.0"
-NIF_VERSION="2.17"
+VERSION="0.1.2"
+NIF_VERSION="2.17"  # Erlang NIF ABI version - DO NOT change this with package version
 CRATE_PATH="../../crates/lattice-nif"
 FILENAME="liblattice_nif-v${VERSION}-nif-${NIF_VERSION}-aarch64-apple-darwin.so"
 
@@ -29,7 +29,7 @@ export ERTS_INCLUDE_DIR=$(elixir -e 'IO.puts("#{:code.root_dir()}/erts-#{:erlang
 # Allow undefined symbols (provided by Erlang VM at runtime)
 export RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
 
-cargo build --release --manifest-path="${CRATE_PATH}/Cargo.toml"
+cargo build --release --manifest-path="${CRATE_PATH}/Cargo.toml" --features sql
 
 # Copy the built library
 cp "../../target/release/liblattice_nif.dylib" "priv/native/${FILENAME}"
