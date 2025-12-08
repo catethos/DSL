@@ -1,0 +1,237 @@
+/* File Explorer */
+.file-explorer {
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+  min-width: 200px;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-warm);
+  height: 100%;
+  overflow: hidden;
+}
+
+.file-explorer.collapsed {
+  width: 32px;
+  min-width: 32px;
+}
+
+.expand-button {
+  width: 100%;
+  height: 36px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all var(--transition-fast);
+}
+
+.expand-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.file-explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-warm);
+  min-height: 36px;
+}
+
+.file-explorer-title {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.file-explorer-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.file-explorer-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.file-explorer-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-warm);
+  color: var(--text-primary);
+}
+
+.file-explorer-path {
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-warm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-explorer-error {
+  padding: var(--space-3);
+  color: var(--error);
+  font-size: 0.8rem;
+}
+
+.file-tree {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-2) 0;
+}
+
+.file-node {
+  user-select: none;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.file-row:hover {
+  background: var(--bg-hover);
+}
+
+.file-row.empty-dir {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.75rem;
+  cursor: default;
+}
+
+.file-row.empty-dir:hover {
+  background: transparent;
+}
+
+.file-icon {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-size: 0.7rem;
+}
+
+.file-icon.dir-icon {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+}
+
+.file-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 14px;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  font-weight: 700;
+}
+
+.file-type-icon.type-notebook {
+  background: linear-gradient(135deg, var(--accent-terracotta), var(--accent-gold));
+  color: white;
+}
+
+.file-type-icon.type-markdown {
+  background: linear-gradient(135deg, var(--accent-sage), var(--accent-moss));
+  color: white;
+}
+
+.file-type-icon.type-lat {
+  background: linear-gradient(135deg, var(--accent-sky), var(--accent-slate));
+  color: white;
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--text-primary);
+}
+
+.dir-item .file-name {
+  font-weight: 500;
+}
+
+.file-children {
+  /* Children are indented via padding-left on file-row */
+}
+
+/* Scrollbar styling for file tree */
+.file-tree::-webkit-scrollbar {
+  width: 6px;
+}
+
+.file-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.file-tree::-webkit-scrollbar-thumb {
+  background: var(--border-warm);
+  border-radius: 3px;
+}
+
+.file-tree::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Inline rename/new item input */
+.file-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-terracotta);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.file-name-input:focus {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 2px rgba(217, 158, 92, 0.2);
+}
+
+.file-name-input::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.file-row.renaming {
+  background: var(--bg-hover);
+}
+
+.file-row-input {
+  background: var(--bg-subtle);
+}

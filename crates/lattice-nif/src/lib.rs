@@ -144,6 +144,49 @@ fn eval<'a>(
     }
 }
 
+/// Evaluate a Lattice file (.lat or .md).
+///
+/// Reads the file, resolves imports, compiles, and executes.
+/// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
+#[rustler::nif]
+fn eval_file<'a>(
+    env: Env<'a>,
+    runtime: ResourceArc<RuntimeResource>,
+    path: String,
+) -> NifResult<Term<'a>> {
+    let mut rt = runtime
+        .0
+        .lock()
+        .map_err(|_| rustler::Error::Term(Box::new("Lock poisoned")))?;
+
+    match rt.eval_file(std::path::Path::new(&path)) {
+        Ok(value) => Ok((atoms::ok(), lattice_value_to_term(env, &value)).encode(env)),
+        Err(e) => Ok((atoms::error(), format!("{}", e)).encode(env)),
+    }
+}
+
+/// Evaluate Lattice source code with import resolution relative to a base path.
+///
+/// Useful when the source code comes from a different location than where imports should resolve.
+/// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
+#[rustler::nif]
+fn eval_with_base_path<'a>(
+    env: Env<'a>,
+    runtime: ResourceArc<RuntimeResource>,
+    source: String,
+    base_path: String,
+) -> NifResult<Term<'a>> {
+    let mut rt = runtime
+        .0
+        .lock()
+        .map_err(|_| rustler::Error::Term(Box::new("Lock poisoned")))?;
+
+    match rt.eval_with_base_path(&source, std::path::Path::new(&base_path)) {
+        Ok(value) => Ok((atoms::ok(), lattice_value_to_term(env, &value)).encode(env)),
+        Err(e) => Ok((atoms::error(), format!("{}", e)).encode(env)),
+    }
+}
+
 /// Evaluate Lattice source code with pre-bound variables.
 ///
 /// Bindings is a list of `{name, value}` tuples.

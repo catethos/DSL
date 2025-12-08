@@ -214,6 +214,10 @@ impl LatticeRuntime {
     /// This reads the file, resolves any import statements by including the
     /// contents of imported files, then evaluates the result.
     ///
+    /// Supports both `.lat` and `.md` files:
+    /// - `.lat` files: Standard Lattice source with import resolution
+    /// - `.md` files: Markdown LLM functions, transpiled to Lattice source
+    ///
     /// # Arguments
     ///
     /// * `path` - Path to the file to evaluate
@@ -236,17 +240,61 @@ impl LatticeRuntime {
     /// - An imported file cannot be found
     /// - Circular imports are detected
     /// - Parsing or execution fails
+    /// - For `.md` files: invalid frontmatter or missing required fields
     pub fn eval_file(&mut self, path: &Path) -> Result<LatticeValue, LatticeError> {
         // Read the source file
         let source = std::fs::read_to_string(path).map_err(|e| {
             LatticeError::Runtime(format!("Cannot read file '{}': {}", path.display(), e))
         })?;
 
+        // Handle based on file extension
+        let source = if path.extension().map_or(false, |ext| ext == "md") {
+            // Markdown LLM file: transpile to Lattice source
+            use crate::syntax::markdown::parse_markdown_llm;
+            let md_def = parse_markdown_llm(&source).map_err(|e| {
+                LatticeError::Parse(format!(
+                    "Error parsing markdown file '{}': {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+            md_def.to_lattice_source()
+        } else {
+            source
+        };
+
         // Resolve imports relative to the file's directory
         let base_path = path.parent().unwrap_or(Path::new("."));
         let resolved_source = imports::resolve_imports(&source, base_path)?;
 
         // Evaluate the resolved source
+        self.eval(&resolved_source)
+    }
+
+    /// Evaluate source code with import resolution relative to a base path.
+    ///
+    /// This is useful for notebooks where cells contain code with imports
+    /// but the notebook itself is saved at a specific location. Imports
+    /// will be resolved relative to the provided base path.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Notebook saved at /home/user/notebooks/demo.lat.nb
+    /// let base_path = Path::new("/home/user/notebooks");
+    /// let result = runtime.eval_with_base_path(
+    ///     r#"import "utils/helpers.lat" as h
+    ///        h.greet("World")"#,
+    ///     base_path,
+    /// )?;
+    /// // Will look for /home/user/notebooks/utils/helpers.lat
+    /// ```
+    pub fn eval_with_base_path(
+        &mut self,
+        source: &str,
+        base_path: &Path,
+    ) -> Result<LatticeValue, LatticeError> {
+        let resolved_source = imports::resolve_imports(source, base_path)?;
         self.eval(&resolved_source)
     }
 

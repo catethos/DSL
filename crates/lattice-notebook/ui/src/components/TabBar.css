@@ -130,3 +130,93 @@
   border-color: var(--border-warm);
   color: var(--accent-terracotta);
 }
+
+/* Tab type icons */
+.tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.tab-icon.nb-icon {
+  background: linear-gradient(135deg, var(--accent-terracotta), var(--accent-gold));
+  color: white;
+}
+
+.tab-icon.md-icon {
+  background: linear-gradient(135deg, var(--accent-sage), var(--accent-moss));
+  color: white;
+}
+
+.tab-icon.lat-icon {
+  background: linear-gradient(135deg, var(--accent-sky), var(--accent-slate));
+  color: white;
+}
+
+/* Pane indicator for split mode */
+.pane-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  margin-left: var(--space-1);
+  flex-shrink: 0;
+}
+
+.pane-indicator.left {
+  background: var(--accent-sage);
+  color: white;
+}
+
+.pane-indicator.right {
+  background: var(--accent-terracotta);
+  color: white;
+}
+
+.pane-indicator.both {
+  background: linear-gradient(90deg, var(--accent-sage), var(--accent-terracotta));
+  color: white;
+}
+
+/* Tab context menu */
+.tab-context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-warm);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-1);
+  min-width: 150px;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.context-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--accent-terracotta);
+}

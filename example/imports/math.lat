@@ -1,0 +1,27 @@
+// Math library module
+// Demonstrates definitions that can be imported
+
+type Vector {
+    x: Float,
+    y: Float
+}
+
+def add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+def subtract(a: Int, b: Int) -> Int {
+    a - b
+}
+
+def multiply(a: Int, b: Int) -> Int {
+    a * b
+}
+
+def dot(v1: Vector, v2: Vector) -> Float {
+    v1.x * v2.x + v1.y * v2.y
+}
+
+def magnitude_squared(v: Vector) -> Float {
+    v.x * v.x + v.y * v.y
+}

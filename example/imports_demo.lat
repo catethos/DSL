@@ -1,0 +1,82 @@
+// =============================================================================
+// Import System Demo
+// =============================================================================
+// This example demonstrates all three import styles in Lattice:
+// 1. Basic imports
+// 2. Namespaced imports (with 'as' alias)
+// 3. Selective imports (with 'from')
+
+// -----------------------------------------------------------------------------
+// Example 1: Basic Import
+// -----------------------------------------------------------------------------
+// Imports all definitions from a file directly into the current namespace.
+// Use this when you want everything from a small, focused module.
+
+import "imports/colors.lat"
+
+// All definitions from colors.lat are now available directly
+let my_color = Color::Blue
+print(f"Example 1 - Basic import: {color_name(my_color)}")
+
+
+// -----------------------------------------------------------------------------
+// Example 2: Namespaced Import
+// -----------------------------------------------------------------------------
+// Imports all definitions with a namespace prefix to avoid naming conflicts.
+
+import "imports/math.lat" as math
+
+// Use qualified names to access the imported definitions
+let sum = math.add(10, 20)
+let product = math.multiply(5, 6)
+let v = math.Vector { x: 3.0, y: 4.0 }
+let mag = math.magnitude_squared(v)
+
+print(f"Example 2 - Namespaced import:")
+print(f"  math.add(10, 20) = {sum}")
+print(f"  math.multiply(5, 6) = {product}")
+print(f"  math.magnitude_squared(Vector(3,4)) = {mag}")
+
+
+// -----------------------------------------------------------------------------
+// Example 3: Selective Import
+// -----------------------------------------------------------------------------
+// Import only specific definitions from a file.
+// Use this when you only need a few things from a large module.
+
+from "imports/math.lat" import Vector, dot
+
+// Only Vector and dot are imported (add, subtract, multiply are NOT available)
+let v1 = Vector { x: 1.0, y: 2.0 }
+let v2 = Vector { x: 3.0, y: 4.0 }
+let result = dot(v1, v2)
+
+print(f"Example 3 - Selective import:")
+print(f"  dot(Vector(1,2), Vector(3,4)) = {result}")
+
+
+// -----------------------------------------------------------------------------
+// Example 4: Combining Import Styles
+// -----------------------------------------------------------------------------
+// You can mix different import styles in the same file.
+// This gives you flexibility based on your needs.
+
+print(f"\nExample 4 - Combined usage:")
+print(f"  Color from basic import: {color_name(Color::Red)}")
+print(f"  math.subtract via namespace: {math.subtract(100, 42)}")
+print(f"  dot via selective import: {dot(v1, v1)}")
+
+
+// -----------------------------------------------------------------------------
+// Example 5: Markdown LLM Function Import (requires API key)
+// -----------------------------------------------------------------------------
+// Markdown files (.md) can define LLM functions with YAML frontmatter.
+// They are transpiled to Lattice code at import time.
+//
+// Uncomment the lines below to test (requires OPENROUTER_API_KEY):
+//
+// import "imports/greet.md" as ai
+// let greeting = ai.greet("Alice", "pirate")
+// print(f"Example 5 - Markdown LLM import: {greeting}")
+
+print("\nAll import examples completed!")

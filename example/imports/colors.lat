@@ -1,0 +1,26 @@
+// Colors module
+// Demonstrates enum definitions that can be imported
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+    Yellow,
+    Purple
+}
+
+enum Brightness {
+    Dark,
+    Normal,
+    Bright
+}
+
+def color_name(c: Color) -> String {
+    match c {
+        Color::Red => "red",
+        Color::Green => "green",
+        Color::Blue => "blue",
+        Color::Yellow => "yellow",
+        Color::Purple => "purple"
+    }
+}

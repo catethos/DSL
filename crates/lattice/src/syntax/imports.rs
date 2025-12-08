@@ -176,8 +176,10 @@ fn resolve_imports_inner(
     let mut aliases: Vec<String> = Vec::new(); // Track aliases for qualified name resolution
 
     for import in imports {
-        // Add text before this import
-        result.push_str(&source[last_end..import.start]);
+        // Add text before this import, transforming any qualified names
+        let text_before = &source[last_end..import.start];
+        let transformed_before = transform_qualified_names(text_before, &aliases)?;
+        result.push_str(&transformed_before);
 
         // Resolve the import path
         let resolved_path = base_path.join(&import.path);
@@ -508,52 +510,175 @@ fn find_matching_brace(source: &str, start: usize) -> Option<usize> {
 /// - Function calls: `alias.func(args)` → `alias_func(args)`
 /// - Type references: `alias.Type` → `alias_Type`
 /// - Field access is NOT transformed (e.g., `obj.field` stays as is)
-/// - Text inside string literals is preserved unchanged
+/// - Text inside regular string literals is preserved unchanged
+/// - F-string interpolations `{expr}` are processed to transform qualified names
 fn transform_qualified_names(source: &str, aliases: &[String]) -> Result<String, LatticeError> {
     if aliases.is_empty() {
         return Ok(source.to_string());
     }
 
-    // Build a regex that matches strings or qualified names
-    // We'll capture strings to preserve them and replace only outside strings
+    // Build regex for qualified names
     let alias_pattern = aliases
         .iter()
         .map(|a| regex::escape(a))
         .collect::<Vec<_>>()
         .join("|");
 
-    // This regex matches:
-    // 1. Triple-quoted strings (f""" or """)
-    // 2. Regular strings (f" or ")
-    // 3. Qualified names (alias.identifier)
-    let pattern = format!(
-        r#"(f?"""[\s\S]*?"""|f?"[^"\\]*(?:\\.[^"\\]*)*")|(\b(?:{})\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*))"#,
-        alias_pattern
-    );
-
-    let combined_re = Regex::new(&pattern)
+    let qualified_re = Regex::new(&format!(r"\b({})\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)", alias_pattern))
         .map_err(|e| LatticeError::Runtime(format!("Regex error: {}", e)))?;
 
-    let result = combined_re.replace_all(source, |caps: &regex::Captures| {
-        // Group 1 = string literal (preserve as-is)
-        if let Some(string_match) = caps.get(1) {
-            return string_match.as_str().to_string();
-        }
-        // Group 2 = qualified name (alias.name), Group 3 = name part
-        if let (Some(_qualified), Some(name)) = (caps.get(2), caps.get(3)) {
-            // Find which alias matched
-            for alias in aliases {
-                let qualified_str = caps.get(2).unwrap().as_str();
-                if qualified_str.starts_with(alias) || qualified_str.starts_with(&format!("{} ", alias)) {
-                    return format!("{}_{}", alias, name.as_str());
+    // Process the source character by character, tracking string contexts
+    let mut result = String::new();
+    let chars: Vec<char> = source.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        // Check for triple-quoted string start (""" or f""")
+        if i + 2 < chars.len() && source[i..].starts_with("\"\"\"") {
+            let is_fstring = i > 0 && chars[i - 1] == 'f';
+            let start = if is_fstring { i - 1 } else { i };
+            if is_fstring && !result.is_empty() && result.ends_with('f') {
+                result.pop(); // Remove the 'f' we already added
+            }
+            // Find the end of the triple-quoted string
+            if let Some(end) = find_triple_quote_end(source, i + 3) {
+                let string_content = &source[start..=end + 2];
+                if is_fstring {
+                    result.push_str(&transform_fstring(string_content, &qualified_re, aliases)?);
+                } else {
+                    result.push_str(string_content);
                 }
+                i = end + 3;
+                continue;
             }
         }
-        // Fallback: return the whole match unchanged
-        caps.get(0).unwrap().as_str().to_string()
-    });
 
-    Ok(result.to_string())
+        // Check for f-string start (f")
+        if i + 1 < chars.len() && chars[i] == 'f' && chars[i + 1] == '"' {
+            // Find the end of the f-string
+            if let Some(end) = find_string_end(source, i + 2) {
+                let fstring_content = &source[i..=end];
+                result.push_str(&transform_fstring(fstring_content, &qualified_re, aliases)?);
+                i = end + 1;
+                continue;
+            }
+        }
+
+        // Check for regular string start (")
+        if chars[i] == '"' {
+            // Find the end of the string
+            if let Some(end) = find_string_end(source, i + 1) {
+                // Copy the string as-is (no transformation)
+                result.push_str(&source[i..=end]);
+                i = end + 1;
+                continue;
+            }
+        }
+
+        // Check for qualified name outside strings
+        if let Some(m) = qualified_re.find(&source[i..]) {
+            if m.start() == 0 {
+                // We have a match at current position
+                let caps = qualified_re.captures(&source[i..]).unwrap();
+                let alias = caps.get(1).unwrap().as_str();
+                let name = caps.get(2).unwrap().as_str();
+                result.push_str(&format!("{}_{}", alias, name));
+                i += m.end();
+                continue;
+            }
+        }
+
+        // Regular character
+        result.push(chars[i]);
+        i += 1;
+    }
+
+    Ok(result)
+}
+
+/// Find the end of a regular string starting at the given position (after opening quote)
+fn find_string_end(source: &str, start: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mut i = start;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 2; // Skip escaped character
+        } else if bytes[i] == b'"' {
+            return Some(i);
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// Find the end of a triple-quoted string starting at the given position (after opening """)
+fn find_triple_quote_end(source: &str, start: usize) -> Option<usize> {
+    if let Some(pos) = source[start..].find("\"\"\"") {
+        return Some(start + pos);
+    }
+    None
+}
+
+/// Transform qualified names inside f-string interpolations
+fn transform_fstring(fstring: &str, qualified_re: &Regex, _aliases: &[String]) -> Result<String, LatticeError> {
+    // Parse the f-string and transform expressions inside {}, preserving text outside
+    let mut result = String::new();
+    let chars: Vec<char> = fstring.chars().collect();
+    let mut i = 0;
+    let mut in_interp = false;
+    let mut brace_depth = 0;
+    let mut current_expr = String::new();
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        if in_interp {
+            if c == '{' {
+                brace_depth += 1;
+                current_expr.push(c);
+            } else if c == '}' {
+                brace_depth -= 1;
+                if brace_depth == 0 {
+                    // End of interpolation - transform the expression
+                    let transformed = qualified_re.replace_all(&current_expr, |caps: &regex::Captures| {
+                        let alias = caps.get(1).unwrap().as_str();
+                        let name = caps.get(2).unwrap().as_str();
+                        format!("{}_{}", alias, name)
+                    });
+                    result.push('{');
+                    result.push_str(&transformed);
+                    result.push('}');
+                    in_interp = false;
+                    current_expr.clear();
+                } else {
+                    current_expr.push(c);
+                }
+            } else {
+                current_expr.push(c);
+            }
+        } else {
+            // Not in interpolation
+            if c == '{' && i + 1 < chars.len() && chars[i + 1] == '{' {
+                // Escaped brace
+                result.push_str("{{");
+                i += 1;
+            } else if c == '{' {
+                // Start of interpolation
+                in_interp = true;
+                brace_depth = 1;
+            } else if c == '}' && i + 1 < chars.len() && chars[i + 1] == '}' {
+                // Escaped brace
+                result.push_str("}}");
+                i += 1;
+            } else {
+                result.push(c);
+            }
+        }
+        i += 1;
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]

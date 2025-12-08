@@ -1,0 +1,9 @@
+import "imports/math.lat" as math
+
+let sum = math.add(10, 20)
+print(sum)
+
+from "imports/math.lat" import Vector
+
+let v = Vector { x: 1.0, y: 2.0 }
+print(v.x)

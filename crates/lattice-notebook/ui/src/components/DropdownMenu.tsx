@@ -25,6 +25,49 @@ export function MenuDivider() {
   return <div className="dropdown-divider" />
 }
 
+interface SubMenuProps {
+  label: string
+  children: ReactNode
+}
+
+export function SubMenu({ label, children }: SubMenuProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const timeoutRef = useRef<number | null>(null)
+
+  const handleMouseEnter = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+    }
+    setIsOpen(true)
+  }
+
+  const handleMouseLeave = () => {
+    timeoutRef.current = window.setTimeout(() => {
+      setIsOpen(false)
+    }, 100)
+  }
+
+  return (
+    <div
+      className="dropdown-submenu"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <button className="dropdown-item dropdown-submenu-trigger">
+        <span className="dropdown-item-label">{label}</span>
+        <svg className="dropdown-submenu-arrow" viewBox="0 0 12 12" fill="none">
+          <path d="M4.5 3L7.5 6L4.5 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="dropdown-submenu-content">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface DropdownMenuProps {
   label: string
   children: ReactNode

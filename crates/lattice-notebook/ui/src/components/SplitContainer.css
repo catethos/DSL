@@ -1,0 +1,129 @@
+/* Split Container */
+.split-container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.split-container.split-horizontal {
+  flex-direction: row;
+}
+
+.split-container.split-vertical {
+  flex-direction: column;
+}
+
+/* Prevent text selection while dragging */
+.split-container.dragging {
+  user-select: none;
+  cursor: col-resize;
+}
+
+.split-container.split-vertical.dragging {
+  cursor: row-resize;
+}
+
+/* Panes */
+.split-pane {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.split-pane-left,
+.split-pane-right {
+  position: relative;
+}
+
+/* Divider */
+.split-divider {
+  flex-shrink: 0;
+  background: var(--border-warm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast);
+  z-index: 10;
+}
+
+.split-divider-horizontal {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.split-divider-vertical {
+  height: 4px;
+  cursor: row-resize;
+}
+
+.split-divider:hover {
+  background: var(--accent-terracotta);
+}
+
+.split-container.dragging .split-divider {
+  background: var(--accent-terracotta);
+}
+
+/* Divider handle (visual grip) */
+.split-divider-handle {
+  background: var(--text-muted);
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.split-divider-horizontal .split-divider-handle {
+  width: 4px;
+  height: 40px;
+}
+
+.split-divider-vertical .split-divider-handle {
+  width: 40px;
+  height: 4px;
+}
+
+.split-divider:hover .split-divider-handle,
+.split-container.dragging .split-divider-handle {
+  opacity: 0.5;
+}
+
+/* Pane header for showing which pane is active */
+.split-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.split-pane-header.active {
+  background: var(--bg-hover);
+  border-bottom-color: var(--accent-terracotta);
+}
+
+.split-pane-close {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all var(--transition-fast);
+}
+
+.split-pane-close:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}

@@ -1,0 +1,4 @@
+import "imports/math.lat" as math
+
+let sum = math.add(10, 20)
+print(f"math.add result = {sum}")

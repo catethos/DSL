@@ -6,7 +6,7 @@ use std::path::Path;
 use lattice::compiler::{CompileResult, Compiler};
 use lattice::output::{value_to_output, value_to_json, CellOutput, format_table_as_text};
 use lattice::runtime::{LatticeRuntime, LatticeValue, RuntimeBuilder};
-use lattice::syntax::parser;
+use lattice::syntax::{parser, parse_markdown_llm};
 use lattice::types::Value;
 
 /// Output format for CLI results
@@ -70,6 +70,11 @@ enum Commands {
         /// Path to the source file
         file: String,
     },
+    /// Convert a markdown LLM file to Lattice source (for preview/debugging)
+    Convert {
+        /// Path to the markdown file
+        file: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -91,6 +96,7 @@ fn main() -> Result<()> {
         Some(Commands::DumpBytecode { file }) => {
             todo!("Implement dump-bytecode: {}", file)
         }
+        Some(Commands::Convert { file }) => convert_file(&file),
         None => {
             // Default to REPL when no command is given
             let mut repl = repl::Repl::new()?;
@@ -234,4 +240,22 @@ fn print_compile_info(result: &CompileResult) {
     }
     eprintln!("Bytecode: {} instructions", result.chunk.code.len());
     eprintln!();
+}
+
+/// Convert a markdown LLM file to Lattice source code
+fn convert_file(file_path: &str) -> Result<()> {
+    let path = Path::new(file_path);
+
+    // Read the markdown file
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read file: {}", file_path))?;
+
+    // Parse and transpile
+    let md_def = parse_markdown_llm(&content)
+        .map_err(|e| anyhow::anyhow!("Error parsing markdown file: {}", e))?;
+
+    // Output the transpiled Lattice source
+    println!("{}", md_def.to_lattice_source());
+
+    Ok(())
 }

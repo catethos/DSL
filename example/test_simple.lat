@@ -1,0 +1,9 @@
+import "imports/colors.lat"
+
+let my_color = Color::Blue
+print(color_name(my_color))
+
+import "imports/math.lat" as math
+
+let sum = math.add(10, 20)
+print(sum)

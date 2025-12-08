@@ -1,0 +1,15 @@
+// Test importing a markdown LLM function
+
+// First define the return type that the LLM function uses
+enum Sentiment {
+    Positive,
+    Negative,
+    Neutral,
+    Mixed
+}
+
+// Import the markdown LLM function
+import "sentiment.md"
+
+// The function is now available - print what we got
+print("Successfully imported analyze_sentiment from sentiment.md")
