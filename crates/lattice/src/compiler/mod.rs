@@ -270,6 +270,8 @@ impl Compiler {
         func_compiler.known_llm_functions = self.known_llm_functions.clone();
         // Copy llm_functions so LLM functions defined in same file can be detected for map_row
         func_compiler.llm_functions = self.llm_functions.clone();
+        // Copy unique_counter to avoid lambda name collisions between functions
+        func_compiler.unique_counter = self.unique_counter;
 
         // Add parameters as locals (in order)
         for param in &func_def.params {
@@ -294,6 +296,9 @@ impl Compiler {
 
         // Collect any nested lambdas compiled inside the function body
         self.functions.extend(func_compiler.functions);
+
+        // Update unique_counter to avoid collisions with future compilations
+        self.unique_counter = func_compiler.unique_counter;
 
         Ok(())
     }
@@ -1137,6 +1142,8 @@ impl Compiler {
         lambda_compiler.known_llm_functions = self.known_llm_functions.clone();
         // Copy llm_functions so LLM functions defined in same file can be detected for map_row
         lambda_compiler.llm_functions = self.llm_functions.clone();
+        // Copy unique_counter to avoid lambda name collisions
+        lambda_compiler.unique_counter = self.unique_counter;
 
         // Add parameters as locals
         for param in params {
@@ -1162,6 +1169,9 @@ impl Compiler {
 
         // Collect any nested lambdas compiled inside the lambda body
         self.functions.extend(lambda_compiler.functions);
+
+        // Update unique_counter to avoid collisions with future compilations
+        self.unique_counter = lambda_compiler.unique_counter;
 
         // For now, push the function name as a string reference
         // The VM will need to look it up

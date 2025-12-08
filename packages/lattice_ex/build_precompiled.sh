@@ -14,7 +14,7 @@
 
 set -e
 
-VERSION="0.1.6"
+VERSION="0.1.7"
 NIF_VERSION="2.17"  # Erlang NIF ABI version - DO NOT change this with package version
 CRATE_PATH="../../crates/lattice-nif"
 FILENAME="liblattice_nif-v${VERSION}-nif-${NIF_VERSION}-aarch64-apple-darwin.so"
