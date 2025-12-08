@@ -5,3 +5,7 @@ node_modules/
 _build/
 deps/
 doc/
+
+# Native binaries (distribute via releases instead)
+*.so
+*.tar.gz
