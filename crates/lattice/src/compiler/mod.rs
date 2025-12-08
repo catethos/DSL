@@ -268,6 +268,8 @@ impl Compiler {
         // Copy known functions to allow recursive/mutual calls
         func_compiler.known_functions = self.known_functions.clone();
         func_compiler.known_llm_functions = self.known_llm_functions.clone();
+        // Copy llm_functions so LLM functions defined in same file can be detected for map_row
+        func_compiler.llm_functions = self.llm_functions.clone();
 
         // Add parameters as locals (in order)
         for param in &func_def.params {
@@ -1133,6 +1135,8 @@ impl Compiler {
         // Copy known functions so lambdas can call user-defined functions
         lambda_compiler.known_functions = self.known_functions.clone();
         lambda_compiler.known_llm_functions = self.known_llm_functions.clone();
+        // Copy llm_functions so LLM functions defined in same file can be detected for map_row
+        lambda_compiler.llm_functions = self.llm_functions.clone();
 
         // Add parameters as locals
         for param in params {
