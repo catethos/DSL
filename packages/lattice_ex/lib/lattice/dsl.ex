@@ -135,11 +135,13 @@ defmodule Lattice.DSL do
       def __lattice_file__, do: unquote(resolved_file)
 
       def __lattice_runtime__ do
-        case Process.get(:lattice_dsl_runtime) do
+        key = {:lattice_dsl_runtime, __MODULE__}
+
+        case Process.get(key) do
           nil ->
             {:ok, rt} = Lattice.DSL.create_runtime(unquote(sql), unquote(llm))
             {:ok, _} = Lattice.Native.eval_file(rt, unquote(resolved_file))
-            Process.put(:lattice_dsl_runtime, rt)
+            Process.put(key, rt)
             rt
 
           rt ->
@@ -151,7 +153,7 @@ defmodule Lattice.DSL do
       Reset the Lattice runtime, reloading the source file.
       """
       def reset do
-        Process.delete(:lattice_dsl_runtime)
+        Process.delete({:lattice_dsl_runtime, __MODULE__})
         __lattice_runtime__()
         :ok
       end

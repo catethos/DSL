@@ -127,7 +127,7 @@ fn new_runtime_with_llm<'a>(env: Env<'a>) -> NifResult<Term<'a>> {
 /// Evaluate Lattice source code.
 ///
 /// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn eval<'a>(
     env: Env<'a>,
     runtime: ResourceArc<RuntimeResource>,
@@ -148,7 +148,7 @@ fn eval<'a>(
 ///
 /// Bindings is a list of `{name, value}` tuples.
 /// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn eval_with_bindings<'a>(
     env: Env<'a>,
     runtime: ResourceArc<RuntimeResource>,
@@ -178,7 +178,7 @@ fn eval_with_bindings<'a>(
 /// Call a Lattice function by name with arguments.
 ///
 /// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn call_function<'a>(
     env: Env<'a>,
     runtime: ResourceArc<RuntimeResource>,

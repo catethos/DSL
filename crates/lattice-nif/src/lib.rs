@@ -23,7 +23,7 @@
 //! {:ok, 6} = Lattice.Native.eval(rt, "1 + 2 + 3")
 //! ```
 
-use rustler::{Encoder, Env, NifResult, ResourceArc, Term};
+use rustler::{Encoder, Env, NifResult, ResourceArc, Term, TermType};
 use std::sync::Mutex;
 
 use lattice::runtime::{
@@ -166,7 +166,7 @@ fn new_runtime_with_all<'a>(env: Env<'a>) -> NifResult<Term<'a>> {
 /// Evaluate Lattice source code.
 ///
 /// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn eval<'a>(
     env: Env<'a>,
     runtime: ResourceArc<RuntimeResource>,
@@ -187,7 +187,7 @@ fn eval<'a>(
 ///
 /// Reads the file, resolves imports, compiles, and executes.
 /// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn eval_file<'a>(
     env: Env<'a>,
     runtime: ResourceArc<RuntimeResource>,
@@ -208,7 +208,7 @@ fn eval_file<'a>(
 ///
 /// Useful when the source code comes from a different location than where imports should resolve.
 /// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn eval_with_base_path<'a>(
     env: Env<'a>,
     runtime: ResourceArc<RuntimeResource>,
@@ -230,19 +230,14 @@ fn eval_with_base_path<'a>(
 ///
 /// Bindings is a list of `{name, value}` tuples.
 /// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn eval_with_bindings<'a>(
     env: Env<'a>,
     runtime: ResourceArc<RuntimeResource>,
     source: String,
     bindings: Vec<(String, Term<'a>)>,
 ) -> NifResult<Term<'a>> {
-    let mut rt = runtime
-        .0
-        .lock()
-        .map_err(|_| rustler::Error::Term(Box::new("Lock poisoned")))?;
-
-    // Convert Elixir terms to LatticeValues
+    // Convert Elixir terms to LatticeValues BEFORE acquiring lock to reduce lock duration
     let lattice_bindings: Vec<(String, LatticeValue)> = bindings
         .into_iter()
         .map(|(name, term)| {
@@ -250,6 +245,11 @@ fn eval_with_bindings<'a>(
             Ok((name, value))
         })
         .collect::<NifResult<Vec<_>>>()?;
+
+    let mut rt = runtime
+        .0
+        .lock()
+        .map_err(|_| rustler::Error::Term(Box::new("Lock poisoned")))?;
 
     match rt.eval_with_bindings(&source, lattice_bindings) {
         Ok(value) => Ok((atoms::ok(), lattice_value_to_term(env, &value)).encode(env)),
@@ -260,23 +260,23 @@ fn eval_with_bindings<'a>(
 /// Call a Lattice function by name with arguments.
 ///
 /// Returns `{:ok, value}` on success or `{:error, reason}` on failure.
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn call_function<'a>(
     env: Env<'a>,
     runtime: ResourceArc<RuntimeResource>,
     name: String,
     args: Vec<Term<'a>>,
 ) -> NifResult<Term<'a>> {
-    let mut rt = runtime
-        .0
-        .lock()
-        .map_err(|_| rustler::Error::Term(Box::new("Lock poisoned")))?;
-
-    // Convert Elixir terms to LatticeValues
+    // Convert Elixir terms to LatticeValues BEFORE acquiring lock to reduce lock duration
     let lattice_args: Vec<LatticeValue> = args
         .into_iter()
         .map(term_to_lattice_value)
         .collect::<NifResult<Vec<_>>>()?;
+
+    let mut rt = runtime
+        .0
+        .lock()
+        .map_err(|_| rustler::Error::Term(Box::new("Lock poisoned")))?;
 
     match rt.call(&name, lattice_args) {
         Ok(value) => Ok((atoms::ok(), lattice_value_to_term(env, &value)).encode(env)),
@@ -422,70 +422,74 @@ fn lattice_value_to_term<'a>(env: Env<'a>, value: &LatticeValue) -> Term<'a> {
 }
 
 /// Convert an Elixir term to a LatticeValue.
+///
+/// Uses type-directed decoding for efficiency (decode once per type).
+/// Fails on unsupported types instead of silent coercion.
 fn term_to_lattice_value(term: Term) -> NifResult<LatticeValue> {
-    // Check for null atom
-    if let Ok(atom) = term.decode::<rustler::Atom>() {
-        if atom == atoms::null() {
-            return Ok(LatticeValue::Null);
+    match term.get_type() {
+        TermType::Atom => {
+            let atom: rustler::Atom = term.decode()?;
+            if atom == atoms::null() {
+                Ok(LatticeValue::Null)
+            } else if atom == rustler::types::atom::true_() {
+                Ok(LatticeValue::Bool(true))
+            } else if atom == rustler::types::atom::false_() {
+                Ok(LatticeValue::Bool(false))
+            } else {
+                // Fail on unknown atoms instead of silent coercion
+                Err(rustler::Error::Term(Box::new(format!(
+                    "Unsupported atom: only :null, true, false are allowed"
+                ))))
+            }
         }
-        if atom == rustler::types::atom::true_() {
-            return Ok(LatticeValue::Bool(true));
+        TermType::Integer => {
+            let i: i64 = term.decode()?;
+            Ok(LatticeValue::Int(i))
         }
-        if atom == rustler::types::atom::false_() {
-            return Ok(LatticeValue::Bool(false));
+        TermType::Float => {
+            let f: f64 = term.decode()?;
+            Ok(LatticeValue::Float(f))
         }
-        // Unknown atom - treat as string
-        return Ok(LatticeValue::String(format!("{:?}", atom)));
-    }
-
-    // Check for integer
-    if let Ok(i) = term.decode::<i64>() {
-        return Ok(LatticeValue::Int(i));
-    }
-
-    // Check for float
-    if let Ok(f) = term.decode::<f64>() {
-        return Ok(LatticeValue::Float(f));
-    }
-
-    // Check for string/binary
-    if let Ok(s) = term.decode::<String>() {
-        return Ok(LatticeValue::String(s));
-    }
-
-    // Check for list
-    if let Ok(list) = term.decode::<Vec<Term>>() {
-        let items: Vec<LatticeValue> = list
-            .into_iter()
-            .map(term_to_lattice_value)
-            .collect::<NifResult<Vec<_>>>()?;
-        return Ok(LatticeValue::List(items));
-    }
-
-    // Check for map
-    if let Ok(iter) = term.decode::<rustler::MapIterator>() {
-        let pairs: Vec<(String, LatticeValue)> = iter
-            .map(|(k, v)| {
-                let key: String = k.decode().map_err(|_| {
-                    rustler::Error::Term(Box::new("Map keys must be strings"))
-                })?;
-                let value = term_to_lattice_value(v)?;
-                Ok((key, value))
-            })
-            .collect::<NifResult<Vec<_>>>()?;
-        return Ok(LatticeValue::Map(pairs));
-    }
-
-    // Check for path tuple {:path, "string"}
-    if let Ok((tag, path_str)) = term.decode::<(rustler::Atom, String)>() {
-        if tag == atoms::lattice_path() {
-            return Ok(LatticeValue::Path(path_str));
+        TermType::Binary => {
+            let s: String = term.decode()?;
+            Ok(LatticeValue::String(s))
         }
+        TermType::List => {
+            let list: Vec<Term> = term.decode()?;
+            let items: Vec<LatticeValue> = list
+                .into_iter()
+                .map(term_to_lattice_value)
+                .collect::<NifResult<Vec<_>>>()?;
+            Ok(LatticeValue::List(items))
+        }
+        TermType::Map => {
+            let iter: rustler::MapIterator = term.decode()?;
+            let pairs: Vec<(String, LatticeValue)> = iter
+                .map(|(k, v)| {
+                    let key: String = k.decode().map_err(|_| {
+                        rustler::Error::Term(Box::new("Map keys must be strings or atoms"))
+                    })?;
+                    let value = term_to_lattice_value(v)?;
+                    Ok((key, value))
+                })
+                .collect::<NifResult<Vec<_>>>()?;
+            Ok(LatticeValue::Map(pairs))
+        }
+        TermType::Tuple => {
+            // Check for path tuple {:path, "string"}
+            if let Ok((tag, path_str)) = term.decode::<(rustler::Atom, String)>() {
+                if tag == atoms::lattice_path() {
+                    return Ok(LatticeValue::Path(path_str));
+                }
+            }
+            Err(rustler::Error::Term(Box::new(
+                "Unsupported tuple type: only {:path, string} is allowed",
+            )))
+        }
+        _ => Err(rustler::Error::Term(Box::new(
+            "Cannot convert term to LatticeValue: unsupported type",
+        ))),
     }
-
-    Err(rustler::Error::Term(Box::new(
-        "Cannot convert term to LatticeValue",
-    )))
 }
 
 /// Convert a TypeSchema to an Elixir term (map).
