@@ -1,0 +1,16 @@
+type Data {
+    x: Int,
+    y: Int
+}
+
+def sum(d: Data) -> Int {
+    d.x + d.y
+}
+
+def add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+def greet(name: String) -> String {
+    "Hello, " + name + "!"
+}
