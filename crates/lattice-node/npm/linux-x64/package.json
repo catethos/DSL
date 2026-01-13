@@ -1,0 +1,13 @@
+{
+  "name": "@lattice-lang/linux-x64",
+  "version": "0.2.0",
+  "description": "Lattice native binding for Linux x64",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "main": "index.node",
+  "files": ["index.node"],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

@@ -147,7 +147,7 @@ impl VM {
                 .pool_max_idle_per_host(10)
                 .build()
                 .expect("Failed to create HTTP client"),
-            max_concurrent_llm_calls: None,
+            max_concurrent_llm_calls: Some(20),
         }
     }
 
@@ -176,7 +176,7 @@ impl VM {
                 .pool_max_idle_per_host(10)
                 .build()
                 .expect("Failed to create HTTP client"),
-            max_concurrent_llm_calls: None,
+            max_concurrent_llm_calls: Some(20),
         }
     }
 
@@ -221,12 +221,12 @@ impl VM {
                 .map_err(|e| {
                     LatticeError::Runtime(format!("Failed to create HTTP client: {}", e))
                 })?,
-            max_concurrent_llm_calls: None,
+            max_concurrent_llm_calls: Some(20),
         })
     }
 
     /// Set the maximum number of concurrent LLM calls
-    /// None means unlimited (default)
+    /// None means unlimited, default is 20
     pub fn set_max_concurrent_llm_calls(&mut self, limit: Option<usize>) {
         self.max_concurrent_llm_calls = limit;
     }
@@ -2662,9 +2662,6 @@ impl VM {
             client = client.with_provider(provider.clone());
         }
 
-        // Clone IR for use in async context
-        let ir = self.ir.clone();
-
         // Parse the column mappings - these are the actual row keys to use
         // The column_mappings string is comma-separated: "col1,col2,col3"
         let row_column_names: Vec<&str> = column_mappings.split(',').collect();
@@ -2694,7 +2691,7 @@ impl VM {
         // Check if we need to use bytecode execution for prompts
         if let Some(ref prompt_chunk) = func.prompt_chunk {
             // Use bytecode execution for complex prompt expressions
-            let schema = generate_schema_from_ir(&ir, &func.return_type);
+            let schema = generate_schema_from_ir(&self.ir, &func.return_type);
 
             for row_map in &row_maps {
                 // Build args vector from row columns in order
@@ -2743,7 +2740,7 @@ impl VM {
                 }
 
                 let prompt = generate_prompt_from_ir(
-                    &ir,
+                    &self.ir,
                     &func.prompt_template,
                     &params,
                     &func.return_type,
@@ -2798,7 +2795,7 @@ impl VM {
                 LatticeError::Runtime(format!("LLM call {} failed: {}", i, e))
             })?;
 
-            let result = parse_llm_response_with_ir(&ir, &raw_response, &func.return_type)
+            let result = parse_llm_response_with_ir(&self.ir, &raw_response, &func.return_type)
                 .map_err(|e| LatticeError::Runtime(format!(
                     "Failed to parse LLM response {}: {}. Raw response was: {}",
                     i, e, raw_response

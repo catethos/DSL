@@ -4,6 +4,8 @@ members = [
     "crates/lattice",
     "crates/lattice-cli",
     "crates/lattice-nif",
+    "crates/lattice-node",
+    "crates/lattice-py",
     "crates/lattice-notebook/src-tauri",
 ]
 

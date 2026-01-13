@@ -1,0 +1,13 @@
+{
+  "name": "@lattice-lang/darwin-arm64",
+  "version": "0.2.0",
+  "description": "Lattice native binding for macOS ARM64",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "main": "index.node",
+  "files": ["index.node"],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

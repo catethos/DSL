@@ -1,0 +1,24 @@
+[build-system]
+requires = ["maturin>=1.4,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "lattice-lang"
+description = "Python bindings for the Lattice language runtime"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+
+[tool.maturin]
+features = ["pyo3/extension-module", "sql"]
+module-name = "lattice._native"
+
+[dependency-groups]
+dev = ["pytest>=8.0", "maturin>=1.4,<2.0"]
+
+[tool.uv]
+cache-keys = [{ file = "src/**/*.rs" }, { file = "Cargo.toml" }]

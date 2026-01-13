@@ -13,7 +13,7 @@ tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 
 # HTTP client for LLM
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 
 # JSON handling
 serde = { version = "1", features = ["derive", "rc"] }
@@ -44,7 +44,7 @@ elixir = ["rustler"]
 node = ["neon"]
 
 [dependencies.pyo3]
-version = "0.22"
+version = "0.27"
 optional = true
 
 [dependencies.rustler]

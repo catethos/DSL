@@ -1,0 +1,44 @@
+{
+  "name": "lattice-lang",
+  "version": "0.2.0",
+  "description": "Lattice runtime for Node.js - A statically-typed language for structured LLM interactions",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "cargo build && cp ../../target/debug/liblattice_node.dylib index.node",
+    "build-release": "cargo build --release --features sql && cp ../../target/release/liblattice_node.dylib index.node",
+    "build-release:linux": "cargo zigbuild --release --features sql --target x86_64-unknown-linux-gnu && cp ../../target/x86_64-unknown-linux-gnu/release/liblattice_node.so npm/linux-x64/index.node",
+    "build-release:all": "npm run build-release && npm run build-release:linux",
+    "test": "jest",
+    "prepublish:darwin-arm64": "cp index.node npm/darwin-arm64/",
+    "prepublish:linux-x64": "echo 'Linux binary already in npm/linux-x64/'",
+    "publish:darwin-arm64": "cd npm/darwin-arm64 && npm publish --access public",
+    "publish:linux-x64": "cd npm/linux-x64 && npm publish --access public",
+    "publish:platforms": "npm run publish:darwin-arm64 && npm run publish:linux-x64",
+    "publish:all": "npm run prepublish:darwin-arm64 && npm run publish:platforms && npm publish --access public"
+  },
+  "keywords": [
+    "lattice",
+    "dsl",
+    "llm",
+    "rust",
+    "neon"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "cargo-cp-artifact": "^0.1",
+    "jest": "^29.0.0"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "optionalDependencies": {
+    "@lattice-lang/darwin-arm64": "0.2.0",
+    "@lattice-lang/linux-x64": "0.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
