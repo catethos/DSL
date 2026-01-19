@@ -1554,6 +1554,12 @@ impl VM {
     ///
     /// The SQL call is delegated to `self.sql_provider.query()`, which allows
     /// for injectable implementations (DuckDB, host callbacks, mock, etc.).
+    ///
+    /// When the `sql-arrow` feature is enabled, this function also:
+    /// 1. Parses the SQL to extract table references
+    /// 2. Registers Lattice variables as queryable tables
+    /// 3. Executes the query
+    /// 4. Cleans up temporary tables
     fn op_sql_query(&mut self) -> Result<()> {
         let query = self.pop()?;
         let query_str = match query {
@@ -1565,16 +1571,121 @@ impl VM {
             }
         };
 
-        // Execute query via the injected SQL provider
-        let sql_result = self.sql_provider.query(&query_str).map_err(|e| {
+        // When sql-arrow is enabled, register Lattice variables as tables
+        #[cfg(feature = "sql-arrow")]
+        {
+            self.op_sql_query_with_lattice_vars(&query_str)
+        }
+
+        #[cfg(not(feature = "sql-arrow"))]
+        {
+            // Execute query via the injected SQL provider
+            let sql_result = self.sql_provider.query(&query_str).map_err(|e| {
+                LatticeError::Runtime(format!("SQL query failed: {}", e))
+            })?;
+
+            // Convert SqlResult to internal Value (List of Maps)
+            let result = sql_result.to_lattice_value().to_internal();
+
+            // Push result onto stack
+            self.push(result)
+        }
+    }
+
+    /// Execute SQL query with Lattice variable registration (sql-arrow feature)
+    #[cfg(feature = "sql-arrow")]
+    fn op_sql_query_with_lattice_vars(&mut self, query_str: &str) -> Result<()> {
+        use crate::sql::{extract_table_references, lattice_list_to_recordbatch};
+        use std::sync::Arc;
+
+        // 1. Parse SQL and extract table references (validates syntax)
+        let table_refs = extract_table_references(query_str).map_err(|e| {
+            LatticeError::Runtime(format!("SQL parse error: {}", e))
+        })?;
+
+        let mut registered_tables = Vec::new();
+
+        // 2. Pre-validate all tables BEFORE any registration (fail fast)
+        for table_name in &table_refs {
+            // Skip existing database tables
+            let exists = self.sql_provider.table_exists(table_name).map_err(|e| {
+                LatticeError::Runtime(format!("Failed to check table existence: {}", e))
+            })?;
+
+            if exists {
+                continue;
+            }
+
+            // Check if it's a Lattice variable (use globals directly for Option)
+            match self.globals.get(table_name) {
+                None => {
+                    return Err(LatticeError::SqlTableNotFound {
+                        name: table_name.clone(),
+                        hint: "Not found as Lattice variable or database table",
+                    });
+                }
+                Some(value) if !matches!(value, Value::List(_)) => {
+                    let type_name = match value {
+                        Value::String(_) => "String",
+                        Value::Int(_) => "Int",
+                        Value::Float(_) => "Float",
+                        Value::Bool(_) => "Bool",
+                        Value::Path(_) => "Path",
+                        Value::List(_) => "List",
+                        Value::Map(_) => "Map",
+                        Value::Null => "Null",
+                    };
+                    return Err(LatticeError::SqlWrongType {
+                        name: table_name.clone(),
+                        expected: "List<Map>",
+                        found: type_name.to_string(),
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        // 3. Convert and register tables
+        for table_name in &table_refs {
+            let exists = self.sql_provider.table_exists(table_name).unwrap_or(false);
+            if exists {
+                continue;
+            }
+
+            if let Some(Value::List(list)) = self.globals.get(table_name) {
+                let batch = lattice_list_to_recordbatch(&list).map_err(|e| {
+                    LatticeError::Runtime(format!(
+                        "Failed to convert '{}' to Arrow: {}",
+                        table_name, e
+                    ))
+                })?;
+                self.sql_provider
+                    .register_table(table_name, Arc::new(batch))
+                    .map_err(|e| {
+                        LatticeError::Runtime(format!(
+                            "Failed to register table '{}': {}",
+                            table_name, e
+                        ))
+                    })?;
+                registered_tables.push(table_name.clone());
+            }
+        }
+
+        // 4. Execute query (capture result before cleanup)
+        let result = self.sql_provider.query(query_str);
+
+        // 5. ALWAYS cleanup temporary tables, even on error
+        for name in &registered_tables {
+            let _ = self.sql_provider.unregister_table(name);
+        }
+
+        // 6. Propagate error or push result
+        let sql_result = result.map_err(|e| {
             LatticeError::Runtime(format!("SQL query failed: {}", e))
         })?;
 
-        // Convert SqlResult to internal Value (List of Maps)
-        let result = sql_result.to_lattice_value().to_internal();
-
-        // Push result onto stack
-        self.push(result)
+        let lattice_result = sql_result.to_lattice_value().to_internal();
+        self.push(lattice_result)
     }
 
     /// Execute a SQL query with typed results

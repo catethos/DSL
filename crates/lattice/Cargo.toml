@@ -25,8 +25,15 @@ serde_yml = "0.0.12"
 # Template rendering (for LLM prompts)
 minijinja = "2.0"
 
+# SQL parsing
+sqlparser = "0.43"
+
 # DuckDB (optional, for sql feature)
 duckdb = { version = "1.0", features = ["bundled"], optional = true }
+
+# Arrow (optional, for sql-arrow feature)
+# Version must match duckdb's arrow dependency
+arrow = { version = "54", optional = true }
 
 # Error handling
 thiserror = "1"
@@ -39,6 +46,7 @@ regex = "1"
 [features]
 default = ["sql"]
 sql = ["duckdb"]
+sql-arrow = ["arrow", "duckdb/appender-arrow"]
 python = ["pyo3"]
 elixir = ["rustler"]
 node = ["neon"]

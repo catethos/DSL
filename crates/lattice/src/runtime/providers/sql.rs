@@ -155,6 +155,44 @@ pub trait SqlProvider: Send + Sync {
     fn get_columns(&self, _sql: &str) -> Result<Vec<(String, String)>, SqlError> {
         Ok(Vec::new())
     }
+
+    /// Check if a table or view exists in the database
+    ///
+    /// This is used to determine whether a table reference in SQL should
+    /// be resolved from the database or from Lattice variables.
+    ///
+    /// # Arguments
+    /// * `name` - The table name to check (case-insensitive for most databases)
+    ///
+    /// # Returns
+    /// * `Ok(true)` if the table exists
+    /// * `Ok(false)` if the table does not exist
+    /// * `Err(_)` if the check failed
+    fn table_exists(&self, name: &str) -> Result<bool, SqlError>;
+
+    /// Register in-memory data as a queryable table
+    ///
+    /// This method is used to make Lattice variables queryable via SQL.
+    /// Default implementation returns an error - override in providers
+    /// that support this feature (like DuckDbProvider with sql-arrow).
+    #[cfg(feature = "sql-arrow")]
+    fn register_table(
+        &self,
+        _name: &str,
+        _data: Arc<arrow::record_batch::RecordBatch>,
+    ) -> Result<(), SqlError> {
+        Err(SqlError::NotConfigured(
+            "This SQL provider does not support registering in-memory tables".to_string(),
+        ))
+    }
+
+    /// Unregister a previously registered table
+    ///
+    /// Default implementation returns Ok - override if cleanup is needed.
+    #[cfg(feature = "sql-arrow")]
+    fn unregister_table(&self, _name: &str) -> Result<(), SqlError> {
+        Ok(())
+    }
 }
 
 /// DuckDB-based SQL provider (default)
@@ -167,6 +205,10 @@ pub trait SqlProvider: Send + Sync {
 #[cfg(feature = "sql")]
 pub struct DuckDbProvider {
     connection: std::sync::Mutex<duckdb::Connection>,
+    /// Registered Arrow tables (kept alive for query lifetime)
+    #[cfg(feature = "sql-arrow")]
+    registered_tables:
+        std::sync::Mutex<std::collections::HashMap<String, Arc<arrow::record_batch::RecordBatch>>>,
 }
 
 #[cfg(feature = "sql")]
@@ -177,6 +219,8 @@ impl DuckDbProvider {
             .map_err(|e| SqlError::ConnectionError(e.to_string()))?;
         Ok(Self {
             connection: std::sync::Mutex::new(connection),
+            #[cfg(feature = "sql-arrow")]
+            registered_tables: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -186,6 +230,8 @@ impl DuckDbProvider {
             .map_err(|e| SqlError::ConnectionError(e.to_string()))?;
         Ok(Self {
             connection: std::sync::Mutex::new(connection),
+            #[cfg(feature = "sql-arrow")]
+            registered_tables: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -366,6 +412,142 @@ impl SqlProvider for DuckDbProvider {
 
         Ok(columns)
     }
+
+    fn table_exists(&self, name: &str) -> Result<bool, SqlError> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|e| SqlError::Other(format!("Lock poisoned: {}", e)))?;
+
+        // Query DuckDB catalog for tables and views
+        // Use single quotes for string literal (escape by doubling)
+        let escaped_name = name.replace('\'', "''");
+        let sql = format!(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = '{}' LIMIT 1",
+            escaped_name
+        );
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| SqlError::PrepareError(e.to_string()))?;
+
+        let mut rows = stmt
+            .query([])
+            .map_err(|e| SqlError::ExecutionError(e.to_string()))?;
+
+        // If we get any row, the table exists
+        Ok(rows
+            .next()
+            .map_err(|e| SqlError::ExecutionError(e.to_string()))?
+            .is_some())
+    }
+
+    #[cfg(feature = "sql-arrow")]
+    fn register_table(
+        &self,
+        name: &str,
+        data: Arc<arrow::record_batch::RecordBatch>,
+    ) -> Result<(), SqlError> {
+        // Delegate to SqlArrowProvider implementation
+        SqlArrowProvider::register_arrow_table(self, name, data)
+    }
+
+    #[cfg(feature = "sql-arrow")]
+    fn unregister_table(&self, name: &str) -> Result<(), SqlError> {
+        // Delegate to SqlArrowProvider implementation
+        SqlArrowProvider::unregister_table(self, name)
+    }
+}
+
+#[cfg(all(feature = "sql", feature = "sql-arrow"))]
+impl SqlArrowProvider for DuckDbProvider {
+    fn register_arrow_table(
+        &self,
+        name: &str,
+        data: Arc<arrow::record_batch::RecordBatch>,
+    ) -> Result<(), SqlError> {
+        use crate::sql::ident::quote_ident;
+
+        // Store the batch to keep it alive while registered
+        {
+            let mut tables = self
+                .registered_tables
+                .lock()
+                .map_err(|e| SqlError::Other(format!("Lock poisoned: {}", e)))?;
+            tables.insert(name.to_string(), data.clone());
+        }
+
+        // Create a table from Arrow schema and insert data
+        self.with_connection(|conn| {
+            let quoted = quote_ident(name);
+            let schema = data.schema();
+
+            // Build CREATE TABLE statement from Arrow schema
+            let columns: Vec<String> = schema
+                .fields()
+                .iter()
+                .map(|f| {
+                    let col_name = quote_ident(f.name());
+                    let dtype = arrow_type_to_duckdb(f.data_type());
+                    format!("{} {}", col_name, dtype)
+                })
+                .collect();
+
+            let create_sql = format!("CREATE OR REPLACE TABLE {} ({})", quoted, columns.join(", "));
+            conn.execute(&create_sql, [])
+                .map_err(|e| SqlError::ExecutionError(e.to_string()))?;
+
+            // Insert data using DuckDB's Arrow appender
+            let mut appender = conn
+                .appender(&name)
+                .map_err(|e| SqlError::ExecutionError(format!("Failed to create appender: {}", e)))?;
+
+            appender
+                .append_record_batch(data.as_ref().clone())
+                .map_err(|e| SqlError::ExecutionError(format!("Failed to append data: {}", e)))?;
+
+            Ok(())
+        })
+    }
+
+    fn unregister_table(&self, name: &str) -> Result<(), SqlError> {
+        use crate::sql::ident::quote_ident;
+
+        // Remove from internal map
+        {
+            let mut tables = self
+                .registered_tables
+                .lock()
+                .map_err(|e| SqlError::Other(format!("Lock poisoned: {}", e)))?;
+            tables.remove(name);
+        }
+
+        // Drop the table
+        self.with_connection(|conn| {
+            let quoted = quote_ident(name);
+            conn.execute(&format!("DROP TABLE IF EXISTS {}", quoted), [])
+                .map_err(|e| SqlError::ExecutionError(e.to_string()))?;
+            Ok(())
+        })
+    }
+}
+
+/// Convert Arrow DataType to DuckDB type string
+#[cfg(all(feature = "sql", feature = "sql-arrow"))]
+fn arrow_type_to_duckdb(dtype: &arrow::datatypes::DataType) -> &'static str {
+    use arrow::datatypes::DataType;
+    match dtype {
+        DataType::Boolean => "BOOLEAN",
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => "BIGINT",
+        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => "UBIGINT",
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => "DOUBLE",
+        DataType::Utf8 | DataType::LargeUtf8 => "VARCHAR",
+        DataType::Date32 | DataType::Date64 => "DATE",
+        DataType::Timestamp(_, _) => "TIMESTAMP",
+        DataType::Time32(_) | DataType::Time64(_) => "TIME",
+        DataType::Null => "VARCHAR", // DuckDB doesn't have a null type, use VARCHAR
+        _ => "VARCHAR",              // Fallback for complex types
+    }
 }
 
 /// No-op provider for runtimes without SQL support
@@ -386,10 +568,94 @@ impl SqlProvider for NoSqlProvider {
             "SQL provider not configured. Use RuntimeBuilder::with_sql_provider() to enable SQL support.".to_string(),
         ))
     }
+
+    fn table_exists(&self, _name: &str) -> Result<bool, SqlError> {
+        // No SQL provider means no tables exist
+        Ok(false)
+    }
+}
+
+#[cfg(feature = "sql-arrow")]
+impl SqlArrowProvider for NoSqlProvider {
+    fn register_arrow_table(
+        &self,
+        _name: &str,
+        _data: Arc<arrow::record_batch::RecordBatch>,
+    ) -> Result<(), SqlError> {
+        Err(SqlError::NotConfigured(
+            "SQL on Lattice data requires DuckDB provider. Use RuntimeBuilder::with_sql_provider() with DuckDbProvider.".to_string(),
+        ))
+    }
+
+    fn unregister_table(&self, _name: &str) -> Result<(), SqlError> {
+        // No-op is fine - nothing to unregister
+        Ok(())
+    }
 }
 
 /// Type alias for boxed SQL provider
 pub type BoxedSqlProvider = Arc<dyn SqlProvider>;
+
+/// Extended SQL provider with Arrow table registration support
+///
+/// This trait extends `SqlProvider` with the ability to register in-memory
+/// Arrow RecordBatches as queryable tables. This enables SQL queries on
+/// Lattice data structures by converting them to Arrow format first.
+///
+/// # Why a separate trait?
+///
+/// This trait is separate from `SqlProvider` to avoid Arrow type dependencies
+/// when the `sql-arrow` feature is disabled. `NoSqlProvider` compiles cleanly
+/// without Arrow support.
+///
+/// # Example
+///
+/// ```ignore
+/// use arrow::record_batch::RecordBatch;
+/// use std::sync::Arc;
+///
+/// // Register Lattice data as a table
+/// provider.register_arrow_table("my_data", Arc::new(batch))?;
+///
+/// // Query the registered table
+/// let result = provider.query("SELECT * FROM my_data WHERE value > 10")?;
+///
+/// // Clean up when done
+/// provider.unregister_table("my_data")?;
+/// ```
+#[cfg(feature = "sql-arrow")]
+pub trait SqlArrowProvider: SqlProvider {
+    /// Register an Arrow RecordBatch as a queryable table
+    ///
+    /// The table will be available for SQL queries until it is unregistered
+    /// or the provider is dropped.
+    ///
+    /// # Arguments
+    /// * `name` - The table name to use in SQL queries
+    /// * `data` - The Arrow RecordBatch containing the table data
+    ///
+    /// # Errors
+    /// Returns `SqlError` if registration fails (e.g., invalid table name,
+    /// DuckDB internal error)
+    fn register_arrow_table(
+        &self,
+        name: &str,
+        data: Arc<arrow::record_batch::RecordBatch>,
+    ) -> Result<(), SqlError>;
+
+    /// Remove a previously registered table
+    ///
+    /// # Arguments
+    /// * `name` - The table name to unregister
+    ///
+    /// # Errors
+    /// Returns `SqlError` if the table doesn't exist or unregistration fails
+    fn unregister_table(&self, name: &str) -> Result<(), SqlError>;
+}
+
+/// Type alias for boxed SQL Arrow provider
+#[cfg(feature = "sql-arrow")]
+pub type BoxedSqlArrowProvider = Arc<dyn SqlArrowProvider>;
 
 #[cfg(test)]
 mod tests {

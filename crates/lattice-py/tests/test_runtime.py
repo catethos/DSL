@@ -161,13 +161,12 @@ class TestSQLFeature:
         """Test SQL query returning multiple rows"""
         rt = Runtime(sql=True)
         result = rt.eval('''
-SQL("SELECT * FROM (
-    SELECT 1 as id, 'Alice' as name
-    UNION ALL
-    SELECT 2 as id, 'Bob' as name
-    UNION ALL
-    SELECT 3 as id, 'Carol' as name
-)")
+let people = [
+    {id: 1, name: "Alice"},
+    {id: 2, name: "Bob"},
+    {id: 3, name: "Carol"}
+]
+SQL("SELECT * FROM people ORDER BY id")
 ''')
         assert len(result) == 3
         names = [row["name"] for row in result]
@@ -177,9 +176,8 @@ SQL("SELECT * FROM (
         """Test SQL aggregation functions"""
         rt = Runtime(sql=True)
         result = rt.eval('''
-SQL("SELECT COUNT(*) as cnt, SUM(x) as total, AVG(x) as avg FROM (
-    SELECT 10 as x UNION ALL SELECT 20 UNION ALL SELECT 30
-)")
+let data = [{x: 10}, {x: 20}, {x: 30}]
+SQL("SELECT COUNT(*) as cnt, SUM(x) as total, AVG(x) as avg FROM data")
 ''')
         assert len(result) == 1
         row = result[0]
@@ -209,12 +207,13 @@ SQL("
         """Test SQL with f-string interpolation"""
         rt = Runtime(sql=True)
         result = rt.eval('''
+let people = [
+    {id: 1, name: "Alice"},
+    {id: 2, name: "Bob"},
+    {id: 3, name: "Carol"}
+]
 let min_id = 2
-let query = f"SELECT * FROM (
-    SELECT 1 as id, 'Alice' as name
-    UNION ALL SELECT 2 as id, 'Bob' as name
-    UNION ALL SELECT 3 as id, 'Carol' as name
-) WHERE id >= {min_id}"
+let query = f"SELECT * FROM people WHERE id >= {min_id}"
 SQL(query)
 ''')
         assert len(result) == 2
@@ -222,6 +221,234 @@ SQL(query)
         assert "Bob" in names
         assert "Carol" in names
         assert "Alice" not in names
+
+
+class TestSQLOnLatticeData:
+    """Tests for SQL queries on Lattice variables (List<Map>)"""
+
+    def test_sql_on_lattice_variable(self):
+        """Test SQL query on a Lattice variable"""
+        rt = Runtime(sql=True)
+        rt.eval('''
+let users = [
+    {id: 1, name: "Alice", age: 30},
+    {id: 2, name: "Bob", age: 18},
+    {id: 3, name: "Charlie", age: 25}
+]
+''')
+        result = rt.eval('SQL("SELECT * FROM users WHERE age > 21 ORDER BY id")')
+        assert len(result) == 2
+        assert result[0]["name"] == "Alice"
+        assert result[1]["name"] == "Charlie"
+
+    def test_sql_aggregate_on_lattice_data(self):
+        """Test SQL aggregation on Lattice variable"""
+        rt = Runtime(sql=True)
+        rt.eval('''
+let sales = [
+    {product: "A", amount: 100},
+    {product: "A", amount: 150},
+    {product: "B", amount: 200}
+]
+''')
+        result = rt.eval('SQL("SELECT SUM(amount) as total FROM sales")')
+        assert len(result) == 1
+        assert result[0]["total"] == 450
+
+    def test_sql_join_lattice_tables(self):
+        """Test SQL JOIN between two Lattice variables"""
+        rt = Runtime(sql=True)
+        rt.eval('''
+let customers = [
+    {id: 1, name: "Alice"},
+    {id: 2, name: "Bob"}
+]
+let orders = [
+    {customer_id: 1, product: "Widget", amount: 100},
+    {customer_id: 1, product: "Gadget", amount: 50},
+    {customer_id: 2, product: "Widget", amount: 200}
+]
+''')
+        result = rt.eval('''
+SQL("SELECT c.name, SUM(o.amount) as total
+     FROM customers c
+     JOIN orders o ON c.id = o.customer_id
+     GROUP BY c.name
+     ORDER BY c.name")
+''')
+        assert len(result) == 2
+        assert result[0]["name"] == "Alice"
+        assert result[0]["total"] == 150
+        assert result[1]["name"] == "Bob"
+        assert result[1]["total"] == 200
+
+    def test_sql_table_not_found_error(self):
+        """Test error when querying non-existent table"""
+        rt = Runtime(sql=True)
+        with pytest.raises(RuntimeError) as exc_info:
+            rt.eval('SQL("SELECT * FROM nonexistent")')
+        assert "not found" in str(exc_info.value).lower() or "nonexistent" in str(exc_info.value)
+
+    def test_sql_wrong_type_error(self):
+        """Test error when variable is not List<Map>"""
+        rt = Runtime(sql=True)
+        rt.eval('let not_a_list = "hello"')
+        with pytest.raises(RuntimeError) as exc_info:
+            rt.eval('SQL("SELECT * FROM not_a_list")')
+        assert "wrong type" in str(exc_info.value).lower() or "type" in str(exc_info.value).lower()
+
+
+class TestSQLOnPythonData:
+    """Tests for SQL queries on native Python data structures"""
+
+    def test_sql_on_python_list_of_dicts(self):
+        """Test SQL query on Python list of dicts passed via set_global"""
+        rt = Runtime(sql=True)
+
+        # Pass Python data to Lattice
+        users = [
+            {"id": 1, "name": "Alice", "age": 30},
+            {"id": 2, "name": "Bob", "age": 18},
+            {"id": 3, "name": "Charlie", "age": 25}
+        ]
+        rt.set_global("users", users)
+
+        # Query using SQL
+        result = rt.eval('SQL("SELECT * FROM users WHERE age >= 25 ORDER BY id")')
+
+        assert len(result) == 2
+        assert result[0]["name"] == "Alice"
+        assert result[1]["name"] == "Charlie"
+
+    def test_sql_on_python_data_with_bindings(self):
+        """Test SQL query on Python data passed via bindings"""
+        rt = Runtime(sql=True)
+
+        products = [
+            {"name": "Widget", "price": 9.99, "stock": 100},
+            {"name": "Gadget", "price": 19.99, "stock": 50},
+            {"name": "Gizmo", "price": 14.99, "stock": 75}
+        ]
+
+        # Use bindings to pass data
+        result = rt.eval(
+            'SQL("SELECT name, price FROM products WHERE price > 10 ORDER BY price")',
+            bindings={"products": products}
+        )
+
+        assert len(result) == 2
+        assert result[0]["name"] == "Gizmo"
+        assert result[1]["name"] == "Gadget"
+
+    def test_sql_aggregate_on_python_data(self):
+        """Test SQL aggregation on Python data"""
+        rt = Runtime(sql=True)
+
+        sales = [
+            {"region": "North", "amount": 1000},
+            {"region": "South", "amount": 1500},
+            {"region": "North", "amount": 800},
+            {"region": "South", "amount": 1200}
+        ]
+        rt.set_global("sales", sales)
+
+        result = rt.eval('''
+SQL("SELECT region, SUM(amount) as total, COUNT(*) as count
+     FROM sales
+     GROUP BY region
+     ORDER BY region")
+''')
+
+        assert len(result) == 2
+        assert result[0]["region"] == "North"
+        assert result[0]["total"] == 1800
+        assert result[0]["count"] == 2
+        assert result[1]["region"] == "South"
+        assert result[1]["total"] == 2700
+
+    def test_sql_join_python_and_lattice_data(self):
+        """Test SQL JOIN between Python data and Lattice variable"""
+        rt = Runtime(sql=True)
+
+        # Python data
+        orders = [
+            {"order_id": 1, "customer_id": 1, "amount": 100},
+            {"order_id": 2, "customer_id": 2, "amount": 200},
+            {"order_id": 3, "customer_id": 1, "amount": 150}
+        ]
+        rt.set_global("orders", orders)
+
+        # Lattice data
+        rt.eval('''
+let customers = [
+    {id: 1, name: "Alice"},
+    {id: 2, name: "Bob"}
+]
+''')
+
+        result = rt.eval('''
+SQL("SELECT c.name, SUM(o.amount) as total
+     FROM customers c
+     JOIN orders o ON c.id = o.customer_id
+     GROUP BY c.name
+     ORDER BY total DESC")
+''')
+
+        assert len(result) == 2
+        assert result[0]["name"] == "Alice"
+        assert result[0]["total"] == 250
+        assert result[1]["name"] == "Bob"
+        assert result[1]["total"] == 200
+
+    def test_sql_with_null_values(self):
+        """Test SQL handles null values in Python data"""
+        rt = Runtime(sql=True)
+
+        data = [
+            {"id": 1, "value": 100},
+            {"id": 2, "value": None},
+            {"id": 3, "value": 300}
+        ]
+        rt.set_global("data", data)
+
+        result = rt.eval('SQL("SELECT * FROM data WHERE value IS NOT NULL ORDER BY id")')
+
+        assert len(result) == 2
+        assert result[0]["id"] == 1
+        assert result[1]["id"] == 3
+
+    def test_sql_with_boolean_values(self):
+        """Test SQL handles boolean values in Python data"""
+        rt = Runtime(sql=True)
+
+        users = [
+            {"name": "Alice", "active": True},
+            {"name": "Bob", "active": False},
+            {"name": "Charlie", "active": True}
+        ]
+        rt.set_global("users", users)
+
+        result = rt.eval('SQL("SELECT name FROM users WHERE active = true ORDER BY name")')
+
+        assert len(result) == 2
+        assert result[0]["name"] == "Alice"
+        assert result[1]["name"] == "Charlie"
+
+    def test_sql_dict_syntax(self):
+        """Test SQL on Python data using dict-style access"""
+        rt = Runtime(sql=True)
+
+        rt["items"] = [
+            {"name": "Apple", "quantity": 10},
+            {"name": "Banana", "quantity": 20},
+            {"name": "Cherry", "quantity": 5}
+        ]
+
+        result = rt.eval('SQL("SELECT name FROM items WHERE quantity > 8 ORDER BY name")')
+
+        assert len(result) == 2
+        assert result[0]["name"] == "Apple"
+        assert result[1]["name"] == "Banana"
 
 
 class TestLLMFeature:

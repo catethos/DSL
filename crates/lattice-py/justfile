@@ -1,0 +1,184 @@
+# Lattice Python Binding Release Automation
+# Usage: just release 0.2.1
+#
+# Uses maturin for building and publishing Python wheels
+
+set shell := ["bash", "-uc"]
+
+# Directories
+workspace_root := parent_directory(parent_directory(justfile_directory()))
+
+# Default recipe - show help
+default:
+    @just --list
+
+# Show current version (from Cargo.toml workspace)
+version:
+    @grep '^version' {{workspace_root}}/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'
+
+# Bump version in workspace Cargo.toml
+bump NEW_VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    OLD_VERSION=$(just version)
+    echo "Bumping workspace version: $OLD_VERSION -> {{NEW_VERSION}}"
+
+    # Update workspace Cargo.toml
+    sed -i '' 's/^version = ".*"/version = "{{NEW_VERSION}}"/' {{workspace_root}}/Cargo.toml
+
+    echo "Updated: {{workspace_root}}/Cargo.toml"
+    echo "New version: $(just version)"
+
+# Build wheel for current platform
+build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building Python wheel..."
+    cd {{justfile_directory()}}
+    maturin build --release --features sql
+    echo ""
+    echo "Build complete!"
+    ls -lh {{workspace_root}}/target/wheels/*.whl 2>/dev/null | tail -5
+
+# Build wheel for all platforms (using zig for cross-compilation)
+build-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building Python wheels for multiple platforms..."
+    cd {{justfile_directory()}}
+
+    # macOS ARM64
+    echo "Building for macOS ARM64..."
+    maturin build --release --features sql --target aarch64-apple-darwin
+
+    # Linux x64 (using zig)
+    echo "Building for Linux x64..."
+    maturin build --release --features sql --target x86_64-unknown-linux-gnu --zig
+
+    echo ""
+    echo "Build complete!"
+    ls -lh {{workspace_root}}/target/wheels/*.whl 2>/dev/null | tail -10
+
+# Develop mode (install in current venv)
+develop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd {{justfile_directory()}}
+    maturin develop --features sql
+
+# Run tests
+test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd {{justfile_directory()}}
+
+    # Ensure dev build is installed
+    maturin develop --features sql
+
+    # Run pytest
+    python -m pytest tests/ -v
+
+# Publish to PyPI
+publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Publishing to PyPI..."
+    cd {{justfile_directory()}}
+    maturin publish --features sql
+    echo "Published to PyPI!"
+
+# Publish to PyPI (skip existing versions)
+publish-skip-existing:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Publishing to PyPI..."
+    cd {{justfile_directory()}}
+    maturin publish --features sql --skip-existing
+    echo "Published to PyPI!"
+
+# Check release readiness
+check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(just version)
+
+    echo "Release Checklist for v$VERSION"
+    echo "================================"
+
+    # Check maturin
+    if command -v maturin &> /dev/null; then
+        echo "[x] maturin installed: $(maturin --version)"
+    else
+        echo "[ ] maturin not installed (run 'pip install maturin')"
+    fi
+
+    # Check wheels exist
+    WHEELS=({{workspace_root}}/target/wheels/*${VERSION}*.whl)
+    if [ -f "${WHEELS[0]}" ]; then
+        echo "[x] Wheels exist:"
+        for f in "${WHEELS[@]}"; do
+            echo "    - $(basename $f)"
+        done
+    else
+        echo "[ ] Wheels missing (run 'just build')"
+    fi
+
+    # Check PyPI credentials
+    if [ -f ~/.pypirc ] || [ -n "${MATURIN_PYPI_TOKEN:-}" ]; then
+        echo "[x] PyPI credentials configured"
+    else
+        echo "[ ] PyPI credentials not found (~/.pypirc or MATURIN_PYPI_TOKEN)"
+    fi
+
+    # Check tests pass
+    echo ""
+    echo "Run 'just test' to verify tests pass before publishing"
+
+# Full release process
+release NEW_VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    echo "=== Lattice Python Release Process ==="
+    echo "New version: {{NEW_VERSION}}"
+    echo ""
+
+    # Step 1: Bump version
+    echo "Step 1/4: Bumping version..."
+    just bump {{NEW_VERSION}}
+    echo ""
+
+    # Step 2: Build
+    echo "Step 2/4: Building wheel..."
+    just build
+    echo ""
+
+    # Step 3: Test
+    echo "Step 3/4: Running tests..."
+    just test
+    echo ""
+
+    # Step 4: Check
+    echo "Step 4/4: Checking release readiness..."
+    just check
+    echo ""
+
+    echo "=== Ready to publish! ==="
+    echo ""
+    echo "To publish, run:"
+    echo "  just publish"
+
+# Quick release (builds and publishes)
+release-quick NEW_VERSION:
+    just bump {{NEW_VERSION}}
+    just build
+    just test
+    just publish
+    @echo ""
+    @echo "Release {{NEW_VERSION}} complete!"
+
+# Clean build artifacts
+clean:
+    rm -rf {{workspace_root}}/target/wheels/*
+    cargo clean

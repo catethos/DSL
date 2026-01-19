@@ -1,0 +1,343 @@
+# Lattice Elixir NIF Release Automation
+# Usage: just release 0.2.1
+#
+# NIF Version Compatibility:
+#   NIF 2.15 = OTP 24 (Elixir 1.12+)
+#   NIF 2.16 = OTP 25 (Elixir 1.14+)
+#   NIF 2.17 = OTP 26+ (Elixir 1.15+)
+
+set shell := ["bash", "-uc"]
+
+# Package directories
+nif_dir := parent_directory(justfile_directory())
+workspace_root := parent_directory(parent_directory(nif_dir))
+precompiled_dir := nif_dir / "precompiled"
+
+# Default recipe - show help
+default:
+    @just --list
+
+# Show current version
+version:
+    @grep '@version' mix.exs | head -1 | sed 's/.*"\(.*\)"/\1/'
+
+# Show current NIF version from local OTP
+nif-version:
+    @elixir -e "IO.puts(:erlang.system_info(:nif_version))"
+
+# Show OTP version
+otp-version:
+    @elixir -e "IO.puts(:erlang.system_info(:otp_release))"
+
+# Bump version in all files
+bump NEW_VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    OLD_VERSION=$(just version)
+    echo "Bumping version: $OLD_VERSION -> {{NEW_VERSION}}"
+
+    # Update mix.exs
+    sed -i '' 's/@version ".*"/@version "{{NEW_VERSION}}"/' mix.exs
+
+    # Update build script VERSION (not NIF_VERSION)
+    sed -i '' 's/^VERSION=".*"/VERSION="{{NEW_VERSION}}"/' {{nif_dir}}/build_precompiled.sh
+
+    # Update Cargo.toml for lattice-nif
+    sed -i '' 's/^version = ".*"/version = "{{NEW_VERSION}}"/' {{nif_dir}}/Cargo.toml
+
+    echo "Updated files:"
+    echo "  - mix.exs"
+    echo "  - build_precompiled.sh"
+    echo "  - Cargo.toml"
+
+# Build precompiled NIFs for all platforms (uses current OTP's NIF version)
+build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    NIF_VER=$(elixir -e "IO.puts(:erlang.system_info(:nif_version))")
+    echo "Building precompiled NIFs for NIF version $NIF_VER..."
+    {{nif_dir}}/build_precompiled.sh
+    echo ""
+    echo "Build complete! Tarballs ready for upload:"
+    ls -lh {{precompiled_dir}}/*.tar.gz
+
+# Build for a specific NIF version (e.g., just build-nif 2.15)
+build-nif NIF_VER:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building precompiled NIFs for NIF version {{NIF_VER}}..."
+    {{nif_dir}}/build_precompiled.sh {{NIF_VER}}
+    echo ""
+    echo "Build complete! Tarballs ready for upload:"
+    ls -lh {{precompiled_dir}}/*.tar.gz
+
+# Build for all NIF versions (2.15, 2.16, 2.17)
+# Note: This reuses the same binary - for true multi-NIF support use GitHub Actions
+build-all-nif:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building precompiled NIFs for ALL NIF versions..."
+    {{nif_dir}}/build_precompiled.sh all
+    echo ""
+    echo "Build complete! Tarballs ready for upload:"
+    ls -lh {{precompiled_dir}}/*.tar.gz
+
+# Copy precompiled binaries to priv/native for local testing
+install-local:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(just version)
+    mkdir -p priv/native
+
+    # Extract tarballs to priv/native
+    for tarball in {{precompiled_dir}}/liblattice_nif-v${VERSION}-nif-*.tar.gz; do
+        if [ -f "$tarball" ]; then
+            echo "Extracting $(basename $tarball)..."
+            tar -xzf "$tarball" -C priv/native/
+        fi
+    done
+
+    echo "Installed to priv/native/:"
+    ls -lh priv/native/
+
+# Run tests (uses local binaries)
+test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Ensure local binaries are installed
+    just install-local
+
+    mix deps.get
+    mix test
+
+# Clean build artifacts
+clean:
+    mix clean
+    rm -rf _build
+    rm -rf {{precompiled_dir}}/*
+
+# Git commit and tag
+tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(just version)
+
+    echo "Creating git tag v$VERSION..."
+    cd {{workspace_root}}
+    git tag -a "v$VERSION" -m "Release v$VERSION" || echo "Tag already exists"
+    echo "Created tag v$VERSION"
+
+# Push to remote with tags
+push:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd {{workspace_root}}
+    BRANCH=$(git branch --show-current)
+    echo "Pushing to origin/$BRANCH with tags..."
+    git push origin $BRANCH --tags
+
+# Create GitHub release and upload artifacts
+github-release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(just version)
+
+    cd {{workspace_root}}
+
+    TARBALLS=({{precompiled_dir}}/liblattice_nif-v${VERSION}-nif-*.tar.gz)
+
+    if [ ${#TARBALLS[@]} -eq 0 ]; then
+        echo "Error: No tarballs found. Run 'just build' first."
+        exit 1
+    fi
+
+    echo "Creating GitHub release v$VERSION..."
+    echo "Uploading: ${TARBALLS[@]}"
+
+    gh release create "v$VERSION" \
+        --title "v$VERSION" \
+        --notes "Lattice v$VERSION - Elixir NIF release" \
+        "${TARBALLS[@]}"
+
+    echo "GitHub release created!"
+
+# Publish to Hex.pm
+hex-publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Publishing to Hex.pm..."
+    mix deps.get
+    mix hex.publish
+    echo "Published to Hex!"
+
+# Full release process
+release NEW_VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    echo "=== Lattice NIF Release Process ==="
+    echo "New version: {{NEW_VERSION}}"
+    echo ""
+
+    # Step 1: Bump version
+    echo "Step 1/6: Bumping version..."
+    just bump {{NEW_VERSION}}
+    echo ""
+
+    # Step 2: Build precompiled NIFs
+    echo "Step 2/6: Building precompiled NIFs..."
+    just build
+    echo ""
+
+    # Step 3: Run tests
+    echo "Step 3/6: Running tests..."
+    just test || echo "Warning: Tests failed"
+    echo ""
+
+    # Step 4: Git tag
+    echo "Step 4/6: Creating git tag..."
+    just tag
+    echo ""
+
+    # Step 5: Push to remote
+    echo "Step 5/6: Pushing to remote..."
+    just push
+    echo ""
+
+    # Step 6: Create GitHub release
+    echo "Step 6/6: Creating GitHub release..."
+    just github-release
+    echo ""
+
+    echo "=== Release uploaded to GitHub! ==="
+    echo ""
+    echo "To publish to Hex.pm, run:"
+    echo "  just hex-publish"
+
+# Quick release (non-interactive)
+release-quick NEW_VERSION:
+    just bump {{NEW_VERSION}}
+    just build
+    just test
+    just tag
+    just push
+    just github-release
+    @echo ""
+    @echo "Done! Run 'just hex-publish' to publish to Hex.pm"
+
+# Development: rebuild and test locally
+dev:
+    just build
+    mix clean
+    mix deps.get
+    mix compile
+    @echo "Ready for local testing: iex -S mix"
+
+# Check release readiness
+check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(just version)
+    CURRENT_NIF=$(elixir -e "IO.puts(:erlang.system_info(:nif_version))")
+    CURRENT_OTP=$(elixir -e "IO.puts(:erlang.system_info(:otp_release))")
+
+    echo "Release Checklist for v$VERSION"
+    echo "================================"
+    echo "Current OTP: $CURRENT_OTP (NIF $CURRENT_NIF)"
+    echo ""
+
+    # Check tarballs exist
+    TARBALLS=({{precompiled_dir}}/liblattice_nif-v${VERSION}-nif-*.tar.gz)
+    if [ -f "${TARBALLS[0]}" ]; then
+        echo "[x] Tarballs exist:"
+        for f in "${TARBALLS[@]}"; do
+            echo "    - $(basename $f)"
+        done
+    else
+        echo "[ ] Tarballs missing (run 'just build')"
+    fi
+
+    # Check NIF versions in native.ex match built artifacts
+    echo ""
+    BUILT_NIFS=$(ls {{precompiled_dir}}/liblattice_nif-v${VERSION}-nif-*.tar.gz 2>/dev/null | \
+        sed -E 's/.*-nif-([0-9.]+)-.*/\1/' | sort -u | tr '\n' ' ')
+    CONFIGURED_NIFS=$(grep 'nif_versions:' lib/lattice/native.ex 2>/dev/null | \
+        sed -E 's/.*\[(.*)\].*/\1/' | tr -d '"' | tr ',' ' ')
+    if [ -n "$BUILT_NIFS" ]; then
+        echo "Built NIF versions: $BUILT_NIFS"
+        echo "Configured in native.ex: $CONFIGURED_NIFS"
+    fi
+
+    # Check checksum file
+    echo ""
+    if [ -f "checksum-Elixir.Lattice.Native.exs" ]; then
+        CHECKSUM_COUNT=$(grep -c "sha256:" checksum-Elixir.Lattice.Native.exs)
+        echo "[x] Checksum file exists ($CHECKSUM_COUNT entries)"
+    else
+        echo "[ ] Checksum file missing"
+    fi
+
+    # Check git status
+    cd {{workspace_root}}
+    if git diff --quiet && git diff --staged --quiet; then
+        echo "[x] Working directory clean"
+    else
+        echo "[ ] Uncommitted changes exist"
+    fi
+
+    # Check if tag exists
+    if git tag -l "v$VERSION" | grep -q "v$VERSION"; then
+        echo "[x] Git tag v$VERSION exists"
+    else
+        echo "[ ] Git tag v$VERSION not created"
+    fi
+
+    # Check gh CLI
+    if command -v gh &> /dev/null; then
+        echo "[x] GitHub CLI (gh) available"
+    else
+        echo "[ ] GitHub CLI (gh) not installed"
+    fi
+
+    # Check hex auth
+    if mix hex.user whoami &> /dev/null; then
+        echo "[x] Hex.pm authenticated"
+    else
+        echo "[ ] Hex.pm not authenticated (run 'mix hex.user auth')"
+    fi
+
+# Show what would be uploaded
+show-artifacts:
+    #!/usr/bin/env bash
+    VERSION=$(just version)
+    echo "Artifacts for v$VERSION:"
+    echo ""
+    ls -lh {{precompiled_dir}}/*.tar.gz 2>/dev/null || echo "No tarballs found. Run 'just build'"
+    echo ""
+    echo "NIF versions in artifacts:"
+    ls {{precompiled_dir}}/*.tar.gz 2>/dev/null | sed -E 's/.*-nif-([0-9.]+)-.*/\1/' | sort -u || echo "None"
+    echo ""
+    echo "Checksums:"
+    cat checksum-Elixir.Lattice.Native.exs 2>/dev/null || echo "No checksum file found"
+
+# Show NIF version compatibility info
+nif-info:
+    #!/usr/bin/env bash
+    echo "NIF Version Compatibility"
+    echo "========================="
+    echo ""
+    echo "| NIF Version | OTP Version | Elixir Support |"
+    echo "|-------------|-------------|----------------|"
+    echo "| 2.17        | OTP 26+     | Elixir 1.15+   |"
+    echo "| 2.16        | OTP 25      | Elixir 1.14+   |"
+    echo "| 2.15        | OTP 24      | Elixir 1.12+   |"
+    echo ""
+    echo "Current system:"
+    echo "  OTP: $(elixir -e 'IO.puts(:erlang.system_info(:otp_release))')"
+    echo "  NIF: $(elixir -e 'IO.puts(:erlang.system_info(:nif_version))')"
+    echo "  Elixir: $(elixir --version | head -1)"
+    echo ""
+    echo "Configured in native.ex:"
+    grep 'nif_versions:' lib/lattice/native.ex 2>/dev/null || echo "  Not found"

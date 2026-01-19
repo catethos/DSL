@@ -15,4 +15,4 @@ pyo3 = { version = "0.27", features = ["extension-module"] }
 
 [features]
 default = []
-sql = ["lattice/sql"]
+sql = ["lattice/sql", "lattice/sql-arrow"]
