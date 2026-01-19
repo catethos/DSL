@@ -1,0 +1,217 @@
+# Lattice Node.js Binding Release Automation
+# Usage: just release 0.3.0
+
+set shell := ["bash", "-uc"]
+
+# Directories
+workspace_root := parent_directory(parent_directory(justfile_directory()))
+npm_dir := justfile_directory() / "npm"
+
+# Default recipe - show help
+default:
+    @just --list
+
+# Show current version
+version:
+    @node -p "require('./package.json').version"
+
+# Show all package versions
+versions:
+    #!/usr/bin/env bash
+    echo "lattice-lang:              $(node -p "require('./package.json').version")"
+    echo "@lattice-lang/darwin-arm64: $(node -p "require('./npm/darwin-arm64/package.json').version")"
+    echo "@lattice-lang/linux-x64:    $(node -p "require('./npm/linux-x64/package.json').version")"
+
+# Bump version in all package.json files
+bump NEW_VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    OLD_VERSION=$(just version)
+    echo "Bumping version: $OLD_VERSION -> {{NEW_VERSION}}"
+
+    # Update main package.json
+    sed -i '' 's/"version": ".*"/"version": "{{NEW_VERSION}}"/' package.json
+
+    # Update optionalDependencies versions in main package.json
+    sed -i '' 's/"@lattice-lang\/darwin-arm64": ".*"/"@lattice-lang\/darwin-arm64": "{{NEW_VERSION}}"/' package.json
+    sed -i '' 's/"@lattice-lang\/linux-x64": ".*"/"@lattice-lang\/linux-x64": "{{NEW_VERSION}}"/' package.json
+
+    # Update platform packages
+    sed -i '' 's/"version": ".*"/"version": "{{NEW_VERSION}}"/' npm/darwin-arm64/package.json
+    sed -i '' 's/"version": ".*"/"version": "{{NEW_VERSION}}"/' npm/linux-x64/package.json
+
+    # Update Cargo.toml if it has a local version (not workspace)
+    if grep -q '^version = "' Cargo.toml; then
+        sed -i '' 's/^version = ".*"/version = "{{NEW_VERSION}}"/' Cargo.toml
+    fi
+
+    echo "Updated files:"
+    echo "  - package.json"
+    echo "  - npm/darwin-arm64/package.json"
+    echo "  - npm/linux-x64/package.json"
+    just versions
+
+# Build for macOS ARM64 (current platform)
+build-darwin:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building for macOS ARM64..."
+    cargo build --release --features sql
+    cp {{workspace_root}}/target/release/liblattice_node.dylib index.node
+    echo "Built: index.node ($(du -h index.node | cut -f1))"
+
+# Build for Linux x64 (cross-compile with zigbuild)
+build-linux:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building for Linux x64..."
+    RUSTFLAGS="-C link-arg=-Wl,--allow-shlib-undefined" \
+        cargo zigbuild --release --features sql --target x86_64-unknown-linux-gnu.2.17
+    cp {{workspace_root}}/target/x86_64-unknown-linux-gnu/release/liblattice_node.so npm/linux-x64/index.node
+    echo "Built: npm/linux-x64/index.node ($(du -h npm/linux-x64/index.node | cut -f1))"
+
+# Build all platforms
+build: build-darwin build-linux
+    #!/usr/bin/env bash
+    echo ""
+    echo "All builds complete!"
+    echo "  macOS ARM64: index.node"
+    echo "  Linux x64:   npm/linux-x64/index.node"
+
+# Copy binaries to platform directories for publishing
+prepare-publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Preparing binaries for publish..."
+    cp index.node npm/darwin-arm64/
+    echo "Copied to npm/darwin-arm64/index.node"
+    echo "Linux binary already at npm/linux-x64/index.node"
+    echo ""
+    echo "Binary sizes:"
+    ls -lh npm/darwin-arm64/index.node npm/linux-x64/index.node
+
+# Run tests
+test:
+    npm test
+
+# Publish platform packages to npm
+publish-platforms:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Publishing platform packages..."
+
+    echo "Publishing @lattice-lang/darwin-arm64..."
+    cd npm/darwin-arm64 && npm publish --access public
+
+    echo "Publishing @lattice-lang/linux-x64..."
+    cd {{justfile_directory()}}/npm/linux-x64 && npm publish --access public
+
+    echo "Platform packages published!"
+
+# Publish main package to npm
+publish-main:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Publishing lattice-lang..."
+    npm publish --access public
+    echo "Main package published!"
+
+# Publish all packages (platforms first, then main)
+publish-all: publish-platforms publish-main
+    @echo "All packages published!"
+
+# Check release readiness
+check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION=$(just version)
+
+    echo "Release Checklist for v$VERSION"
+    echo "================================"
+    just versions
+    echo ""
+
+    # Check binaries exist
+    if [ -f "index.node" ]; then
+        echo "[x] macOS binary exists: index.node ($(du -h index.node | cut -f1))"
+    else
+        echo "[ ] macOS binary missing (run 'just build-darwin')"
+    fi
+
+    if [ -f "npm/darwin-arm64/index.node" ]; then
+        echo "[x] darwin-arm64 package ready ($(du -h npm/darwin-arm64/index.node | cut -f1))"
+    else
+        echo "[ ] darwin-arm64 package not ready (run 'just prepare-publish')"
+    fi
+
+    if [ -f "npm/linux-x64/index.node" ]; then
+        echo "[x] linux-x64 package ready ($(du -h npm/linux-x64/index.node | cut -f1))"
+    else
+        echo "[ ] linux-x64 package missing (run 'just build-linux')"
+    fi
+
+    echo ""
+
+    # Check npm auth
+    if npm whoami &> /dev/null; then
+        echo "[x] npm authenticated as: $(npm whoami)"
+    else
+        echo "[ ] npm not authenticated (run 'npm login')"
+    fi
+
+# Full release process
+release NEW_VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    echo "=== Lattice Node.js Release Process ==="
+    echo "New version: {{NEW_VERSION}}"
+    echo ""
+
+    # Step 1: Bump version
+    echo "Step 1/5: Bumping version..."
+    just bump {{NEW_VERSION}}
+    echo ""
+
+    # Step 2: Build all platforms
+    echo "Step 2/5: Building all platforms..."
+    just build
+    echo ""
+
+    # Step 3: Prepare for publish
+    echo "Step 3/5: Preparing binaries..."
+    just prepare-publish
+    echo ""
+
+    # Step 4: Run tests
+    echo "Step 4/5: Running tests..."
+    just test || echo "Warning: Tests failed or skipped"
+    echo ""
+
+    # Step 5: Check readiness
+    echo "Step 5/5: Checking release readiness..."
+    just check
+    echo ""
+
+    echo "=== Ready to publish! ==="
+    echo ""
+    echo "To publish, run:"
+    echo "  just publish-all"
+
+# Quick release (builds and publishes)
+release-quick NEW_VERSION:
+    just bump {{NEW_VERSION}}
+    just build
+    just prepare-publish
+    just test
+    just publish-all
+    @echo ""
+    @echo "Release {{NEW_VERSION}} complete!"
+
+# Clean build artifacts
+clean:
+    rm -f index.node
+    rm -f npm/darwin-arm64/index.node
+    rm -f npm/linux-x64/index.node
+    cargo clean

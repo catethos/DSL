@@ -1,6 +1,6 @@
 {
   "name": "@lattice-lang/linux-x64",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Lattice native binding for Linux x64",
   "os": ["linux"],
   "cpu": ["x64"],

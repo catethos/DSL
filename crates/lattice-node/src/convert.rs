@@ -96,8 +96,9 @@ pub fn js_to_lattice_value<'a>(
 
     // Check for object (including Path marker)
     if let Ok(obj) = value.downcast::<JsObject, _>(cx) {
-        // Check for Path marker
-        if let Ok(marker) = obj.get::<JsBoolean, _, _>(cx, "__lattice_path__") {
+        // Check for Path marker - get as JsValue first, then check if it's a true boolean
+        let marker_value: Handle<JsValue> = obj.get(cx, "__lattice_path__")?;
+        if let Ok(marker) = marker_value.downcast::<JsBoolean, _>(cx) {
             if marker.value(cx) {
                 let path_value: Handle<JsString> = obj.get(cx, "value")?;
                 return Ok(LatticeValue::Path(path_value.value(cx)));

@@ -1,11 +1,11 @@
 {
   "name": "lattice-lang",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Lattice runtime for Node.js - A statically-typed language for structured LLM interactions",
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
-    "build": "cargo build && cp ../../target/debug/liblattice_node.dylib index.node",
+    "build": "cargo build --features sql && cp ../../target/debug/liblattice_node.dylib index.node",
     "build-release": "cargo build --release --features sql && cp ../../target/release/liblattice_node.dylib index.node",
     "build-release:linux": "cargo zigbuild --release --features sql --target x86_64-unknown-linux-gnu && cp ../../target/x86_64-unknown-linux-gnu/release/liblattice_node.so npm/linux-x64/index.node",
     "build-release:all": "npm run build-release && npm run build-release:linux",
@@ -35,8 +35,8 @@
     "index.d.ts"
   ],
   "optionalDependencies": {
-    "@lattice-lang/darwin-arm64": "0.2.0",
-    "@lattice-lang/linux-x64": "0.2.0"
+    "@lattice-lang/darwin-arm64": "0.2.1",
+    "@lattice-lang/linux-x64": "0.2.1"
   },
   "engines": {
     "node": ">=18.0.0"

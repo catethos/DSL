@@ -15,4 +15,4 @@ neon = "1"
 
 [features]
 default = []
-sql = ["lattice/sql"]
+sql = ["lattice/sql", "lattice/sql-arrow"]
